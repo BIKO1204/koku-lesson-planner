@@ -14,6 +14,7 @@ import {
   GoogleAuthProvider,
   signOut,
   User,
+  createUserWithEmailAndPassword,
 } from "firebase/auth";
 
 export type AuthContextType = {
@@ -21,6 +22,7 @@ export type AuthContextType = {
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;  // 追加
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,12 +45,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(auth, provider);
   };
 
+  // メール・パスワード登録関数
+  const signup = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password);
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, loginWithGoogle, logout, signup }}
+    >
       {loading ? <div>認証中...</div> : children}
     </AuthContext.Provider>
   );

@@ -68,3 +68,5 @@ export async function POST(req: NextRequest) {
 node_modules
 .env.local.env.local 
 .env.local 
+/serviceAccount.json
+.vercel
