@@ -1,0 +1,13 @@
+# Query: useSearchParams
+# ContextLines: 1
+
+2 件の結果 - 1 ファイル
+
+app\plan\page.tsx:
+   4  import Link from "next/link";
+   5: import { useSearchParams } from "next/navigation";
+   6  import { v4 as uuidv4 } from "uuid";
+
+  36  
+  37:   const searchParams = useSearchParams() as unknown as URLSearchParams;
+  38  

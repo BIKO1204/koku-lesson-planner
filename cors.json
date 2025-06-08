@@ -1,0 +1,10 @@
+[
+  {
+    "origin": [
+      "http://localhost:3000",
+      "https://koku-lesson-deploy-2.vercel.app"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "maxAgeSeconds": 3600
+  }
+]
