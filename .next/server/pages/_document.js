@@ -1,6 +1,1 @@
-const CHUNK_PUBLIC_PATH = "server/pages/_document.js";
-const runtime = require("../chunks/ssr/[turbopack]_runtime.js");
-runtime.loadChunk("server/chunks/ssr/node_modules_bf671b14._.js");
-runtime.loadChunk("server/chunks/ssr/[root-of-the-server]__a1cbfe23._.js");
-runtime.getOrInstantiateRuntimeModule("[project]/pages/_document.tsx [ssr] (ecmascript)", CHUNK_PUBLIC_PATH);
-module.exports = runtime.getOrInstantiateRuntimeModule("[project]/pages/_document.tsx [ssr] (ecmascript)", CHUNK_PUBLIC_PATH).exports;
+"use strict";(()=>{var e={};e.id=3220,e.ids=[3220],e.modules={3022:(e,r,s)=>{s.r(r),s.d(r,{default:()=>n});var t=s(8732),i=s(82341);function n(){return(0,t.jsxs)(i.Html,{children:[(0,t.jsxs)(i.Head,{children:[(0,t.jsx)("link",{rel:"manifest",href:"/manifest.json"}),(0,t.jsx)("meta",{name:"theme-color",content:"#ffffff"}),(0,t.jsx)("link",{rel:"icon",href:"/icon-192x192.png"})]}),(0,t.jsxs)("body",{children:[(0,t.jsx)(i.Main,{}),(0,t.jsx)(i.NextScript,{})]})]})}},8732:e=>{e.exports=require("react/jsx-runtime")},33873:e=>{e.exports=require("path")},40361:e=>{e.exports=require("next/dist/compiled/next-server/pages.runtime.prod.js")},56472:e=>{e.exports=require("@opentelemetry/api")},82015:e=>{e.exports=require("react")}};var r=require("../webpack-runtime.js");r.C(e);var s=e=>r(r.s=e),t=r.X(0,[2341],()=>s(3022));module.exports=t})();

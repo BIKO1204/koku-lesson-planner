@@ -1,29 +1,25 @@
 // app/api/saveLessonPdf/route.ts
 
 import { NextResponse } from "next/server";
-import { initializeApp, cert, getApps, ServiceAccount } from "firebase-admin/app";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 import { google } from "googleapis";
 import type { JWTInput } from "google-auth-library";
 import { Readable } from "stream";
 
-// サービスアカウント JSON を直接インポート
-import serviceAccountJson from "../../../serviceAccount.json";
-const serviceAccount = serviceAccountJson as ServiceAccount;
+// 環境変数からサービスアカウントを取得
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
 
-// 環境変数チェック
 const bucketName    = process.env.FIREBASE_STORAGE_BUCKET!;
 const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
 if (!bucketName)    throw new Error("Missing env: FIREBASE_STORAGE_BUCKET");
 if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
 
-// Firebase Admin SDK 初期化
 const adminApp = !getApps().length
   ? initializeApp({ credential: cert(serviceAccount), storageBucket: bucketName })
   : getApps()[0];
 const bucket = getStorage(adminApp).bucket();
 
-// Google Drive API 初期化
 const auth  = new google.auth.GoogleAuth({
   credentials: serviceAccount as unknown as JWTInput,
   scopes: ["https://www.googleapis.com/auth/drive.file"],

@@ -1,0 +1,15 @@
+(()=>{var e={};e.id=476,e.ids=[476],e.modules={3295:e=>{"use strict";e.exports=require("next/dist/server/app-render/after-task-async-storage.external.js")},10846:e=>{"use strict";e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},11997:e=>{"use strict";e.exports=require("punycode")},14403:(e,r,t)=>{"use strict";t.r(r),t.d(r,{patchFetch:()=>q,routeModule:()=>c,serverHooks:()=>x,workAsyncStorage:()=>d,workUnitAsyncStorage:()=>l});var s={};t.r(s),t.d(s,{POST:()=>p});var o=t(96559),u=t(48088),i=t(37719),a=t(32190);let n=new(t(37647)).Ay({apiKey:process.env.OPENAI_API_KEY});async function p(e){try{let{feedbackText:r,currentModel:t}=await e.json(),s=`
+あなたは教育の専門家です。以下は現在の教育観モデルと授業振り返りです。
+このフィードバックを踏まえて教育観モデルをどう更新すべきか、具体的に箇条書きで教えてください。
+
+【現在の教育観モデル】
+教育哲学：${t.philosophy}
+評価観点の重点：${t.evaluationFocus}
+言語活動の重点：${t.languageFocus}
+育てたい子どもの姿：${t.childFocus}
+
+【授業振り返り】
+${r}
+
+【更新案】
+`,o=await n.chat.completions.create({model:"gpt-4o-mini",messages:[{role:"user",content:s}]}),u=o.choices[0].message?.content??"";return a.NextResponse.json({result:u})}catch(e){return console.error("updateEducationModel API error:",e),a.NextResponse.json({error:"APIエラーが発生しました。"},{status:500})}}let c=new o.AppRouteRouteModule({definition:{kind:u.RouteKind.APP_ROUTE,page:"/api/updateEducationModel/route",pathname:"/api/updateEducationModel",filename:"route",bundlePath:"app/api/updateEducationModel/route"},resolvedPagePath:"C:\\Users\\yukia\\Downloads\\koku-lesson-planner\\app\\api\\updateEducationModel\\route.ts",nextConfigOutput:"",userland:s}),{workAsyncStorage:d,workUnitAsyncStorage:l,serverHooks:x}=c;function q(){return(0,i.patchFetch)({workAsyncStorage:d,workUnitAsyncStorage:l})}},27910:e=>{"use strict";e.exports=require("stream")},28354:e=>{"use strict";e.exports=require("util")},29021:e=>{"use strict";e.exports=require("fs")},29294:e=>{"use strict";e.exports=require("next/dist/server/app-render/work-async-storage.external.js")},33873:e=>{"use strict";e.exports=require("path")},37830:e=>{"use strict";e.exports=require("node:stream/web")},44870:e=>{"use strict";e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},55591:e=>{"use strict";e.exports=require("https")},57075:e=>{"use strict";e.exports=require("node:stream")},63033:e=>{"use strict";e.exports=require("next/dist/server/app-render/work-unit-async-storage.external.js")},73024:e=>{"use strict";e.exports=require("node:fs")},73566:e=>{"use strict";e.exports=require("worker_threads")},74075:e=>{"use strict";e.exports=require("zlib")},78335:()=>{},79551:e=>{"use strict";e.exports=require("url")},81630:e=>{"use strict";e.exports=require("http")},96487:()=>{}};var r=require("../../../webpack-runtime.js");r.C(e);var t=e=>r(r.s=e),s=r.X(0,[7719,580,3079,5381,7647],()=>t(14403));module.exports=s})();
