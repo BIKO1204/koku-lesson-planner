@@ -71,3 +71,5 @@ node_modules
 /serviceAccount.json
 .vercel
 .next/
+"koku-lesson-deploy-mirror.git/" 
+".next/" 
