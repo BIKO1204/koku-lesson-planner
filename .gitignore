@@ -1,76 +1,17 @@
-// app/api/saveLesson/route.ts
-
-import { NextResponse, NextRequest } from "next/server";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getStorage } from "firebase-admin/storage";
-import { google } from "googleapis";
-
-// サービスアカウント JSON を直接読み込む（プロジェクトルート直下に serviceAccount.json を配置）
-import serviceAccount from "../../../serviceAccount.json";
-
-// 環境変数から取得
-const bucketName    = process.env.FIREBASE_STORAGE_BUCKET!;
-const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
-
-// Firebase Admin SDK の初期化
-const adminApp = !getApps().length
-  ? initializeApp({
-      credential: cert(serviceAccount),
-      storageBucket: bucketName,
-    })
-  : getApps()[0];
-const bucket = getStorage(adminApp).bucket();
-
-// Google Drive API の初期化
-const auth  = new google.auth.GoogleAuth({
-  credentials: serviceAccount,
-  scopes: ["https://www.googleapis.com/auth/drive.file"],
-});
-const drive = google.drive({ version: "v3", auth });
-
-export async function POST(req: NextRequest) {
-  try {
-    // クライアントから送信された授業データ
-    const data = await req.json();
-
-    // 1) Firebase Storage に JSON を保存
-    const filename = `lessons/lesson-${Date.now()}.json`;
-    await bucket.file(filename).save(JSON.stringify(data), {
-      contentType: "application/json",
-    });
-
-    // 2) Google Drive にコピー
-    const driveRes = await drive.files.create({
-      requestBody: {
-        name: filename,
-        mimeType: "application/json",
-        parents: [driveFolderId],
-      },
-      media: {
-        mimeType: "application/json",
-        body: JSON.stringify(data),
-      },
-      fields: "id",
-    });
-    const fileId   = (driveRes as any).data.id as string;
-    const driveLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-
-    // 成功レスポンス
-    return NextResponse.json({ driveLink });
-  } catch (err: any) {
-    console.error("saveLesson error:", err);
-    return NextResponse.json(
-      { error: err.message || "保存に失敗しました" },
-      { status: 500 }
-    );
-  }
-}
+# Node.jsのモジュールフォルダは除外
 node_modules
-.env.local.env.local 
-.env.local 
+
+# 環境変数ファイルは除外
+.env.local
+
+# Firebaseサービスアカウントファイルは除外（プロジェクトルート直下）
 /serviceAccount.json
+
+# Vercelの設定ファイル
 .vercel
+
+# Next.jsのビルド成果物
 .next/
-"koku-lesson-deploy-mirror.git/" 
-".next/" 
-".next/" 
+
+# Gitのミラーリポジトリフォルダ（今回の状況に合わせて除外）
+koku-lesson-deploy-mirror.git/
