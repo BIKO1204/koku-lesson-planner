@@ -1,0 +1,10 @@
+{
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/models/create/page": "app/models/create/page.js",
+  "/models/history/page": "app/models/history/page.js",
+  "/models/page": "app/models/page.js",
+  "/page": "app/page.js",
+  "/plan/page": "app/plan/page.js",
+  "/practice/history/page": "app/practice/history/page.js"
+}
