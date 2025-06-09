@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { initializeApp, cert, getApps, ServiceAccount } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 import { google } from "googleapis";
 import type { JWTInput } from "google-auth-library";
@@ -9,24 +9,24 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 
-// 環境変数からサービスアカウント情報を取得
-const serviceAccountJson = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
+// serviceAccount.jsonをimport（相対パスは環境に合わせて調整してください）
+import serviceAccountJson from "../../../serviceAccount.json";
 
-// 環境変数チェック
+// 型キャスト
+const serviceAccount = serviceAccountJson as ServiceAccount;
+
 const bucketName    = process.env.FIREBASE_STORAGE_BUCKET!;
 const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
 if (!bucketName)    throw new Error("Missing env: FIREBASE_STORAGE_BUCKET");
 if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
 
-// Firebase Admin SDK 初期化
 const adminApp = !getApps().length
-  ? initializeApp({ credential: cert(serviceAccountJson), storageBucket: bucketName })
+  ? initializeApp({ credential: cert(serviceAccount), storageBucket: bucketName })
   : getApps()[0];
 const bucket = getStorage(adminApp).bucket();
 
-// Google Drive API 初期化
 const auth  = new google.auth.GoogleAuth({
-  credentials: serviceAccountJson as unknown as JWTInput,
+  credentials: serviceAccount as unknown as JWTInput,
   scopes: ["https://www.googleapis.com/auth/drive.file"],
 });
 const drive = google.drive({ version: "v3", auth });

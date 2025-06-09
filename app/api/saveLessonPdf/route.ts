@@ -1,14 +1,17 @@
 // app/api/saveLessonPdf/route.ts
 
 import { NextResponse } from "next/server";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { initializeApp, cert, getApps, ServiceAccount } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 import { google } from "googleapis";
 import type { JWTInput } from "google-auth-library";
 import { Readable } from "stream";
 
-// 環境変数からサービスアカウントを取得
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
+// serviceAccount.jsonをimport（パスは環境に合わせて調整してください）
+import serviceAccountJson from "../../../serviceAccount.json";
+
+// ServiceAccount型にキャスト
+const serviceAccount = serviceAccountJson as ServiceAccount;
 
 const bucketName    = process.env.FIREBASE_STORAGE_BUCKET!;
 const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
@@ -28,28 +31,23 @@ const drive = google.drive({ version: "v3", auth });
 
 export async function POST(req: Request) {
   try {
-    // 1) FormData を取得
     const formData = await req.formData();
     const fileBlob = formData.get("file");
     if (!(fileBlob instanceof Blob)) {
       throw new Error("file フィールドが見つかりません");
     }
 
-    // 2) Blob → Buffer
     const arrayBuf = await fileBlob.arrayBuffer();
     const buffer   = Buffer.from(arrayBuf);
 
-    // 3) ファイル名を決定
     const filename = fileBlob instanceof File
       ? fileBlob.name
       : `lessonPdf-${Date.now()}.pdf`;
 
-    // 4) Firebase Storage に保存
     await bucket.file(`lessons/${filename}`).save(buffer, {
       contentType: "application/pdf",
     });
 
-    // 5) Google Drive にアップロード
     const stream   = Readable.from(buffer);
     const driveRes = await drive.files.create({
       requestBody: {
@@ -67,6 +65,7 @@ export async function POST(req: Request) {
     const fileId    = driveRes.data.id!;
     const driveLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
     return NextResponse.json({ driveLink });
+
   } catch (err: any) {
     console.error("saveLessonPdf error:", err);
     return NextResponse.json(
