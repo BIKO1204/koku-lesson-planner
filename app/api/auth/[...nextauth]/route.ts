@@ -3,7 +3,7 @@ import type { JWT } from "next-auth/jwt";
 import type { Session } from "next-auth";
 import type { AdapterUser } from "next-auth/adapters";
 
-let NextAuthHandler: any; // 後で動的にセット
+let NextAuthHandler: any; // 動的ロード用
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   if (!token.refreshToken) throw new Error("No refresh token available");
@@ -21,13 +21,20 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 
   const refreshedTokens = await response.json();
 
-  if (!response.ok) throw refreshedTokens;
+  if (!response.ok) {
+    // リフレッシュ失敗はエラーとして返す
+    return {
+      ...token,
+      error: "RefreshAccessTokenError",
+    };
+  }
 
   return {
     ...token,
     accessToken: refreshedTokens.access_token,
     accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
     refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
+    error: undefined,
   };
 }
 
@@ -38,8 +45,8 @@ export const authOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          access_type: "offline",
-          prompt: "consent",
+          access_type: "offline",  // リフレッシュトークン取得必須
+          prompt: "consent",       // 毎回同意を得る
           scope:
             "openid email profile https://www.googleapis.com/auth/drive.file",
         },
@@ -50,15 +57,8 @@ export const authOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 
   callbacks: {
-    async jwt({
-      token,
-      account,
-      user,
-    }: {
-      token: JWT;
-      account?: any | null;
-      user?: AdapterUser | null;
-    }): Promise<JWT> {
+    async jwt({ token, account, user }: { token: JWT; account?: any | null; user?: AdapterUser | null }): Promise<JWT> {
+      // 初回ログイン時
       if (account) {
         return {
           ...token,
@@ -69,21 +69,17 @@ export const authOptions = {
         };
       }
 
+      // トークン有効期限内ならそのまま返す
       const expires = typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
-
       if (Date.now() < expires) {
         return token;
       }
 
+      // 期限切れなら更新試行
       return await refreshAccessToken(token);
     },
 
-    async session(params: {
-      session: Session;
-      token: JWT;
-      user: AdapterUser;
-    }): Promise<Session> {
-      const { session, token } = params;
+    async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
       (session as any).accessToken = token.accessToken;
       (session as any).error = (token as any).error;
       return session;
@@ -91,7 +87,7 @@ export const authOptions = {
   },
 };
 
-// 動的に NextAuth をimportしてからエクスポートするハンドラを作る
+// 動的にNextAuthをimportしてハンドラ返却
 async function getHandler() {
   if (!NextAuthHandler) {
     const mod = await import("next-auth");
