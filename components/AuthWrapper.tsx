@@ -1,4 +1,5 @@
-// components/AuthWrapper.tsx
+"use client";
+
 import React, { useEffect } from "react";
 import type { ReactNode } from "react";
 import { useSession, signIn } from "next-auth/react";
@@ -17,12 +18,12 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   }, [status]);
 
   if (status === "loading") {
-    return <p>読み込み中...</p>;
+    return <p>読み込み中...</p>; // ローディング表示
   }
 
   if (status === "authenticated") {
-    return <>{children}</>;
+    return <>{children}</>; // 認証済みなら子コンポーネントを表示
   }
 
-  return null;
+  return null; // その他は何も表示しない
 }
