@@ -2,8 +2,9 @@
 
 import { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { openDB } from "idb";
 
-type BoardImage = { name: string; src: string }; // srcはGoogle Driveの公開URL
+type BoardImage = { name: string; src: string }; // srcはBlob URLなど
 
 type PracticeRecord = {
   lessonId: string;
@@ -17,6 +18,48 @@ type LessonPlan = {
   id: string;
   result?: string | object;
 };
+
+// IndexedDBのセットアップ
+const DB_NAME = "PracticeDB";
+const STORE_NAME = "practiceRecords";
+const DB_VERSION = 1;
+
+async function getDB() {
+  return openDB(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "lessonId" });
+      }
+    },
+  });
+}
+
+// IndexedDBから記録を取得
+async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> {
+  const db = await getDB();
+  return db.get(STORE_NAME, lessonId);
+}
+
+// IndexedDBに記録を保存
+async function saveRecord(record: PracticeRecord) {
+  const db = await getDB();
+  await db.put(STORE_NAME, record);
+}
+
+// 画像をBlob URLに変換する補助
+function createBlobURL(file: File): string {
+  return URL.createObjectURL(file);
+}
+
+// 画像のBlobをbase64変換したい場合はこちら（別途必要なら）
+// function blobToBase64(blob: Blob): Promise<string> {
+//   return new Promise((resolve, reject) => {
+//     const reader = new FileReader();
+//     reader.onloadend = () => resolve(reader.result as string);
+//     reader.onerror = reject;
+//     reader.readAsDataURL(blob);
+//   });
+// }
 
 // 安全に文字列化する補助
 function safeRender(value: any): string {
@@ -40,8 +83,9 @@ export default function PracticeAddPage() {
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // 授業案＆過去記録読み込み（ローカルストレージ）
+  // 授業案＆過去記録読み込み（localStorage授業案はそのまま、記録はIndexedDB）
   useEffect(() => {
+    // 授業案はlocalStorageに依存（そのまま）
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
     try {
@@ -66,34 +110,30 @@ export default function PracticeAddPage() {
       setLessonTitle("");
     }
 
-    const recsJson = localStorage.getItem("practiceRecords") || "[]";
-    let recs: PracticeRecord[];
-    try {
-      recs = JSON.parse(recsJson) as PracticeRecord[];
-    } catch {
-      recs = [];
-    }
-    const existing = recs.find((r) => r.lessonId === id) || null;
-    if (existing) {
-      setPracticeDate(existing.practiceDate);
-      setReflection(existing.reflection);
-      setBoardImages(existing.boardImages);
-      setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-    }
+    // IndexedDBから過去記録を取得してセット
+    getRecord(id).then((existing) => {
+      if (existing) {
+        setPracticeDate(existing.practiceDate);
+        setReflection(existing.reflection);
+        setBoardImages(existing.boardImages);
+        setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
+      }
+    });
   }, [id]);
 
+  // ファイル選択時にBlob URLを作成し状態に追加
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     const newImages: BoardImage[] = files.map((file) => ({
       name: file.name,
-      src: URL.createObjectURL(file),
+      src: createBlobURL(file),
     }));
     setBoardImages((prev) => [...prev, ...newImages]);
     e.target.value = "";
   };
 
-  // 画像削除ボタン処理
+  // 画像削除
   const handleRemoveImage = (i: number) =>
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -109,41 +149,32 @@ export default function PracticeAddPage() {
     });
   };
 
-  // ローカル保存（プレビュー生成済み必須）
-  const handleSaveLocal = () => {
+  // IndexedDBに保存（プレビュー済み必須）
+  const handleSaveLocal = async () => {
     if (!record) {
       alert("プレビューを作成してください");
       return;
     }
-    const recsJson = localStorage.getItem("practiceRecords") || "[]";
-    let recs: PracticeRecord[];
+    setUploading(true);
     try {
-      recs = JSON.parse(recsJson) as PracticeRecord[];
-    } catch {
-      recs = [];
-    }
-    const idx = recs.findIndex((r) => r.lessonId === id);
-    if (idx >= 0) recs[idx] = record;
-    else recs.push(record);
-
-    try {
-      localStorage.setItem("practiceRecords", JSON.stringify(recs));
-      alert("ローカルに保存しました");
+      await saveRecord(record);
+      alert("IndexedDBに保存しました");
       router.push("/practice/history");
     } catch (e) {
-      alert("localStorageへの保存に失敗しました。容量オーバーかもしれません。");
+      alert("IndexedDBへの保存に失敗しました。");
       console.error(e);
+    } finally {
+      setUploading(false);
     }
   };
 
-  // スタイル
+  // 以下はCSSスタイル（省略可）↓
   const containerStyle: React.CSSProperties = {
     padding: 24,
     maxWidth: 800,
     margin: "auto",
     fontFamily: "sans-serif",
   };
-
   const navBtnStyle: React.CSSProperties = {
     marginRight: 8,
     padding: "8px 12px",
@@ -153,14 +184,12 @@ export default function PracticeAddPage() {
     border: "none",
     cursor: "pointer",
   };
-
   const sectionStyle: React.CSSProperties = {
     border: "2px solid #1976d2",
     borderRadius: 6,
     padding: 12,
     marginBottom: 16,
   };
-
   const uploadLabelStyle: React.CSSProperties = {
     display: "block",
     marginBottom: 8,
@@ -171,25 +200,21 @@ export default function PracticeAddPage() {
     borderRadius: 6,
     textAlign: "center",
   };
-
   const boardImageWrapperStyle: React.CSSProperties = {
     marginTop: 12,
   };
-
   const boardImageContainerStyle: React.CSSProperties = {
     width: "100%",
     marginBottom: 12,
   };
-
   const boardImageStyle: React.CSSProperties = {
-    width: "100%", // 横幅いっぱいにして見やすく
+    width: "100%",
     height: "auto",
     borderRadius: 8,
     border: "1px solid #ccc",
     display: "block",
     maxWidth: "100%",
   };
-
   const removeBtnStyle: React.CSSProperties = {
     position: "absolute",
     top: 4,
@@ -203,8 +228,6 @@ export default function PracticeAddPage() {
     cursor: "pointer",
     fontWeight: "bold",
   };
-
-  // 教育観情報 一行テキスト
   const infoRowStyle: React.CSSProperties = {
     display: "flex",
     gap: 12,
@@ -212,7 +235,6 @@ export default function PracticeAddPage() {
     marginBottom: 16,
     overflowX: "auto",
   };
-
   const infoItemStyle: React.CSSProperties = {
     whiteSpace: "nowrap",
     fontWeight: "bold",
@@ -221,7 +243,6 @@ export default function PracticeAddPage() {
     padding: "6px 12px",
     borderRadius: 6,
   };
-
   const saveBtnStyle: React.CSSProperties = {
     padding: 12,
     backgroundColor: "#4CAF50",
