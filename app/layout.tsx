@@ -1,7 +1,6 @@
-// app/layout.tsx
 import "./globals.css"
 import { Providers } from "./providers"
-import { AuthProvider } from "./contexts/AuthContext"
+import AuthWrapper from "../components/AuthWrapper"  // パスを修正
 
 export const metadata = {
   title: "国語授業案アプリ",
@@ -26,9 +25,9 @@ export default function RootLayout({
         {/* まず NextAuth の SessionProvider */}
         <Providers>
           {/* 次に独自 AuthContext */}
-          <AuthProvider>
+          <AuthWrapper>
             {children}
-          </AuthProvider>
+          </AuthWrapper>
         </Providers>
       </body>
     </html>
