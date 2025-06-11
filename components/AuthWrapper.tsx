@@ -12,18 +12,17 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      signIn(); // 未認証ならログインページへリダイレクト
+      signIn(); // ログインページへリダイレクト
     }
   }, [status]);
 
   if (status === "loading") {
-    return <p>読み込み中...</p>; // ローディング表示
+    return <p>読み込み中...</p>;
   }
 
   if (status === "authenticated") {
-    return <>{children}</>; // 認証済みなら子コンポーネントを表示
+    return <>{children}</>;
   }
 
-  // ここには通常は来ないが、一応null返す
   return null;
 }
