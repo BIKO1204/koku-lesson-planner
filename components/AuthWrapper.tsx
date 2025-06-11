@@ -18,12 +18,12 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   }, [status]);
 
   if (status === "loading") {
-    return <p>読み込み中...</p>; // ローディング表示
+    return <p>読み込み中...</p>;
   }
 
   if (status === "authenticated") {
-    return <>{children}</>; // 認証済みなら子コンポーネントを表示
+    return <>{children}</>;
   }
 
-  return null; // その他は何も表示しない
+  return null;
 }
