@@ -1,5 +1,6 @@
 // components/AuthWrapper.tsx
-import React, { ReactNode, useEffect } from "react";
+import React, { useEffect } from "react";
+import type { ReactNode } from "react";
 import { useSession, signIn } from "next-auth/react";
 
 type AuthWrapperProps = {
@@ -11,7 +12,7 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      signIn(); // ログインページへリダイレクト
+      signIn(); // 未認証ならログインページへリダイレクト
     }
   }, [status]);
 
@@ -23,6 +24,6 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
     return <>{children}</>; // 認証済みなら子コンポーネントを表示
   }
 
-  // ここには通常来ないけど、一応null返す
+  // ここには通常は来ないが、一応null返す
   return null;
 }
