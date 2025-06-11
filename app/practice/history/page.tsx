@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { db } from "../../firebaseConfig";
-import { doc, deleteDoc } from "firebase/firestore";
+import { openDB } from "idb";
 
 type BoardImage = { name: string; src: string };
 type PracticeRecord = {
@@ -16,8 +15,32 @@ type PracticeRecord = {
 };
 type LessonPlan = {
   id: string;
-  result: any; // object expected for detailed display
+  result: any;
 };
+
+const DB_NAME = "PracticeDB";
+const STORE_NAME = "practiceRecords";
+const DB_VERSION = 1;
+
+async function getDB() {
+  return openDB(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "lessonId" });
+      }
+    },
+  });
+}
+
+async function getAllRecords(): Promise<PracticeRecord[]> {
+  const db = await getDB();
+  return db.getAll(STORE_NAME);
+}
+
+async function deleteRecord(lessonId: string) {
+  const db = await getDB();
+  await db.delete(STORE_NAME, lessonId);
+}
 
 export default function HistoryPage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
@@ -28,14 +51,10 @@ export default function HistoryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const recs = localStorage.getItem("practiceRecords");
-    if (recs) {
-      try {
-        setRecords(JSON.parse(recs));
-      } catch {
-        setRecords([]);
-      }
-    }
+    getAllRecords()
+      .then(setRecords)
+      .catch(() => setRecords([]));
+
     const plans = localStorage.getItem("lessonPlans");
     if (plans) {
       try {
@@ -47,21 +66,19 @@ export default function HistoryPage() {
   }, []);
 
   const sorted = [...records].sort((a, b) => {
-    if (sortKey === "lessonTitle") return a.lessonTitle.localeCompare(b.lessonTitle);
+    if (sortKey === "lessonTitle")
+      return a.lessonTitle.localeCompare(b.lessonTitle);
     return a.practiceDate.localeCompare(b.practiceDate);
   });
 
   const handleDelete = async (lessonId: string) => {
     if (!confirm("この実践記録を削除しますか？")) return;
     try {
-      await deleteDoc(doc(db, "practice_records", lessonId));
+      await deleteRecord(lessonId);
+      setRecords(records.filter((r) => r.lessonId !== lessonId));
     } catch {
-      alert("Firestore 上の削除に失敗しました。");
-      return;
+      alert("IndexedDB上の削除に失敗しました。");
     }
-    const next = records.filter((r) => r.lessonId !== lessonId);
-    setRecords(next);
-    localStorage.setItem("practiceRecords", JSON.stringify(next));
   };
 
   const handleExportRecordPdf = async (lessonId: string) => {
@@ -86,7 +103,9 @@ export default function HistoryPage() {
       .from(el)
       .set({
         margin: 5,
-        filename: `${sorted.find(r => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
+        filename:
+          `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
+          }_実践記録.pdf`,
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         html2canvas: { useCORS: true, scale: 2 },
         pagebreak: { mode: ["avoid-all"] },
@@ -129,7 +148,8 @@ export default function HistoryPage() {
     try {
       await uploadToDrive(
         pdfBlob,
-        `${sorted.find(r => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
+        `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
+        }_実践記録.pdf`,
         "application/pdf",
         folderId
       );
@@ -138,6 +158,8 @@ export default function HistoryPage() {
       alert("Drive保存に失敗しました。");
     }
   };
+
+  // スタイル省略（元コード参照してください）
 
   const navLinkStyle: React.CSSProperties = {
     padding: "8px 12px",
