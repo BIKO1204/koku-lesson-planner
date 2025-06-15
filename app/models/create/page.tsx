@@ -101,187 +101,212 @@ export default function CreateModelPage() {
     router.push("/models/history");
   };
 
-  // ヒントテキスト用スタイル（上下の余白増やした）
-  const hintStyle: React.CSSProperties = {
-    fontSize: "0.85rem",
-    color: "#666",
-    marginTop: "6px",     // ←ここを増やして枠線との重なり防止
-    marginBottom: "16px", // ←上下にゆとりを持たせて読みやすく
-    fontStyle: "italic",
-    userSelect: "none",
-  };
-
-  // 入力欄の共通スタイル（幅を少し狭め）
-  const inputBaseStyle: React.CSSProperties = {
-    width: "95%",           // 100% → 95%にして少し幅狭く
-    padding: "0.8rem",
-    fontSize: "1.1rem",
-    borderRadius: 6,
-    border: "1px solid #ccc",
-    marginTop: 4,
-  };
-
   return (
-    <main
-      style={{
-        padding: "2rem 4rem",
-        width: "100%",
-        maxWidth: 900,  // 1200 → 900に縮小してページの幅感を整えました
-        margin: "0 auto",
-        fontFamily: "sans-serif",
-      }}
-    >
-      {/* ナビゲーション */}
-      <nav
-        style={{
-          display: "flex",
-          gap: 12,
-          marginBottom: 24,
-          overflowX: "auto",
-        }}
-      >
-        {[
-          ["/", "🏠 ホーム"],
-          ["/plan", "📋 授業作成"],
-          ["/plan/history", "📖 計画履歴"],
-          ["/practice/history", "📷 実践履歴"],
-          ["/models/create", "✏️ 教育観作成"],
-          ["/models", "📚 教育観一覧"],
-          ["/models/history", "🕒 教育観履歴"],
-        ].map(([href, label]) => (
-          <Link
-            key={href}
-            href={href}
-            style={{
-              padding: "8px 12px",
-              backgroundColor: href === "/models/create" ? "#4CAF50" : "#1976d2",
-              color: "white",
-              borderRadius: 6,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+    <>
+      <style>{`
+        main {
+          padding: 2rem 4rem;
+          max-width: 900px;
+          margin: 0 auto;
+          font-family: sans-serif;
+        }
+        nav {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 24px;
+          overflow-x: auto;
+          justify-content: center;
+        }
+        nav a {
+          padding: 8px 12px;
+          background-color: #1976d2;
+          color: white;
+          border-radius: 6px;
+          text-decoration: none;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        nav a.active {
+          background-color: #4caf50;
+        }
+        h1 {
+          font-size: 2rem;
+          margin-bottom: 1.5rem;
+          text-align: center;
+        }
+        p.error {
+          color: red;
+          margin-bottom: 1rem;
+          text-align: center;
+        }
+        label {
+          display: block;
+          margin-bottom: 12px;
+        }
+        section.form-section {
+          background-color: #ffffff;
+          padding: 24px;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        input, textarea {
+          width: 95%;
+          padding: 0.8rem;
+          font-size: 1.1rem;
+          border-radius: 6px;
+          border: 1px solid #ddd;
+          margin-top: 4px;
+          box-sizing: border-box;
+          font-family: inherit;
+          background-color: #fff;
+          color: #111;
+        }
+        label > div.hint {
+          font-size: 0.85rem;
+          color: #555;
+          margin-top: 6px;
+          margin-bottom: 16px;
+          font-style: italic;
+          user-select: none;
+        }
+        button.save-button {
+          padding: 0.8rem 2rem;
+          font-size: 1.1rem;
+          background-color: #4caf50;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          display: inline-block;
+          width: auto;
+        }
+        /* スマホ向け */
+        @media (max-width: 600px) {
+          main {
+            padding: 1rem 1.5rem;
+          }
+          input, textarea {
+            width: 100%;
+            font-size: 1rem;
+          }
+          label > div.hint {
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+          }
+          button.save-button {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.2rem;
+          }
+          nav {
+            justify-content: flex-start;
+          }
+        }
+      `}</style>
 
-      <h1
-        style={{
-          fontSize: "2rem",
-          marginBottom: "1.5rem",
-          textAlign: "center",
-        }}
-      >
-        {editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}
-      </h1>
+      <main>
+        {/* ナビゲーション */}
+        <nav>
+          {[
+            ["/", "🏠 ホーム"],
+            ["/plan", "📋 授業作成"],
+            ["/plan/history", "📖 計画履歴"],
+            ["/practice/history", "📷 実践履歴"],
+            ["/models/create", "✏️ 教育観作成"],
+            ["/models", "📚 教育観一覧"],
+            ["/models/history", "🕒 教育観履歴"],
+          ].map(([href, label]) => (
+            <Link
+              key={href}
+              href={href}
+              className={href === "/models/create" ? "active" : ""}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
 
-      {error && (
-        <p
-          style={{
-            color: "red",
-            marginBottom: "1rem",
-            textAlign: "center",
-          }}
-        >
-          {error}
-        </p>
-      )}
+        <h1>{editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}</h1>
 
-      <section
-        style={{
-          backgroundColor: "#f9f9f9",
-          padding: 24,
-          borderRadius: 8,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-        }}
-      >
-        <label style={{ display: "block", marginBottom: 12 }}>
-          モデル名（必須）：
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            style={inputBaseStyle}
-          />
-          <div style={hintStyle}>例）面白い授業、対話型授業、音読重視など</div>
-        </label>
+        {error && <p className="error">{error}</p>}
 
-        <label style={{ display: "block", marginBottom: 12 }}>
-          教育観（必須）：
-          <textarea
-            rows={2}
-            value={form.philosophy}
-            onChange={(e) => handleChange("philosophy", e.target.value)}
-            style={inputBaseStyle}
-          />
-          <div style={hintStyle}>例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。</div>
-        </label>
+        <section className="form-section">
+          <label>
+            モデル名（必須）：
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+            />
+            <div className="hint">例）面白い授業、対話型授業、音読重視など</div>
+          </label>
 
-        <label style={{ display: "block", marginBottom: 12 }}>
-          評価観点の重視点（必須）：
-          <textarea
-            rows={2}
-            value={form.evaluationFocus}
-            onChange={(e) => handleChange("evaluationFocus", e.target.value)}
-            style={inputBaseStyle}
-          />
-          <div style={hintStyle}>例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。</div>
-        </label>
+          <label>
+            教育観（必須）：
+            <textarea
+              rows={2}
+              value={form.philosophy}
+              onChange={(e) => handleChange("philosophy", e.target.value)}
+            />
+            <div className="hint">
+              例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。
+            </div>
+          </label>
 
-        <label style={{ display: "block", marginBottom: 12 }}>
-          言語活動の重視点（必須）：
-          <textarea
-            rows={2}
-            value={form.languageFocus}
-            onChange={(e) => handleChange("languageFocus", e.target.value)}
-            style={inputBaseStyle}
-          />
-          <div style={hintStyle}>例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。</div>
-        </label>
+          <label>
+            評価観点の重視点（必須）：
+            <textarea
+              rows={2}
+              value={form.evaluationFocus}
+              onChange={(e) => handleChange("evaluationFocus", e.target.value)}
+            />
+            <div className="hint">
+              例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。
+            </div>
+          </label>
 
-        <label style={{ display: "block", marginBottom: 12 }}>
-          育てたい子どもの姿（必須）：
-          <textarea
-            rows={2}
-            value={form.childFocus}
-            onChange={(e) => handleChange("childFocus", e.target.value)}
-            style={inputBaseStyle}
-          />
-          <div style={hintStyle}>例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。</div>
-        </label>
+          <label>
+            言語活動の重視点（必須）：
+            <textarea
+              rows={2}
+              value={form.languageFocus}
+              onChange={(e) => handleChange("languageFocus", e.target.value)}
+            />
+            <div className="hint">
+              例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。
+            </div>
+          </label>
 
-        <label style={{ display: "block", marginBottom: 24 }}>
-          更新メモ（任意）：
-          <textarea
-            rows={2}
-            value={form.note}
-            onChange={(e) => handleChange("note", e.target.value)}
-            style={{
-              ...inputBaseStyle,
-              fontStyle: "italic",
-            }}
-          />
-          <div style={hintStyle}>例）今年度の授業で重視したい点や変更点などを書いてください。</div>
-        </label>
+          <label>
+            育てたい子どもの姿（必須）：
+            <textarea
+              rows={2}
+              value={form.childFocus}
+              onChange={(e) => handleChange("childFocus", e.target.value)}
+            />
+            <div className="hint">
+              例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。
+            </div>
+          </label>
 
-        <div style={{ textAlign: "center" }}>
-          <button
-            onClick={handleSave}
-            style={{
-              padding: "0.8rem 2rem",
-              fontSize: "1.1rem",
-              backgroundColor: "#4CAF50",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              cursor: "pointer",
-            }}
-          >
-            {editId ? "更新して保存" : "作成して保存"}
-          </button>
-        </div>
-      </section>
-    </main>
+          <label>
+            更新メモ（任意）：
+            <textarea
+              rows={2}
+              value={form.note}
+              onChange={(e) => handleChange("note", e.target.value)}
+              style={{ fontStyle: "italic" }}
+            />
+            <div className="hint">例）今年度の授業で重視したい点や変更点などを書いてください。</div>
+          </label>
+
+          <div style={{ textAlign: "center" }}>
+            <button className="save-button" onClick={handleSave}>
+              {editId ? "更新して保存" : "作成して保存"}
+            </button>
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
