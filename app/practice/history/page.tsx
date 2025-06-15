@@ -172,9 +172,10 @@ export default function HistoryPage() {
     cursor: "pointer",
     whiteSpace: "nowrap",
   };
+
   const cardStyle: React.CSSProperties = {
     display: "flex",
-    flexDirection: "column", // 横並び→縦並びに変更
+    flexDirection: "column", // 縦並びでスマホ対応
     backgroundColor: "#fdfdfd",
     border: "2px solid #ddd",
     borderRadius: 12,
@@ -184,33 +185,38 @@ export default function HistoryPage() {
     wordBreak: "break-word",
   };
 
-  // ボタン共通スタイル
+  // ボタン共通スタイル（幅と高さを統一）
   const buttonBaseStyle: React.CSSProperties = {
     padding: "8px 12px",
     fontSize: "0.9rem",
     borderRadius: 6,
     cursor: "pointer",
-    width: "100%",      // 幅を100%に揃える
-    minWidth: 120,
+    width: "120px",  // 固定幅にして大きさを揃える
+    height: "36px",
     boxSizing: "border-box",
     color: "white",
     border: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   };
 
+  // 色指定
+  const pdfBtn: React.CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#FF9800", // オレンジ
+  };
+  const driveBtn: React.CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#2196F3", // 青
+  };
   const actionBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#4CAF50",
-    marginBottom: 8,
+    backgroundColor: "#4CAF50", // 緑（編集）
   };
   const deleteBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#f44336",
-    marginBottom: 8,
-  };
-  const pdfBtn: React.CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#607D8B",
-    marginBottom: 8,
+    backgroundColor: "#f44336", // 赤（削除）
   };
 
   const planBlockStyle: React.CSSProperties = {
@@ -383,7 +389,7 @@ export default function HistoryPage() {
                   <button onClick={() => handleExportRecordPdf(r.lessonId)} style={pdfBtn}>
                     📄 PDF出力
                   </button>
-                  <button onClick={() => handleDriveSave(r.lessonId)} style={pdfBtn}>
+                  <button onClick={() => handleDriveSave(r.lessonId)} style={driveBtn}>
                     ☁️ Drive保存
                   </button>
                   <Link href={`/practice/add/${r.lessonId}`}>
