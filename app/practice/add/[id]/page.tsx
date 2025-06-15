@@ -43,8 +43,14 @@ async function saveRecord(record: PracticeRecord) {
   await db.put(STORE_NAME, record);
 }
 
-function createBlobURL(file: File): string {
-  return URL.createObjectURL(file);
+// ファイルをBase64に変換する関数
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
 }
 
 function safeRender(value: any): string {
@@ -103,13 +109,21 @@ export default function PracticeAddPage() {
     });
   }, [id]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
-    const newImages: BoardImage[] = files.map((file) => ({
-      name: file.name,
-      src: createBlobURL(file),
-    }));
+
+    // Base64に変換して保存
+    const newImages: BoardImage[] = [];
+    for (const file of files) {
+      try {
+        const base64 = await fileToBase64(file);
+        newImages.push({ name: file.name, src: base64 });
+      } catch (error) {
+        console.error("画像のBase64変換に失敗しました", error);
+      }
+    }
+
     setBoardImages((prev) => [...prev, ...newImages]);
     e.target.value = "";
   };
@@ -169,7 +183,7 @@ export default function PracticeAddPage() {
     display: "flex",
     overflowX: "auto",
     marginBottom: 24,
-    flexWrap: "nowrap", 
+    flexWrap: "nowrap",
     gap: 8,
     justifyContent: "flex-start",
   };
@@ -320,20 +334,9 @@ export default function PracticeAddPage() {
           ))}
         </div>
 
-        {/* ここに単元名・授業時間数等の情報表示は無し */}
-
         <button
           type="submit"
-          style={{
-            padding: 12,
-            backgroundColor: "#1976d2",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-            width: "100%",
-            marginBottom: 16,
-          }}
+          style={saveBtnStyle}
           disabled={uploading}
         >
           {uploading ? "アップロード中..." : "プレビューを生成"}
