@@ -50,7 +50,6 @@ export default function HistoryPage() {
   );
   const router = useRouter();
 
-  // タブレットなどの横幅でmaxWidthを調整するためのwindow幅監視
   const [windowWidth, setWindowWidth] = useState<number>(
     typeof window !== "undefined" ? window.innerWidth : 800
   );
@@ -179,50 +178,6 @@ export default function HistoryPage() {
     }
   };
 
-  // ここからが新規追加部分
-  // ファイル選択時にbase64に変換して追加する関数
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-
-    // ファイルをBase64に変換する関数
-    const convertToBase64 = (file: File): Promise<string> => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-          if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error("Base64変換に失敗しました"));
-        };
-        reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
-      });
-    };
-
-    try {
-      const base64Images = await Promise.all(files.map((file) => convertToBase64(file)));
-
-      const newImages: BoardImage[] = base64Images.map((base64, index) => ({
-        name: files[index].name,
-        src: base64,
-      }));
-
-      // 既存のboardImagesに追加（ここは直すべき箇所として、現在の仕様に応じて修正してください）
-      // ここでは最新のrecordsの先頭の実践記録に追加する例（適宜調整が必要）
-      setRecords((prev) => {
-        if (prev.length === 0) return prev;
-        const updatedRecord = { ...prev[0] };
-        updatedRecord.boardImages = [...(updatedRecord.boardImages || []), ...newImages];
-        return [updatedRecord, ...prev.slice(1)];
-      });
-    } catch (err) {
-      alert("画像変換に失敗しました");
-      console.error(err);
-    }
-
-    // ファイル選択後はinputをリセットする
-    if (e.target) e.target.value = "";
-  };
-
   // スタイル定義
   const navLinkStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -340,9 +295,6 @@ export default function HistoryPage() {
       </nav>
 
       <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
-
-      {/* ここに画像アップロードフォームを設置することも可能です */}
-      {/* <input type="file" multiple accept="image/*" onChange={handleFileChange} /> */}
 
       <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
         並び替え：
