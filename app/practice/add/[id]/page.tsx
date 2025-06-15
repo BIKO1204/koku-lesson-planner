@@ -53,11 +53,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// safeRender 修正：配列は JSON.stringify で文字列化（「、」結合しない）
 function safeRender(value: any): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return value.toString();
   if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return value.join(", ");
+  if (Array.isArray(value)) return JSON.stringify(value, null, 2);
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
@@ -403,7 +404,7 @@ export default function PracticeAddPage() {
                       <ul style={{ paddingLeft: 20, marginTop: 4 }}>
                         {(Array.isArray(v) ? v : []).map((item, i) => (
                           <li key={i}>
-                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {safeRender(item)}
+                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {item}
                           </li>
                         ))}
                       </ul>
