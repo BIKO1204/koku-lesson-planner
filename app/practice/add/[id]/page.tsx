@@ -165,12 +165,11 @@ export default function PracticeAddPage() {
     flexShrink: 0,
   };
 
-  // ここを修正
   const navStyle: React.CSSProperties = {
     display: "flex",
     overflowX: "auto",
     marginBottom: 24,
-    flexWrap: "nowrap", // 折り返さず横並び固定
+    flexWrap: "nowrap", 
     gap: 8,
     justifyContent: "flex-start",
   };
@@ -398,9 +397,11 @@ export default function PracticeAddPage() {
                   {Object.entries((lessonPlan.result as any)["評価の観点"]).map(([k, v]) => (
                     <div key={k}>
                       <strong>{k}</strong>
-                      <ul>
+                      <ul style={{ paddingLeft: 20, marginTop: 4 }}>
                         {(Array.isArray(v) ? v : []).map((item, i) => (
-                          <li key={i}>{safeRender(item)}</li>
+                          <li key={i}>
+                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {safeRender(item)}
+                          </li>
                         ))}
                       </ul>
                     </div>

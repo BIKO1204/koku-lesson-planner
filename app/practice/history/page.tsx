@@ -102,7 +102,7 @@ export default function HistoryPage() {
     await html2pdf()
       .from(el)
       .set({
-        margin: 5,
+        margin: [10, 5, 10, 5], // 上・右・下・左 の順で余白を指定（mm単位）
         filename:
           `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
           }_実践記録.pdf`,
@@ -134,7 +134,7 @@ export default function HistoryPage() {
     const pdfBlob: Blob = await html2pdf()
       .from(el)
       .set({
-        margin: 5,
+        margin: [10, 5, 10, 5],
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         html2canvas: { useCORS: true, scale: 2 },
         pagebreak: { mode: ["avoid-all"] },
@@ -159,8 +159,6 @@ export default function HistoryPage() {
     }
   };
 
-  // スタイル調整（スマホ対応）
-
   const navLinkStyle: React.CSSProperties = {
     padding: "8px 12px",
     backgroundColor: "#1976d2",
@@ -175,7 +173,7 @@ export default function HistoryPage() {
 
   const cardStyle: React.CSSProperties = {
     display: "flex",
-    flexDirection: "column", // 縦並びでスマホ対応
+    flexDirection: "column",
     backgroundColor: "#fdfdfd",
     border: "2px solid #ddd",
     borderRadius: 12,
@@ -185,13 +183,12 @@ export default function HistoryPage() {
     wordBreak: "break-word",
   };
 
-  // ボタン共通スタイル（幅と高さを統一）
   const buttonBaseStyle: React.CSSProperties = {
     padding: "8px 12px",
     fontSize: "0.9rem",
     borderRadius: 6,
     cursor: "pointer",
-    width: "120px",  // 固定幅にして大きさを揃える
+    width: "120px",
     height: "36px",
     boxSizing: "border-box",
     color: "white",
@@ -201,22 +198,21 @@ export default function HistoryPage() {
     justifyContent: "center",
   };
 
-  // 色指定
   const pdfBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#FF9800", // オレンジ
+    backgroundColor: "#FF9800",
   };
   const driveBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#2196F3", // 青
+    backgroundColor: "#2196F3",
   };
   const actionBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#4CAF50", // 緑（編集）
+    backgroundColor: "#4CAF50",
   };
   const deleteBtn: React.CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#f44336", // 赤（削除）
+    backgroundColor: "#f44336",
   };
 
   const planBlockStyle: React.CSSProperties = {
@@ -236,6 +232,13 @@ export default function HistoryPage() {
     maxWidth: 600,
     width: "100%",
     margin: "0 auto",
+  };
+
+  // 追加: 板書写真のコンテナにページ分割抑止スタイルを適用
+  const boardImageContainerStyle: React.CSSProperties = {
+    width: "100%",
+    marginBottom: 12,
+    pageBreakInside: "avoid", // これでページ分割抑止
   };
 
   return (
@@ -354,9 +357,16 @@ export default function HistoryPage() {
                   </p>
 
                   {r.boardImages.length > 0 && (
-                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                      }}
+                    >
                       {r.boardImages.map((img, i) => (
-                        <div key={`${img.name}-${i}`} style={{ width: "100%" }}>
+                        <div key={`${img.name}-${i}`} style={boardImageContainerStyle}>
                           <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                           <img
                             src={img.src}
