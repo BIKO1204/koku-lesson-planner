@@ -68,6 +68,97 @@ export default function PracticeAddPage() {
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // 修正箇所: 横並び固定のナビスタイル
+  const navStyle: React.CSSProperties = {
+    display: "flex",
+    overflowX: "auto",
+    marginBottom: 24,
+    flexWrap: "nowrap",
+    gap: 8,
+    justifyContent: "flex-start",
+  };
+
+  const navBtnStyle: React.CSSProperties = {
+    marginRight: 8,
+    padding: "8px 12px",
+    backgroundColor: "#1976d2",
+    color: "#fff",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+  };
+
+  const containerStyle: React.CSSProperties = {
+    padding: 24,
+    maxWidth: 800,
+    margin: "auto",
+    fontFamily: "sans-serif",
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    border: "2px solid #1976d2",
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 16,
+  };
+
+  const uploadLabelStyle: React.CSSProperties = {
+    display: "block",
+    marginBottom: 8,
+    cursor: "pointer",
+    padding: "8px 12px",
+    backgroundColor: "#1976d2",
+    color: "#fff",
+    borderRadius: 6,
+    textAlign: "center",
+  };
+
+  const boardImageWrapperStyle: React.CSSProperties = {
+    marginTop: 12,
+  };
+
+  const boardImageContainerStyle: React.CSSProperties = {
+    width: "100%",
+    marginBottom: 12,
+  };
+
+  const boardImageStyle: React.CSSProperties = {
+    width: "100%",
+    height: "auto",
+    borderRadius: 8,
+    border: "1px solid #ccc",
+    display: "block",
+    maxWidth: "100%",
+  };
+
+  const removeBtnStyle: React.CSSProperties = {
+    position: "relative",
+    top: "auto",
+    right: "auto",
+    marginTop: 4,
+    backgroundColor: "rgba(229, 57, 53, 0.85)",
+    border: "none",
+    borderRadius: 4,
+    color: "white",
+    width: 24,
+    height: 24,
+    cursor: "pointer",
+    fontWeight: "bold",
+  };
+
+  const saveBtnStyle: React.CSSProperties = {
+    padding: 12,
+    backgroundColor: "#4CAF50",
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
+    width: "100%",
+    cursor: "pointer",
+    marginTop: 16,
+  };
+
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -144,97 +235,6 @@ export default function PracticeAddPage() {
     } finally {
       setUploading(false);
     }
-  };
-
-  const containerStyle: React.CSSProperties = {
-    padding: 24,
-    maxWidth: 800,
-    margin: "auto",
-    fontFamily: "sans-serif",
-  };
-
-  const navBtnStyle: React.CSSProperties = {
-    marginRight: 8,
-    padding: "8px 12px",
-    backgroundColor: "#1976d2",
-    color: "#fff",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-    flexShrink: 0,
-  };
-
-  // ここを修正
-  const navStyle: React.CSSProperties = {
-    display: "flex",
-    overflowX: "auto",
-    marginBottom: 24,
-    flexWrap: "nowrap", // 折り返さず横並び固定
-    gap: 8,
-    justifyContent: "flex-start",
-  };
-
-  const sectionStyle: React.CSSProperties = {
-    border: "2px solid #1976d2",
-    borderRadius: 6,
-    padding: 12,
-    marginBottom: 16,
-  };
-
-  const uploadLabelStyle: React.CSSProperties = {
-    display: "block",
-    marginBottom: 8,
-    cursor: "pointer",
-    padding: "8px 12px",
-    backgroundColor: "#1976d2",
-    color: "#fff",
-    borderRadius: 6,
-    textAlign: "center",
-  };
-
-  const boardImageWrapperStyle: React.CSSProperties = {
-    marginTop: 12,
-  };
-
-  const boardImageContainerStyle: React.CSSProperties = {
-    width: "100%",
-    marginBottom: 12,
-  };
-
-  const boardImageStyle: React.CSSProperties = {
-    width: "100%",
-    height: "auto",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    display: "block",
-    maxWidth: "100%",
-  };
-
-  const removeBtnStyle: React.CSSProperties = {
-    position: "relative",
-    top: "auto",
-    right: "auto",
-    marginTop: 4,
-    backgroundColor: "rgba(229, 57, 53, 0.85)",
-    border: "none",
-    borderRadius: 4,
-    color: "white",
-    width: 24,
-    height: 24,
-    cursor: "pointer",
-    fontWeight: "bold",
-  };
-
-  const saveBtnStyle: React.CSSProperties = {
-    padding: 12,
-    backgroundColor: "#4CAF50",
-    color: "#fff",
-    border: "none",
-    borderRadius: 6,
-    width: "100%",
-    cursor: "pointer",
-    marginTop: 16,
   };
 
   return (
@@ -321,7 +321,7 @@ export default function PracticeAddPage() {
           ))}
         </div>
 
-        {/* ここに単元名・授業時間数等の情報表示は無し */}
+        {/* 単元名・授業時間数などの情報はここには表示しない */}
 
         <button
           type="submit"
