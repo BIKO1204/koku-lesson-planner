@@ -51,7 +51,9 @@ export default function HistoryPage() {
   const router = useRouter();
 
   // タブレットなどの横幅でmaxWidthを調整するためのwindow幅監視
-  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 800);
+  const [windowWidth, setWindowWidth] = useState<number>(
+    typeof window !== "undefined" ? window.innerWidth : 800
+  );
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -101,6 +103,10 @@ export default function HistoryPage() {
     el.style.margin = "0";
     el.style.padding = "0";
 
+    // スクロール位置リセット（空白ページ回避に効果的）
+    el.scrollTop = 0;
+    el.scrollLeft = 0;
+
     await Promise.all(
       Array.from(el.querySelectorAll("img")).map(
         (img) =>
@@ -123,7 +129,7 @@ export default function HistoryPage() {
           }_実践記録.pdf`,
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         html2canvas: { useCORS: true, scale: 1.5 },
-        pagebreak: { mode: ["avoid-all"] },
+        pagebreak: { mode: ["css", "legacy"] },
       })
       .save();
 
@@ -156,7 +162,7 @@ export default function HistoryPage() {
         margin: [5, 5, 5, 5],
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         html2canvas: { useCORS: true, scale: 1.5 },
-        pagebreak: { mode: ["avoid-all"] },
+        pagebreak: { mode: ["css", "legacy"] },
       })
       .outputPdf("blob");
 
@@ -310,7 +316,9 @@ export default function HistoryPage() {
       </label>
 
       {sorted.length === 0 ? (
-        <p style={{ textAlign: "center", fontSize: "1.2rem" }}>まだ実践記録がありません。</p>
+        <p style={{ textAlign: "center", fontSize: "1.2rem" }}>
+          まだ実践記録がありません。
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column" }}>
           {sorted.map((r, idx) => {
@@ -324,41 +332,75 @@ export default function HistoryPage() {
                     <div style={planBlockStyle}>
                       <strong>授業案</strong>
                       <div>
-                        <p><strong>教科書名：</strong>{plan.result["教科書名"] || "－"}</p>
-                        <p><strong>単元名：</strong>{plan.result["単元名"] || "－"}</p>
-                        <p><strong>授業時間数：</strong>{plan.result["授業時間数"] || "－"}時間</p>
-                        <p><strong>単元の目標：</strong>{plan.result["単元の目標"] || "－"}</p>
+                        <p>
+                          <strong>教科書名：</strong>
+                          {plan.result["教科書名"] || "－"}
+                        </p>
+                        <p>
+                          <strong>単元名：</strong>
+                          {plan.result["単元名"] || "－"}
+                        </p>
+                        <p>
+                          <strong>授業時間数：</strong>
+                          {plan.result["授業時間数"] || "－"}時間
+                        </p>
+                        <p>
+                          <strong>単元の目標：</strong>
+                          {plan.result["単元の目標"] || "－"}
+                        </p>
 
                         {plan.result["評価の観点"] && (
                           <div style={{ marginTop: 8 }}>
                             <strong>評価の観点：</strong>
                             <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {Object.entries(plan.result["評価の観点"]).map(([key, values]) => (
-                                <li key={key}>
-                                  <strong>{key}:</strong>{" "}
-                                  {Array.isArray(values) ? values.join("、") : String(values)}
-                                </li>
-                              ))}
+                              {Object.entries(plan.result["評価の観点"]).map(
+                                ([key, values]) => {
+                                  // 「評価の観点」の各文章に（1）、（2）、（3）を振る処理
+                                  let numberedValues = values;
+                                  if (Array.isArray(values)) {
+                                    numberedValues = values.map(
+                                      (v, i) => `（${i + 1}）${v}`
+                                    );
+                                  }
+                                  return (
+                                    <li key={key}>
+                                      <strong>{key}:</strong>{" "}
+                                      {Array.isArray(numberedValues)
+                                        ? numberedValues.join("、")
+                                        : String(numberedValues)}
+                                    </li>
+                                  );
+                                }
+                              )}
                             </ul>
                           </div>
                         )}
 
-                        <p><strong>育てたい子どもの姿：</strong>{plan.result["育てたい子どもの姿"] || "－"}</p>
+                        <p>
+                          <strong>育てたい子どもの姿：</strong>
+                          {plan.result["育てたい子どもの姿"] || "－"}
+                        </p>
 
-                        <p><strong>言語活動の工夫：</strong>{plan.result["言語活動の工夫"] || "－"}</p>
+                        <p>
+                          <strong>言語活動の工夫：</strong>
+                          {plan.result["言語活動の工夫"] || "－"}
+                        </p>
 
                         {plan.result["授業の流れ"] && (
                           <div style={{ marginTop: 8 }}>
                             <strong>授業の流れ：</strong>
                             <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {Object.entries(plan.result["授業の流れ"]).map(([key, val]) => {
-                                const content = typeof val === "string" ? val : JSON.stringify(val);
-                                return (
-                                  <li key={key}>
-                                    <strong>{key}:</strong> {content}
-                                  </li>
-                                );
-                              })}
+                              {Object.entries(plan.result["授業の流れ"]).map(
+                                ([key, val]) => {
+                                  const content =
+                                    typeof val === "string" ? val : JSON.stringify(val);
+                                  return (
+                                    <li key={key}>
+                                      <strong>{key}:</strong> {content}
+                                    </li>
+                                  );
+                                }
+                              )}
                             </ul>
                           </div>
                         )}
@@ -387,7 +429,9 @@ export default function HistoryPage() {
                     >
                       {r.boardImages.map((img, i) => (
                         <div key={`${img.name}-${i}`} style={boardImageContainerStyle}>
-                          <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
+                          <div style={{ marginBottom: 6, fontWeight: "bold" }}>
+                            板書{i + 1}
+                          </div>
                           <img
                             src={img.src}
                             alt={img.name}
@@ -416,16 +460,25 @@ export default function HistoryPage() {
                     justifyContent: "flex-start",
                   }}
                 >
-                  <button onClick={() => handleExportRecordPdf(r.lessonId)} style={pdfBtn}>
+                  <button
+                    onClick={() => handleExportRecordPdf(r.lessonId)}
+                    style={pdfBtn}
+                  >
                     📄 PDF出力
                   </button>
-                  <button onClick={() => handleDriveSave(r.lessonId)} style={driveBtn}>
+                  <button
+                    onClick={() => handleDriveSave(r.lessonId)}
+                    style={driveBtn}
+                  >
                     ☁️ Drive保存
                   </button>
                   <Link href={`/practice/add/${r.lessonId}`}>
                     <button style={actionBtn}>✏️ 編集</button>
                   </Link>
-                  <button onClick={() => handleDelete(r.lessonId)} style={deleteBtn}>
+                  <button
+                    onClick={() => handleDelete(r.lessonId)}
+                    style={deleteBtn}
+                  >
                     🗑 削除
                   </button>
                 </div>
