@@ -183,20 +183,36 @@ export default function HistoryPage() {
     boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
     wordBreak: "break-word",
   };
-  const actionBtn: React.CSSProperties = {
+
+  // ボタン共通スタイル
+  const buttonBaseStyle: React.CSSProperties = {
     padding: "8px 12px",
-    backgroundColor: "#4CAF50",
+    fontSize: "0.9rem",
+    borderRadius: 6,
+    cursor: "pointer",
+    width: "100%",      // 幅を100%に揃える
+    minWidth: 120,
+    boxSizing: "border-box",
     color: "white",
     border: "none",
-    borderRadius: 6,
-    fontSize: "0.9rem",
-    cursor: "pointer",
-    width: "100%",
-    minWidth: 120,
+  };
+
+  const actionBtn: React.CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#4CAF50",
     marginBottom: 8,
   };
-  const deleteBtn: React.CSSProperties = { ...actionBtn, backgroundColor: "#f44336" };
-  const pdfBtn: React.CSSProperties = { ...actionBtn, backgroundColor: "#607D8B" };
+  const deleteBtn: React.CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#f44336",
+    marginBottom: 8,
+  };
+  const pdfBtn: React.CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#607D8B",
+    marginBottom: 8,
+  };
+
   const planBlockStyle: React.CSSProperties = {
     backgroundColor: "#fafafa",
     border: "1px solid #ccc",
