@@ -50,6 +50,15 @@ export default function HistoryPage() {
   );
   const router = useRouter();
 
+  // タブレットなどの横幅でmaxWidthを調整するためのwindow幅監視
+  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 800);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useEffect(() => {
     getAllRecords()
       .then(setRecords)
@@ -86,6 +95,12 @@ export default function HistoryPage() {
     const el = document.getElementById(`record-${lessonId}`);
     if (!el) return alert("PDF化用の要素が見つかりませんでした。");
 
+    // PDF出力時に空白を減らすため余白・パディングリセット
+    const oldMargin = el.style.margin;
+    const oldPadding = el.style.padding;
+    el.style.margin = "0";
+    el.style.padding = "0";
+
     await Promise.all(
       Array.from(el.querySelectorAll("img")).map(
         (img) =>
@@ -102,15 +117,19 @@ export default function HistoryPage() {
     await html2pdf()
       .from(el)
       .set({
-        margin: [10, 5, 10, 5], // 上・右・下・左 の順で余白を指定（mm単位）
+        margin: [5, 5, 5, 5], // 上・右・下・左（mm）
         filename:
           `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
           }_実践記録.pdf`,
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale: 2 },
+        html2canvas: { useCORS: true, scale: 1.5 },
         pagebreak: { mode: ["avoid-all"] },
       })
       .save();
+
+    // 元のスタイルに戻す
+    el.style.margin = oldMargin;
+    el.style.padding = oldPadding;
   };
 
   const handleDriveSave = async (lessonId: string) => {
@@ -134,9 +153,9 @@ export default function HistoryPage() {
     const pdfBlob: Blob = await html2pdf()
       .from(el)
       .set({
-        margin: [10, 5, 10, 5],
+        margin: [5, 5, 5, 5],
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale: 2 },
+        html2canvas: { useCORS: true, scale: 1.5 },
         pagebreak: { mode: ["avoid-all"] },
       })
       .outputPdf("blob");
@@ -226,19 +245,20 @@ export default function HistoryPage() {
     fontSize: "0.9rem",
   };
 
+  // タブレット以上で広げるためのレスポンシブ対応
   const mainContainerStyle: React.CSSProperties = {
     padding: 16,
     fontFamily: "sans-serif",
-    maxWidth: 600,
+    maxWidth: windowWidth > 768 ? 900 : 600, // 768px以上で900pxに広げる
     width: "100%",
     margin: "0 auto",
   };
 
-  // 追加: 板書写真のコンテナにページ分割抑止スタイルを適用
+  // 板書写真のコンテナにページ分割抑止
   const boardImageContainerStyle: React.CSSProperties = {
     width: "100%",
     marginBottom: 12,
-    pageBreakInside: "avoid", // これでページ分割抑止
+    pageBreakInside: "avoid",
   };
 
   return (
