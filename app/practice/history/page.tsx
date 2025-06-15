@@ -97,13 +97,11 @@ export default function HistoryPage() {
     const el = document.getElementById(`record-${lessonId}`);
     if (!el) return alert("PDF化用の要素が見つかりませんでした。");
 
-    // PDF出力時に空白を減らすため余白・パディングリセット
     const oldMargin = el.style.margin;
     const oldPadding = el.style.padding;
     el.style.margin = "0";
     el.style.padding = "0";
 
-    // スクロール位置リセット（空白ページ回避に効果的）
     el.scrollTop = 0;
     el.scrollLeft = 0;
 
@@ -123,17 +121,15 @@ export default function HistoryPage() {
     await html2pdf()
       .from(el)
       .set({
-        margin: [5, 5, 5, 5], // 上・右・下・左（mm）
+        margin: [5, 5, 5, 5],
         filename:
-          `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
-          }_実践記録.pdf`,
+          `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         html2canvas: { useCORS: true, scale: 1.5 },
         pagebreak: { mode: ["css", "legacy"] },
       })
       .save();
 
-    // 元のスタイルに戻す
     el.style.margin = oldMargin;
     el.style.padding = oldPadding;
   };
@@ -173,8 +169,7 @@ export default function HistoryPage() {
     try {
       await uploadToDrive(
         pdfBlob,
-        `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId
-        }_実践記録.pdf`,
+        `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
         "application/pdf",
         folderId
       );
@@ -184,6 +179,51 @@ export default function HistoryPage() {
     }
   };
 
+  // ここからが新規追加部分
+  // ファイル選択時にbase64に変換して追加する関数
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+
+    // ファイルをBase64に変換する関数
+    const convertToBase64 = (file: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("Base64変換に失敗しました"));
+        };
+        reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
+      });
+    };
+
+    try {
+      const base64Images = await Promise.all(files.map((file) => convertToBase64(file)));
+
+      const newImages: BoardImage[] = base64Images.map((base64, index) => ({
+        name: files[index].name,
+        src: base64,
+      }));
+
+      // 既存のboardImagesに追加（ここは直すべき箇所として、現在の仕様に応じて修正してください）
+      // ここでは最新のrecordsの先頭の実践記録に追加する例（適宜調整が必要）
+      setRecords((prev) => {
+        if (prev.length === 0) return prev;
+        const updatedRecord = { ...prev[0] };
+        updatedRecord.boardImages = [...(updatedRecord.boardImages || []), ...newImages];
+        return [updatedRecord, ...prev.slice(1)];
+      });
+    } catch (err) {
+      alert("画像変換に失敗しました");
+      console.error(err);
+    }
+
+    // ファイル選択後はinputをリセットする
+    if (e.target) e.target.value = "";
+  };
+
+  // スタイル定義
   const navLinkStyle: React.CSSProperties = {
     padding: "8px 12px",
     backgroundColor: "#1976d2",
@@ -251,16 +291,14 @@ export default function HistoryPage() {
     fontSize: "0.9rem",
   };
 
-  // タブレット以上で広げるためのレスポンシブ対応
   const mainContainerStyle: React.CSSProperties = {
     padding: 16,
     fontFamily: "sans-serif",
-    maxWidth: windowWidth > 768 ? 900 : 600, // 768px以上で900pxに広げる
+    maxWidth: windowWidth > 768 ? 900 : 600,
     width: "100%",
     margin: "0 auto",
   };
 
-  // 板書写真のコンテナにページ分割抑止
   const boardImageContainerStyle: React.CSSProperties = {
     width: "100%",
     marginBottom: 12,
@@ -302,6 +340,9 @@ export default function HistoryPage() {
       </nav>
 
       <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
+
+      {/* ここに画像アップロードフォームを設置することも可能です */}
+      {/* <input type="file" multiple accept="image/*" onChange={handleFileChange} /> */}
 
       <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
         並び替え：
@@ -355,7 +396,6 @@ export default function HistoryPage() {
                             <ul style={{ marginTop: 4, paddingLeft: 16 }}>
                               {Object.entries(plan.result["評価の観点"]).map(
                                 ([key, values]) => {
-                                  // 「評価の観点」の各文章に（1）、（2）、（3）を振る処理
                                   let numberedValues = values;
                                   if (Array.isArray(values)) {
                                     numberedValues = values.map(
