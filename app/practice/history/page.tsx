@@ -159,7 +159,7 @@ export default function HistoryPage() {
     }
   };
 
-  // スタイル省略（元コード参照してください）
+  // スタイル調整（スマホ対応）
 
   const navLinkStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -174,15 +174,14 @@ export default function HistoryPage() {
   };
   const cardStyle: React.CSSProperties = {
     display: "flex",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
+    flexDirection: "column", // 横並び→縦並びに変更
     backgroundColor: "#fdfdfd",
     border: "2px solid #ddd",
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+    wordBreak: "break-word",
   };
   const actionBtn: React.CSSProperties = {
     padding: "8px 12px",
@@ -193,6 +192,8 @@ export default function HistoryPage() {
     fontSize: "0.9rem",
     cursor: "pointer",
     width: "100%",
+    minWidth: 120,
+    marginBottom: 8,
   };
   const deleteBtn: React.CSSProperties = { ...actionBtn, backgroundColor: "#f44336" };
   const pdfBtn: React.CSSProperties = { ...actionBtn, backgroundColor: "#607D8B" };
@@ -207,8 +208,16 @@ export default function HistoryPage() {
     fontSize: "0.9rem",
   };
 
+  const mainContainerStyle: React.CSSProperties = {
+    padding: 16,
+    fontFamily: "sans-serif",
+    maxWidth: 600,
+    width: "100%",
+    margin: "0 auto",
+  };
+
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 960, margin: "0 auto" }}>
+    <main style={mainContainerStyle}>
       <nav
         style={{
           display: "flex",
@@ -349,10 +358,10 @@ export default function HistoryPage() {
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
+                    flexWrap: "wrap",
                     gap: 8,
-                    marginLeft: 16,
-                    width: 120,
+                    marginTop: 16,
+                    justifyContent: "flex-start",
                   }}
                 >
                   <button onClick={() => handleExportRecordPdf(r.lessonId)} style={pdfBtn}>
