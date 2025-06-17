@@ -169,9 +169,7 @@ export default function HistoryPage() {
       await uploadToDrive(
         pdfBlob,
         `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
-        "application/pdf",
-        folderId
-      );
+        "application/pdf");
       alert("Driveへの保存が完了しました。");
     } catch {
       alert("Drive保存に失敗しました。");
