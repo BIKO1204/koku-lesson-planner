@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import type { ReactNode } from "react";
-import { useSession, signIn } from "next-auth/react";
+import { useSession, signIn, signOut } from "next-auth/react";
 
 type AuthWrapperProps = {
   children: ReactNode;
@@ -22,7 +22,20 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   }
 
   if (status === "authenticated") {
-    return <>{children}</>;
+    return (
+      <>
+        {/* ログアウトボタンをここに追加 */}
+        <button
+          onClick={() => signOut({ callbackUrl: "/" })}
+          style={{ position: "fixed", top: 10, right: 10 }}
+        >
+          ログアウト
+        </button>
+
+        {/* 認証済みコンテンツを表示 */}
+        {children}
+      </>
+    );
   }
 
   return null;
