@@ -19,6 +19,13 @@ type EducationHistory = EducationModel & {
   note: string;
 };
 
+// 「、（数字）」の前の読点を削除する補助関数
+function removeCommaBeforeNumberedList(text: string) {
+  // 「、（数字）」の前の読点だけを消す
+  // 例：「、（2）」→「（2）」
+  return text.replace(/、(?=（\d+）)/g, "");
+}
+
 export default function CreateModelPage() {
   const router = useRouter();
 
@@ -45,12 +52,20 @@ export default function CreateModelPage() {
 
   const handleSave = () => {
     setError("");
+
+    // 必須項目トリム＋読点削除
+    const trimmedName = form.name.trim();
+    const trimmedPhilosophy = form.philosophy.trim();
+    const trimmedEvaluationFocus = removeCommaBeforeNumberedList(form.evaluationFocus.trim());
+    const trimmedLanguageFocus = form.languageFocus.trim();
+    const trimmedChildFocus = form.childFocus.trim();
+
     if (
-      !form.name.trim() ||
-      !form.philosophy.trim() ||
-      !form.evaluationFocus.trim() ||
-      !form.languageFocus.trim() ||
-      !form.childFocus.trim()
+      !trimmedName ||
+      !trimmedPhilosophy ||
+      !trimmedEvaluationFocus ||
+      !trimmedLanguageFocus ||
+      !trimmedChildFocus
     ) {
       setError("すべての必須項目を入力してください。");
       return;
@@ -62,18 +77,26 @@ export default function CreateModelPage() {
     if (editId) {
       updatedModels = models.map((m) =>
         m.id === editId
-          ? { ...m, ...form, updatedAt: now }
+          ? {
+              ...m,
+              name: trimmedName,
+              philosophy: trimmedPhilosophy,
+              evaluationFocus: trimmedEvaluationFocus,
+              languageFocus: trimmedLanguageFocus,
+              childFocus: trimmedChildFocus,
+              updatedAt: now,
+            }
           : m
       );
     } else {
       updatedModels = [
         {
           id: uuidv4(),
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
+          name: trimmedName,
+          philosophy: trimmedPhilosophy,
+          evaluationFocus: trimmedEvaluationFocus,
+          languageFocus: trimmedLanguageFocus,
+          childFocus: trimmedChildFocus,
           updatedAt: now,
         },
         ...models,
@@ -85,11 +108,11 @@ export default function CreateModelPage() {
 
     const newHistoryEntry: EducationHistory = {
       id: editId || updatedModels[0].id,
-      name: form.name.trim(),
-      philosophy: form.philosophy.trim(),
-      evaluationFocus: form.evaluationFocus.trim(),
-      languageFocus: form.languageFocus.trim(),
-      childFocus: form.childFocus.trim(),
+      name: trimmedName,
+      philosophy: trimmedPhilosophy,
+      evaluationFocus: trimmedEvaluationFocus,
+      languageFocus: trimmedLanguageFocus,
+      childFocus: trimmedChildFocus,
       updatedAt: now,
       note: form.note.trim() || "（更新時にメモなし）",
     };
