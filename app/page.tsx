@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "./contexts/AuthContext";
-import FileUploader from "../components/FileUploader"; // ← ここを修正
+// import FileUploader from "../components/FileUploader"; // 削除
 
 export default function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -73,11 +73,8 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* ファイルアップローダー */}
-      <section>
-        <h2 style={{ marginBottom: 12 }}>ファイルアップロード</h2>
-        <FileUploader />
-      </section>
+      {/* ファイルアップローダー部分は削除しました */}
     </main>
   );
 }
+

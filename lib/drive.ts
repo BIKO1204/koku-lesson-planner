@@ -1,13 +1,19 @@
 import { getSession } from "next-auth/react";
 
+/**
+ * Googleドライブのマイドライブ直下にファイルをアップロードする関数
+ * 
+ * @param blob - アップロードするファイルのBlobデータ
+ * @param filename - 保存するファイル名
+ * @param mimeType - ファイルのMIMEタイプ
+ * @returns アップロードしたファイルのID
+ */
 export async function uploadToDrive(
   blob: Blob,
   filename: string,
-  mimeType: string,
-  folderId?: string
+  mimeType: string
 ): Promise<string> {
   const session = await getSession();
-  // 型拡張がまだなら any で回避
   const accessToken = (session as any)?.accessToken as string | undefined;
 
   if (!accessToken) {
@@ -17,7 +23,7 @@ export async function uploadToDrive(
   const metadata = {
     name: filename,
     mimeType,
-    ...(folderId ? { parents: [folderId] } : {}),
+    // parents指定なし＝マイドライブ直下に保存
   };
 
   const form = new FormData();
