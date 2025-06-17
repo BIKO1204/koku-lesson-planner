@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
@@ -162,16 +162,17 @@ export default function HistoryPage() {
       .outputPdf("blob");
 
     const { uploadToDrive } = await import("../../../lib/drive");
-    const folderId = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_FOLDER_ID;
-    if (!folderId) return alert("DriveフォルダIDが未設定です。");
 
     try {
       await uploadToDrive(
         pdfBlob,
         `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
-        "application/pdf");
+        "application/pdf"
+        // フォルダIDは渡さずマイドライブ直下に保存
+      );
       alert("Driveへの保存が完了しました。");
-    } catch {
+    } catch (e) {
+      console.error(e);
       alert("Drive保存に失敗しました。");
     }
   };
