@@ -53,9 +53,12 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// safeRender 修正：配列は JSON.stringify で文字列化（「、」結合しない）
+// safeRender 修正：読点「、」を括弧数字の前から削除
 function safeRender(value: any): string {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") {
+    // 「、」が「（数字）」の前にある場合は消す
+    return value.replace(/、(?=（[0-9]+）)/g, "");
+  }
   if (typeof value === "number") return value.toString();
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return JSON.stringify(value, null, 2);
