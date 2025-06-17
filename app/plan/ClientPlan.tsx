@@ -331,11 +331,12 @@ ${languageActivities}
 
   // Google Driveアップロード処理
   const uploadPdfToGoogleDrive = async (pdfBlob: Blob, fileName: string, accessToken: string) => {
-    const metadata = {
-      name: fileName,
-      mimeType: "application/pdf",
-      parents: [GOOGLE_DRIVE_FOLDER_ID],
-    };
+   const metadata = {
+  name: fileName,
+  mimeType: "application/pdf",
+  // parents指定なし＝Googleドライブのマイドライブ直下に保存されます
+};
+
 
     const formData = new FormData();
     formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
