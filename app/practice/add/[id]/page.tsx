@@ -53,18 +53,17 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// safeRender 修正：
-// ・読点「、」を括弧数字の前から削除（空白を挟む場合も対応）
+// safeRender 修正済み完全版：
+// ・「、」と空白をまとめて削除し、「（1）」～「（5）」の直前の読点をなくす（全角括弧）
 // ・配列の場合は、各要素にsafeRenderをかけてから「、」で結合
 function safeRender(value: any): string {
   if (typeof value === "string") {
-    // 読点と空白を括弧付き数字の直前から消す（全角括弧）
-    return value.replace(/、\s*(?=（[0-9]+）)/g, "");
+    // 「、」と空白を「（1）」〜「（5）」の前からまとめて削除
+    return value.replace(/(、\s*)+(?=（[1-5]）)/g, "");
   }
   if (typeof value === "number") return value.toString();
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) {
-    // 配列は要素ごとにsafeRenderし、「、」で連結
     return value.map(safeRender).join("、");
   }
   if (typeof value === "object") return JSON.stringify(value, null, 2);
