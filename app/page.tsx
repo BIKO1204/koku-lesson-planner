@@ -38,62 +38,75 @@ function Dashboard() {
   ];
 
   return (
-    <main
-      style={{
-        padding: 24,
-        fontFamily: "sans-serif",
-        maxWidth: 500,
-        margin: "0 auto",
-      }}
-    >
-      {/* ヘッダー */}
-      <h1
-        style={{
-          fontSize: "2rem",
-          textAlign: "center",
-          lineHeight: 1.3,
-          marginBottom: 24,
-          whiteSpace: "normal",
-          wordBreak: "break-word",
-        }}
-      >
-        🌟 国語授業プランナーへ
-        <br />
-        ようこそ！
-      </h1>
+    <>
+      <style>{`
+        /* スマホ向けにh1を調整 */
+        @media (max-width: 600px) {
+          h1 {
+            font-size: 1.8rem !important;
+            line-height: 1.4 !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+          }
+        }
+      `}</style>
 
-      {/* ボタンリスト */}
-      <div
+      <main
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-          marginBottom: 32,
+          padding: 24,
+          fontFamily: "sans-serif",
+          maxWidth: 500,
+          margin: "0 auto",
         }}
       >
-        {menuItems.map(({ href, emoji, label, bg }) => (
-          <Link
-            key={href}
-            href={href}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              padding: "16px",
-              backgroundColor: bg,
-              borderRadius: 8,
-              textDecoration: "none",
-              color: "white",
-              fontSize: "1.1rem",
-              fontWeight: "500",
-              justifyContent: "center",
-            }}
-          >
-            <span style={{ fontSize: "1.6rem", marginRight: 8 }}>{emoji}</span>
-            <span>{label}</span>
-          </Link>
-        ))}
-      </div>
-    </main>
+        {/* ヘッダー */}
+        <h1
+          style={{
+            fontSize: "2rem",
+            textAlign: "center",
+            lineHeight: 1.3,
+            marginBottom: 24,
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+          }}
+        >
+          🌟 国語授業プランナーへ
+          <br />
+          ようこそ！
+        </h1>
+
+        {/* ボタンリスト */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            marginBottom: 32,
+          }}
+        >
+          {menuItems.map(({ href, emoji, label, bg }) => (
+            <Link
+              key={href}
+              href={href}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "16px",
+                backgroundColor: bg,
+                borderRadius: 8,
+                textDecoration: "none",
+                color: "white",
+                fontSize: "1.1rem",
+                fontWeight: "500",
+                justifyContent: "center",
+              }}
+            >
+              <span style={{ fontSize: "1.6rem", marginRight: 8 }}>{emoji}</span>
+              <span>{label}</span>
+            </Link>
+          ))}
+        </div>
+      </main>
+    </>
   );
 }
-
