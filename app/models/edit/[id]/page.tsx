@@ -3,7 +3,6 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import UpdateApprovalUI from "@/components/UpdateApprovalUI";
 
 export default function StyleDetailPage() {
   const params = useParams();
@@ -12,7 +11,6 @@ export default function StyleDetailPage() {
 
   const [style, setStyle] = useState<any>(null);
   const [relatedPlans, setRelatedPlans] = useState<any[]>([]);
-  const [showUpdateUI, setShowUpdateUI] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -25,51 +23,6 @@ export default function StyleDetailPage() {
     const matchedPlans = plans.filter((p: any) => p.usedStyleName === foundStyle?.name);
     setRelatedPlans(matchedPlans);
   }, [id]);
-
-  const fetchUpdateProposal = async (feedbackText: string, currentModel: any) => {
-    try {
-      const res = await fetch("/api/ai-analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedbackText, currentModel }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        console.error("API error:", data);
-        alert(`APIエラー: ${data.error || '不明なエラー'}`);
-        return null;
-      }
-
-      return data;
-    } catch (error) {
-      alert("AI解析に失敗しました。");
-      console.error(error);
-      return null;
-    }
-  };
-
-  const handleUpdate = (newVersion: any) => {
-    if (!style) return;
-
-    const styleModels = JSON.parse(localStorage.getItem("styleModels") || "[]");
-    const updatedModels = styleModels.map((s: any) =>
-      s.id === id ? { ...s, ...newVersion } : s
-    );
-    localStorage.setItem("styleModels", JSON.stringify(updatedModels));
-    setStyle({ ...style, ...newVersion });
-    setShowUpdateUI(false);
-
-    const history = JSON.parse(localStorage.getItem("educationStylesHistory") || "[]");
-    const newHistoryEntry = {
-      id: id,
-      updatedAt: new Date().toISOString(),
-      ...newVersion,
-      note: "AI解析による更新",
-    };
-    localStorage.setItem("educationStylesHistory", JSON.stringify([newHistoryEntry, ...history]));
-  };
 
   if (!style) return <p style={{ padding: "2rem" }}>スタイルを読み込んでいます...</p>;
 
@@ -160,37 +113,7 @@ export default function StyleDetailPage() {
         ▶︎ このスタイルで授業を作成する
       </button>
 
-      {/* AI振り返り解析ボタン */}
-      <button
-        onClick={() => setShowUpdateUI(true)}
-        style={{
-          padding: "0.8rem 1.2rem",
-          fontSize: "1.1rem",
-          backgroundColor: "#FF9800",
-          color: "white",
-          borderRadius: "10px",
-          border: "none",
-          marginBottom: "2rem",
-          cursor: "pointer",
-        }}
-      >
-        🔄 振り返りをAIで解析・モデルを更新する
-      </button>
-
-      {/* 振り返りAI承認UI */}
-      {showUpdateUI && (
-        <UpdateApprovalUI
-          currentModel={{
-            philosophy: style.philosophy,
-            evaluationFocus: style.evaluationFocus,
-            languageFocus: style.languageFocus,
-            childFocus: style.childFocus,
-          }}
-          onUpdate={handleUpdate}
-          onCancel={() => setShowUpdateUI(false)}
-          fetchUpdateProposal={fetchUpdateProposal}
-        />
-      )}
+      {/* 振り返りAI解析関連のボタン・UIは一切なし */}
 
       {/* 関連授業案一覧 */}
       <h3 style={{ fontSize: "1.3rem", marginBottom: "1rem" }}>このスタイルで作成した授業案</h3>
