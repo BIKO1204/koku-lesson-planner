@@ -119,11 +119,13 @@ export default function CreateModelPage() {
       <style>{`
         body {
           background-color: #f5f5f7;
+          margin: 0;
+          padding: 0;
         }
         main {
           padding: 2rem 3rem;
           max-width: 1100px;
-          margin: 0 auto;
+          margin: 2rem auto;
           font-family: sans-serif;
           background-color: #fff;
           border-radius: 12px;
@@ -173,7 +175,6 @@ export default function CreateModelPage() {
         section.form-section {
           padding: 30px 40px;
           border-radius: 10px;
-          border: 1px solid #ddd;
           background-color: #fafafa;
           box-shadow: inset 0 0 8px #e0e0e0;
           margin-bottom: 28px;
@@ -229,6 +230,7 @@ export default function CreateModelPage() {
             max-width: 100%;
             border-radius: 0;
             box-shadow: none;
+            margin: 0.5rem auto;
           }
           label {
             font-size: 1rem;
@@ -251,7 +253,7 @@ export default function CreateModelPage() {
 
       <main>
         <nav>
-          {[ 
+          {[
             ["/", "🏠 ホーム"],
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
