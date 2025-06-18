@@ -227,10 +227,11 @@ export default function CreateModelPage() {
         button.save-button:hover {
           background-color: #43a047;
         }
+
         /* スマホ向け */
         @media (max-width: 600px) {
           main {
-            padding: 1.5rem 1.8rem;
+            padding: 1.5rem 0.5rem !important;
             max-width: 100%;
             border-radius: 0;
             box-shadow: none;
@@ -242,7 +243,7 @@ export default function CreateModelPage() {
           }
           input, textarea {
             font-size: 1.1rem;
-            padding: 12px 14px;
+            padding: 12px 8px !important;
           }
           button.save-button {
             width: 100%;
