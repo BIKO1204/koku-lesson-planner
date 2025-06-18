@@ -53,7 +53,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// safeRender 修正：読点「、」を括弧数字の前から削除
+// safeRender 修正：読点「、」を括弧数字の前から削除し、配列は各要素にsafeRender適用して結合
 function safeRender(value: any): string {
   if (typeof value === "string") {
     // 「、」が「（数字）」の前にある場合は消す
@@ -61,7 +61,10 @@ function safeRender(value: any): string {
   }
   if (typeof value === "number") return value.toString();
   if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return JSON.stringify(value, null, 2);
+  if (Array.isArray(value)) {
+    // 配列は要素ごとにsafeRenderをかけて、「、」で連結
+    return value.map(safeRender).join("、");
+  }
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
@@ -117,7 +120,6 @@ export default function PracticeAddPage() {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
 
-    // Base64に変換して保存
     const newImages: BoardImage[] = [];
     for (const file of files) {
       try {
@@ -407,7 +409,7 @@ export default function PracticeAddPage() {
                       <ul style={{ paddingLeft: 20, marginTop: 4 }}>
                         {(Array.isArray(v) ? v : []).map((item, i) => (
                           <li key={i}>
-                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {item}
+                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {safeRender(item)}
                           </li>
                         ))}
                       </ul>
