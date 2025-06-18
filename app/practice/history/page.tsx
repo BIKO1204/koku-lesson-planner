@@ -168,7 +168,6 @@ export default function HistoryPage() {
         pdfBlob,
         `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
         "application/pdf"
-        // フォルダIDは渡さずマイドライブ直下に保存
       );
       alert("Driveへの保存が完了しました。");
     } catch (e) {
@@ -344,25 +343,43 @@ export default function HistoryPage() {
                         {plan.result["評価の観点"] && (
                           <div style={{ marginTop: 8 }}>
                             <strong>評価の観点：</strong>
+
+                            <strong>知識・技能</strong>
                             <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {Object.entries(plan.result["評価の観点"]).map(
-                                ([key, values]) => {
-                                  let numberedValues = values;
-                                  if (Array.isArray(values)) {
-                                    numberedValues = values.map(
-                                      (v, i) => `（${i + 1}）${v}`
-                                    );
-                                  }
-                                  return (
-                                    <li key={key}>
-                                      <strong>{key}:</strong>{" "}
-                                      {Array.isArray(numberedValues)
-                                        ? numberedValues.join("、")
-                                        : String(numberedValues)}
-                                    </li>
-                                  );
-                                }
-                              )}
+                              {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+                                ? plan.result["評価の観点"]["知識・技能"]
+                                : plan.result["評価の観点"]?.["知識・技能"]
+                                ? [plan.result["評価の観点"]["知識・技能"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
+                            </ul>
+
+                            <strong>思考・判断・表現</strong>
+                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                              {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+                                ? plan.result["評価の観点"]["思考・判断・表現"]
+                                : plan.result["評価の観点"]?.["思考・判断・表現"]
+                                ? [plan.result["評価の観点"]["思考・判断・表現"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
+                            </ul>
+
+                            <strong>主体的に学習に取り組む態度</strong>
+                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                              {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
+                                ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+                                : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                                ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+                                : plan.result["評価の観点"]?.["態度"]
+                                ? [plan.result["評価の観点"]["態度"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
                             </ul>
                           </div>
                         )}
