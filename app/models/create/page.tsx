@@ -43,6 +43,11 @@ export default function CreateModelPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  // 句点の後ろの読点「、」を削除する関数
+  const cleanText = (text: string) => {
+    return text.trim().replace(/。(、)+/g, "。");
+  };
+
   const handleSave = () => {
     setError("");
     if (
@@ -57,12 +62,21 @@ export default function CreateModelPage() {
     }
 
     const now = new Date().toISOString();
+
     let updatedModels: EducationModel[];
 
     if (editId) {
       updatedModels = models.map((m) =>
         m.id === editId
-          ? { ...m, ...form, updatedAt: now }
+          ? {
+              ...m,
+              name: form.name.trim(),
+              philosophy: cleanText(form.philosophy),
+              evaluationFocus: cleanText(form.evaluationFocus),
+              languageFocus: cleanText(form.languageFocus),
+              childFocus: cleanText(form.childFocus),
+              updatedAt: now,
+            }
           : m
       );
     } else {
@@ -70,10 +84,10 @@ export default function CreateModelPage() {
         {
           id: uuidv4(),
           name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
+          philosophy: cleanText(form.philosophy),
+          evaluationFocus: cleanText(form.evaluationFocus),
+          languageFocus: cleanText(form.languageFocus),
+          childFocus: cleanText(form.childFocus),
           updatedAt: now,
         },
         ...models,
@@ -86,10 +100,10 @@ export default function CreateModelPage() {
     const newHistoryEntry: EducationHistory = {
       id: editId || updatedModels[0].id,
       name: form.name.trim(),
-      philosophy: form.philosophy.trim(),
-      evaluationFocus: form.evaluationFocus.trim(),
-      languageFocus: form.languageFocus.trim(),
-      childFocus: form.childFocus.trim(),
+      philosophy: cleanText(form.philosophy),
+      evaluationFocus: cleanText(form.evaluationFocus),
+      languageFocus: cleanText(form.languageFocus),
+      childFocus: cleanText(form.childFocus),
       updatedAt: now,
       note: form.note.trim() || "（更新時にメモなし）",
     };
