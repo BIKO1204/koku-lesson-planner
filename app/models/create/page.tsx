@@ -118,18 +118,19 @@ export default function CreateModelPage() {
     <>
       <style>{`
         body {
-          background-color: #f5f5f7;
+          background-color: #f7f8fa;
           margin: 0;
           padding: 0;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+            Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
         }
         main {
-          padding: 2rem 3rem;
+          padding: 2.5rem 3rem;
           max-width: 1100px;
-          margin: 2rem auto;
-          font-family: sans-serif;
+          margin: 3rem auto 4rem auto;
           background-color: #fff;
-          border-radius: 12px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.07);
         }
         nav {
           display: flex;
@@ -139,7 +140,7 @@ export default function CreateModelPage() {
           justify-content: center;
         }
         nav a {
-          padding: 8px 12px;
+          padding: 8px 14px;
           background-color: #1976d2;
           color: white;
           border-radius: 6px;
@@ -147,68 +148,71 @@ export default function CreateModelPage() {
           white-space: nowrap;
           flex-shrink: 0;
           transition: background-color 0.3s ease;
+          font-weight: 600;
+          font-size: 1rem;
         }
         nav a.active, nav a:hover {
           background-color: #4caf50;
         }
         h1 {
-          font-size: 2.4rem;
+          font-size: 2.5rem;
           margin-bottom: 2rem;
           text-align: center;
-          color: #333;
-          letter-spacing: 0.03em;
+          color: #222;
+          letter-spacing: 0.02em;
         }
         p.error {
           color: #d32f2f;
           margin-bottom: 1.5rem;
           text-align: center;
-          font-weight: 600;
-          font-size: 1rem;
+          font-weight: 700;
+          font-size: 1.1rem;
         }
         label {
           display: block;
-          margin-bottom: 20px;
+          margin-bottom: 18px;
           font-weight: 600;
           color: #444;
-          font-size: 1.1rem;
+          font-size: 1.15rem;
         }
         section.form-section {
-          padding: 30px 40px;
-          border-radius: 10px;
-          background-color: #fafafa;
-          box-shadow: inset 0 0 8px #e0e0e0;
+          padding: 28px 36px;
+          border-radius: 8px;
+          background-color: #f9fafb;
+          border: 1px solid #ddd;
           margin-bottom: 28px;
         }
         input, textarea {
           width: 100%;
-          padding: 14px 16px;
-          font-size: 1.15rem;
-          border-radius: 8px;
-          border: 1.5px solid #bbb;
-          margin-top: 8px;
+          padding: 16px 18px;
+          font-size: 1.2rem;
+          border-radius: 6px;
+          border: 1.2px solid #bbb;
+          margin-top: 6px;
           box-sizing: border-box;
           font-family: inherit;
           background-color: #fff;
           color: #222;
-          transition: border-color 0.2s ease;
+          transition: border-color 0.25s ease;
+          resize: vertical;
         }
         input:focus, textarea:focus {
           outline: none;
           border-color: #1976d2;
-          box-shadow: 0 0 6px #1976d2aa;
+          box-shadow: 0 0 8px #1976d2cc;
           background-color: #fff;
         }
         label > div.hint {
           font-size: 0.9rem;
           color: #666;
           margin-top: 6px;
-          margin-bottom: 18px;
+          margin-bottom: 16px;
           font-style: italic;
           user-select: none;
         }
         button.save-button {
-          padding: 1rem 3rem;
-          font-size: 1.3rem;
+          padding: 1.1rem 3.2rem;
+          font-size: 1.35rem;
           background-color: #4caf50;
           color: white;
           border: none;
@@ -217,8 +221,8 @@ export default function CreateModelPage() {
           font-weight: 700;
           display: block;
           margin: 0 auto;
-          box-shadow: 0 4px 10px #4caf50aa;
-          transition: background-color 0.3s ease;
+          box-shadow: 0 5px 14px #4caf50bb;
+          transition: background-color 0.35s ease;
         }
         button.save-button:hover {
           background-color: #43a047;
@@ -226,24 +230,24 @@ export default function CreateModelPage() {
         /* スマホ向け */
         @media (max-width: 600px) {
           main {
-            padding: 1rem 1.5rem;
+            padding: 1.5rem 1.8rem;
             max-width: 100%;
             border-radius: 0;
             box-shadow: none;
-            margin: 0.5rem auto;
+            margin: 1rem auto 2rem auto;
           }
           label {
             font-size: 1rem;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
           }
           input, textarea {
-            font-size: 1rem;
+            font-size: 1.1rem;
             padding: 12px 14px;
           }
           button.save-button {
             width: 100%;
-            padding: 1.2rem;
-            font-size: 1.2rem;
+            padding: 1.4rem;
+            font-size: 1.3rem;
           }
           nav {
             justify-content: flex-start;
