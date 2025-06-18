@@ -34,8 +34,16 @@ export default function StyleDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ feedbackText, currentModel }),
       });
-      if (!res.ok) throw new Error("APIエラー");
-      return await res.json();
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("API error:", data);
+        alert(`APIエラー: ${data.error || '不明なエラー'}`);
+        return null;
+      }
+
+      return data;
     } catch (error) {
       alert("AI解析に失敗しました。");
       console.error(error);
@@ -74,10 +82,11 @@ export default function StyleDetailPage() {
       <nav
         style={{
           display: "flex",
-          gap: "1rem",
+          gap: "12px",
           marginBottom: "2rem",
           flexWrap: "wrap",
           justifyContent: "center",
+          alignItems: "center",
         }}
       >
         <Link href="/" style={linkStyle}>🏠 ホーム</Link>

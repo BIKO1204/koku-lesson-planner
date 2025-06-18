@@ -34,12 +34,13 @@ philosophy, evaluationFocus, languageFocus, childFocus
       temperature: 0.7,
     });
 
-    const text = completion.choices[0].message?.content || "{}";
+    const text = completion.choices[0].message?.content ?? "{}";
 
     let updatedModel = {};
     try {
       updatedModel = JSON.parse(text);
-    } catch {
+    } catch (e) {
+      console.error("JSON parse error:", e, text);
       return NextResponse.json(
         { error: "AIの返答がJSON形式ではありません。" },
         { status: 500 }
@@ -55,4 +56,3 @@ philosophy, evaluationFocus, languageFocus, childFocus
     );
   }
 }
-
