@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
@@ -10,11 +10,18 @@ type AuthWrapperProps = {
 
 export default function AuthWrapper({ children }: AuthWrapperProps) {
   const { data: session, status } = useSession();
+  const [isMobile, setIsMobile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      signIn(); // ログインページへリダイレクト
+      signIn();
     }
+
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, [status]);
 
   if (status === "loading") {
@@ -24,53 +31,86 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   if (status === "authenticated") {
     return (
       <>
-        {/* ログアウトボタンをここに追加 */}
-        <button
-          onClick={() => signOut({ callbackUrl: "/" })}
-          aria-label="ログアウト"
-          type="button"
+        {/* ヘッダーのメニュー */}
+        <header
           style={{
             position: "fixed",
-            top: 10,
-            right: 10,
-            padding: "8px 16px",
-            backgroundColor: "#f44336",
-            color: "white",
-            border: "none",
-            borderRadius: 8,
-            cursor: "pointer",
+            top: 0,
+            right: 0,
+            padding: "8px",
             zIndex: 1000,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-            userSelect: "none",
-
-            /* レスポンシブ用 */
-            width: "auto",
-            maxWidth: "90vw",
-            transform: "none",
+            background: "white",
+            borderBottomLeftRadius: 8,
+            boxShadow: "0 0 8px rgba(0,0,0,0.1)",
           }}
-          className="logout-button"
         >
-          ログアウト
-        </button>
+          {/* スマホはメニューボタン表示 */}
+          {isMobile ? (
+            <>
+              <button
+                onClick={() => setMenuOpen((prev) => !prev)}
+                aria-label="メニュー開閉"
+                style={{
+                  fontSize: 24,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                ☰
+              </button>
+              {menuOpen && (
+                <nav
+                  style={{
+                    position: "absolute",
+                    top: "40px",
+                    right: 0,
+                    background: "white",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                    borderRadius: 6,
+                    padding: 8,
+                    minWidth: 120,
+                  }}
+                >
+                  <button
+                    onClick={() => signOut({ callbackUrl: "/" })}
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      border: "none",
+                      backgroundColor: "#f44336",
+                      color: "white",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      fontSize: "1rem",
+                    }}
+                  >
+                    ログアウト
+                  </button>
+                </nav>
+              )}
+            </>
+          ) : (
+            /* PCはそのまま表示 */
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              style={{
+                padding: "6px 12px",
+                border: "1px solid #ccc",
+                borderRadius: 4,
+                cursor: "pointer",
+                fontSize: "0.9rem",
+                color: "#333",
+                background: "transparent",
+              }}
+            >
+              ログアウト
+            </button>
+          )}
+        </header>
 
-        {/* 認証済みコンテンツを表示 */}
-        {children}
-
-        {/* スタイルタグでメディアクエリを入れる */}
-        <style jsx>{`
-          @media (max-width: 600px) {
-            .logout-button {
-              top: 10px !important;
-              right: 50% !important;
-              transform: translateX(50%) !important;
-              width: auto !important;
-              max-width: 90vw !important;
-              padding: 8px 20px !important;
-              font-size: 1rem !important;
-              border-radius: 8px !important;
-            }
-          }
-        `}</style>
+        {/* 認証済みコンテンツ */}
+        <main style={{ paddingTop: 48 }}>{children}</main>
       </>
     );
   }
