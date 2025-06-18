@@ -54,11 +54,8 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 // safeRender 修正済み完全版：
-// ・「、」と空白をまとめて削除し、「（1）」～「（5）」の直前の読点をなくす（全角括弧）
-// ・配列の場合は、各要素にsafeRenderをかけてから「、」で結合
 function safeRender(value: any): string {
   if (typeof value === "string") {
-    // 「、」と空白を「（1）」〜「（5）」の前からまとめて削除
     return value.replace(/(、\s*)+(?=（[1-5]）)/g, "");
   }
   if (typeof value === "number") return value.toString();
@@ -404,18 +401,22 @@ export default function PracticeAddPage() {
               {(lessonPlan.result as any)["評価の観点"] && (
                 <section style={{ marginBottom: 16 }}>
                   <h3>評価の観点</h3>
-                  {Object.entries((lessonPlan.result as any)["評価の観点"]).map(([k, v]) => (
-                    <div key={k}>
-                      <strong>{k}</strong>
-                      <ul style={{ paddingLeft: 20, marginTop: 4 }}>
-                        {(Array.isArray(v) ? v : []).map((item, i) => (
-                          <li key={i}>
-                            <span style={{ fontWeight: "bold" }}>（{i + 1}）</span> {safeRender(item)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+                  {Object.entries((lessonPlan.result as any)["評価の観点"]).map(([category, items]) => {
+                    const numberedItems = Array.isArray(items)
+                      ? items.map((item, i) => `（${i + 1}）${item}`)
+                      : [String(items)];
+
+                    return (
+                      <div key={category} style={{ marginBottom: 8 }}>
+                        <strong>{category}</strong>
+                        <ul style={{ paddingLeft: 20, marginTop: 4 }}>
+                          {numberedItems.map((text, index) => (
+                            <li key={index}>{safeRender(text)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
                 </section>
               )}
 

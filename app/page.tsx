@@ -1,11 +1,9 @@
-// app/page.tsx
 "use client";
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "./contexts/AuthContext";
-// import FileUploader from "../components/FileUploader"; // 削除
 
 export default function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -40,16 +38,39 @@ function Dashboard() {
   ];
 
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 500, margin: "0 auto" }}>
+    <main
+      style={{
+        padding: 24,
+        fontFamily: "sans-serif",
+        maxWidth: 500,
+        margin: "0 auto",
+      }}
+    >
       {/* ヘッダー */}
-      <h1 style={{ fontSize: "2rem", textAlign: "center", lineHeight: 1.3, marginBottom: 24 }}>
+      <h1
+        style={{
+          fontSize: "2rem",
+          textAlign: "center",
+          lineHeight: 1.3,
+          marginBottom: 24,
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+        }}
+      >
         🌟 国語授業プランナーへ
         <br />
         ようこそ！
       </h1>
 
       {/* ボタンリスト */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 32 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+          marginBottom: 32,
+        }}
+      >
         {menuItems.map(({ href, emoji, label, bg }) => (
           <Link
             key={href}
@@ -72,8 +93,6 @@ function Dashboard() {
           </Link>
         ))}
       </div>
-
-      {/* ファイルアップローダー部分は削除しました */}
     </main>
   );
 }
