@@ -26,7 +26,6 @@ export default function StyleDetailPage() {
     setRelatedPlans(matchedPlans);
   }, [id]);
 
-  // AIに振り返り文章を送り更新案を取得する関数
   const fetchUpdateProposal = async (feedbackText: string, currentModel: any) => {
     try {
       const res = await fetch("/api/ai-analyze", {
@@ -54,7 +53,6 @@ export default function StyleDetailPage() {
   const handleUpdate = (newVersion: any) => {
     if (!style) return;
 
-    // ローカルの教育観モデルを更新
     const styleModels = JSON.parse(localStorage.getItem("styleModels") || "[]");
     const updatedModels = styleModels.map((s: any) =>
       s.id === id ? { ...s, ...newVersion } : s
@@ -63,7 +61,6 @@ export default function StyleDetailPage() {
     setStyle({ ...style, ...newVersion });
     setShowUpdateUI(false);
 
-    // 教育観履歴に追記（最新が先頭）
     const history = JSON.parse(localStorage.getItem("educationStylesHistory") || "[]");
     const newHistoryEntry = {
       id: id,
@@ -78,15 +75,51 @@ export default function StyleDetailPage() {
 
   return (
     <main style={{ padding: "2rem", maxWidth: "90vw", margin: "0 auto", fontFamily: "sans-serif" }}>
-      {/* ナビゲーション */}
-      <nav className="top-nav">
-        <Link href="/" className="nav-link">🏠 ホーム</Link>
-        <Link href="/plan" className="nav-link">📋 授業作成</Link>
-        <Link href="/plan/history" className="nav-link">📖 計画履歴</Link>
-        <Link href="/practice/history" className="nav-link">📷 実践履歴</Link>
-        <Link href="/models/create" className="nav-link">✏️ 教育観作成</Link>
-        <Link href="/models" className="nav-link">📚 教育観一覧</Link>
-        <Link href="/models/history" className="nav-link">🕒 教育観履歴</Link>
+      {/* 上部ナビゲーション：アイコンボタンを横並びでスクロール可能に */}
+      <nav
+        style={{
+          display: "flex",
+          gap: "12px",
+          marginBottom: "2rem",
+          overflowX: "auto",
+          paddingBottom: "0.5rem",
+          WebkitOverflowScrolling: "touch",
+          justifyContent: "center",
+          alignItems: "center",
+          flexWrap: "nowrap",
+        }}
+      >
+        {[
+          { href: "/", label: "🏠 ホーム" },
+          { href: "/plan", label: "📋 授業作成" },
+          { href: "/plan/history", label: "📖 計画履歴" },
+          { href: "/practice/history", label: "📷 実践履歴" },
+          { href: "/models/create", label: "✏️ 教育観作成" },
+          { href: "/models", label: "📚 教育観一覧" },
+          { href: "/models/history", label: "🕒 教育観履歴" },
+        ].map(({ href, label }) => (
+          <Link
+            key={href}
+            href={href}
+            style={{
+              flexShrink: 0,
+              padding: "0.5rem 1rem",
+              backgroundColor: "#1976d2",
+              color: "white",
+              borderRadius: "8px",
+              textDecoration: "none",
+              fontWeight: "bold",
+              fontSize: "1rem",
+              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              userSelect: "none",
+            }}
+          >
+            {label}
+          </Link>
+        ))}
       </nav>
 
       <nav style={{ marginBottom: "2rem" }}>
@@ -113,7 +146,16 @@ export default function StyleDetailPage() {
       {/* 授業作成ボタン */}
       <button
         onClick={() => router.push(`/plan?styleId=${style.id}`)}
-        style={buttonStyleGreen}
+        style={{
+          padding: "0.8rem 1.2rem",
+          fontSize: "1.1rem",
+          backgroundColor: "#4CAF50",
+          color: "white",
+          borderRadius: "10px",
+          border: "none",
+          marginBottom: "2rem",
+          cursor: "pointer",
+        }}
       >
         ▶︎ このスタイルで授業を作成する
       </button>
@@ -121,7 +163,16 @@ export default function StyleDetailPage() {
       {/* AI振り返り解析ボタン */}
       <button
         onClick={() => setShowUpdateUI(true)}
-        style={buttonStyleOrange}
+        style={{
+          padding: "0.8rem 1.2rem",
+          fontSize: "1.1rem",
+          backgroundColor: "#FF9800",
+          color: "white",
+          borderRadius: "10px",
+          border: "none",
+          marginBottom: "2rem",
+          cursor: "pointer",
+        }}
       >
         🔄 振り返りをAIで解析・モデルを更新する
       </button>
@@ -182,64 +233,6 @@ export default function StyleDetailPage() {
           ))}
         </ul>
       )}
-
-      <style jsx>{`
-        .top-nav {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          gap: 12px;
-          margin-bottom: 2rem;
-        }
-        .nav-link {
-          display: flex;
-          align-items: center;
-          gap: 0.3rem;
-          padding: 0.4rem 0.8rem;
-          background-color: #e0e0e0;
-          border-radius: 8px;
-          text-decoration: none;
-          color: #333;
-          font-weight: bold;
-          font-size: 1rem;
-          cursor: pointer;
-          white-space: nowrap;
-          user-select: none;
-          transition: background-color 0.3s;
-        }
-        .nav-link:hover,
-        .nav-link:focus {
-          background-color: #bdbdbd;
-        }
-        @media (max-width: 480px) {
-          .top-nav {
-            gap: 8px;
-            justify-content: flex-start;
-          }
-        }
-      `}</style>
     </main>
   );
 }
-
-const buttonStyleGreen = {
-  padding: "0.8rem 1.2rem",
-  fontSize: "1.1rem",
-  backgroundColor: "#4CAF50",
-  color: "white",
-  borderRadius: "10px",
-  border: "none",
-  marginBottom: "2rem",
-  cursor: "pointer",
-};
-
-const buttonStyleOrange = {
-  padding: "0.8rem 1.2rem",
-  fontSize: "1.1rem",
-  backgroundColor: "#FF9800",
-  color: "white",
-  borderRadius: "10px",
-  border: "none",
-  marginBottom: "2rem",
-  cursor: "pointer",
-};
