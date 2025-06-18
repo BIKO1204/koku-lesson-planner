@@ -55,9 +55,6 @@ function Dashboard() {
           marginBottom: 24,
           whiteSpace: "normal",
           wordBreak: "break-word",
-          maxWidth: 320,
-          marginLeft: "auto",
-          marginRight: "auto",
         }}
       >
         🌟 国語授業プランナーへ
@@ -99,3 +96,4 @@ function Dashboard() {
     </main>
   );
 }
+
