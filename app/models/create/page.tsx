@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 
 type EducationModel = {
@@ -117,6 +117,7 @@ export default function CreateModelPage() {
   return (
     <>
       <style>{`
+        /* 共通のボディ・メイン */
         body {
           background-color: #f7f8fa;
           margin: 0;
@@ -125,19 +126,21 @@ export default function CreateModelPage() {
             Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
         }
         main {
-          padding: 2.5rem 3rem;
-          max-width: 1100px;
+          max-width: 960px;
           margin: 3rem auto 4rem auto;
+          padding: 2rem 1.5rem;
           background-color: #fff;
           border-radius: 10px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.07);
         }
+
+        /* ナビゲーション */
         nav {
           display: flex;
           gap: 12px;
-          margin-bottom: 24px;
           overflow-x: auto;
           justify-content: center;
+          margin-bottom: 2rem;
         }
         nav a {
           padding: 8px 14px;
@@ -146,14 +149,17 @@ export default function CreateModelPage() {
           border-radius: 6px;
           text-decoration: none;
           white-space: nowrap;
-          flex-shrink: 0;
-          transition: background-color 0.3s ease;
           font-weight: 600;
           font-size: 1rem;
+          flex-shrink: 0;
+          transition: background-color 0.3s ease;
         }
-        nav a.active, nav a:hover {
+        nav a:hover,
+        nav a.active {
           background-color: #4caf50;
         }
+
+        /* タイトル */
         h1 {
           font-size: 2.5rem;
           margin-bottom: 2rem;
@@ -161,6 +167,8 @@ export default function CreateModelPage() {
           color: #222;
           letter-spacing: 0.02em;
         }
+
+        /* エラーメッセージ */
         p.error {
           color: #d32f2f;
           margin-bottom: 1.5rem;
@@ -168,6 +176,8 @@ export default function CreateModelPage() {
           font-weight: 700;
           font-size: 1.1rem;
         }
+
+        /* フォームラベル */
         label {
           display: block;
           margin-bottom: 18px;
@@ -175,13 +185,17 @@ export default function CreateModelPage() {
           color: #444;
           font-size: 1.15rem;
         }
+
+        /* フォームセクション */
         section.form-section {
-          padding: 28px 36px;
-          border-radius: 8px;
           background-color: #f9fafb;
           border: 1px solid #ddd;
-          margin-bottom: 28px;
+          border-radius: 8px;
+          padding: 28px 36px;
+          margin-bottom: 2rem;
         }
+
+        /* 入力フォーム */
         input, textarea {
           width: 100%;
           padding: 16px 18px;
@@ -202,6 +216,8 @@ export default function CreateModelPage() {
           box-shadow: 0 0 8px #1976d2cc;
           background-color: #fff;
         }
+
+        /* フォーム内のヒント文 */
         label > div.hint {
           font-size: 0.9rem;
           color: #666;
@@ -210,15 +226,17 @@ export default function CreateModelPage() {
           font-style: italic;
           user-select: none;
         }
+
+        /* 保存ボタン */
         button.save-button {
-          padding: 1.1rem 3.2rem;
-          font-size: 1.35rem;
           background-color: #4caf50;
           color: white;
+          font-weight: 700;
+          font-size: 1.35rem;
+          padding: 1.1rem 3.2rem;
           border: none;
           border-radius: 10px;
           cursor: pointer;
-          font-weight: 700;
           display: block;
           margin: 0 auto;
           box-shadow: 0 5px 14px #4caf50bb;
@@ -228,7 +246,7 @@ export default function CreateModelPage() {
           background-color: #43a047;
         }
 
-        /* スマホ向け */
+        /* スマホ対応 */
         @media (max-width: 600px) {
           main {
             padding: 1.5rem 0.5rem !important;
