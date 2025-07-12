@@ -33,7 +33,6 @@ export default function EducationModelsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
 
-  // ハンバーガーメニューの開閉トグル
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   useEffect(() => {
@@ -146,7 +145,7 @@ export default function EducationModelsPage() {
         /\n/g,
         "<br>"
       )}</p>
-      <p style="margin-top: 32px; fontSize: 0.9rem; color: #666;">
+      <p style="margin-top: 32px; font-size: 0.9rem; color: #666;">
         更新日時: ${new Date(m.updatedAt).toLocaleString()}
       </p>
     `;
@@ -221,7 +220,7 @@ export default function EducationModelsPage() {
     top: 56,
     left: 0,
     width: 250,
-    height: "calc(100vh - 56px)", // 画面全高からナビバーを除いた高さ
+    height: "calc(100vh - 56px)",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
@@ -229,15 +228,17 @@ export default function EducationModelsPage() {
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
+    padding: "0 1rem",  // ← これで左右に余白を確保
+    boxSizing: "border-box",
   };
   const menuScrollStyle: React.CSSProperties = {
     flexGrow: 1,
     overflowY: "auto",
-    padding: "1rem",
-    paddingBottom: 20,
+    paddingTop: "1rem",
+    paddingBottom: "20px",
   };
   const logoutButtonStyle: React.CSSProperties = {
-    margin: "1rem",
+    margin: "1rem 0",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -246,18 +247,8 @@ export default function EducationModelsPage() {
     border: "none",
     cursor: "pointer",
     zIndex: 1000,
-  };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
+    width: "100%",          // 幅をメニューいっぱいに統一
+    boxSizing: "border-box",
   };
   const navLinkStyle: React.CSSProperties = {
     display: "block",
@@ -270,6 +261,8 @@ export default function EducationModelsPage() {
     whiteSpace: "nowrap",
     marginBottom: 8,
     cursor: "pointer",
+    width: "100%",          // 幅をメニューいっぱいに統一
+    boxSizing: "border-box",
   };
 
   const cardStyle: React.CSSProperties = {
@@ -324,7 +317,18 @@ export default function EducationModelsPage() {
 
       {/* メニューオーバーレイ */}
       <div
-        style={overlayStyle}
+        style={{
+          position: "fixed",
+          top: 56,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(0,0,0,0.3)",
+          opacity: menuOpen ? 1 : 0,
+          visibility: menuOpen ? "visible" : "hidden",
+          transition: "opacity 0.3s ease",
+          zIndex: 998,
+        }}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
@@ -560,6 +564,8 @@ const navLinkStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   marginBottom: 8,
   cursor: "pointer",
+  width: "100%", // 幅を100%に揃えている
+  boxSizing: "border-box",
 };
 
 const cardStyle: React.CSSProperties = {
@@ -590,3 +596,4 @@ const buttonPrimary: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: "bold",
 };
+

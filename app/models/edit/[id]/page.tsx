@@ -146,6 +146,12 @@ export default function StyleDetailPage() {
 
       {/* メニュー本体 */}
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン */}
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
+          🔓 ログアウト
+        </button>
+
+        {/* メニューリンク */}
         <div style={menuScrollStyle}>
           {[
             ["/", "🏠 ホーム"],
@@ -168,11 +174,6 @@ export default function StyleDetailPage() {
             </button>
           ))}
         </div>
-
-        {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
-          🔓 ログアウト
-        </button>
       </div>
 
       {/* メインコンテンツ */}
@@ -344,10 +345,12 @@ const menuWrapperStyle = (menuOpen: boolean): React.CSSProperties => ({
   zIndex: 999,
   display: "flex",
   flexDirection: "column",
+  padding: "0 1rem",
+  boxSizing: "border-box",
 });
 
 const menuScrollStyle: React.CSSProperties = {
-  padding: "1rem",
+  padding: "1rem 0",
   paddingBottom: 80,
   overflowY: "auto",
   flexGrow: 1,
@@ -365,10 +368,12 @@ const navLinkStyle: React.CSSProperties = {
   marginBottom: 8,
   cursor: "pointer",
   textAlign: "center",
+  width: "100%",
+  boxSizing: "border-box",
 };
 
 const logoutButtonStyle: React.CSSProperties = {
-  margin: "0 1rem 1rem 1rem",
+  margin: "0 0 1rem 0",
   padding: "0.75rem 1rem",
   backgroundColor: "#e53935",
   color: "white",
@@ -377,6 +382,8 @@ const logoutButtonStyle: React.CSSProperties = {
   border: "none",
   cursor: "pointer",
   zIndex: 1000,
+  width: "100%",
+  boxSizing: "border-box",
 };
 
 const mainStyle: React.CSSProperties = {
