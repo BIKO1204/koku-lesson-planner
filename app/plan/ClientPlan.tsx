@@ -528,23 +528,40 @@ ${languageActivities}
     backgroundColor: "white",
     borderRadius: 2,
   };
-  const menuStyle: CSSProperties = {
+  const menuWrapperStyle: CSSProperties = {
     position: "fixed",
     top: 56,
     left: 0,
-    width: "250px",
-    height: "100vh",
+    width: 250,
+    height: "calc(100vh - 56px)",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
     transition: "transform 0.3s ease",
-    padding: "1rem",
-    paddingBottom: "60px", // ログアウトボタン用の余裕
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
-    gap: "1rem",
   };
+  const menuScrollStyle: CSSProperties = {
+    flex: 1,
+    overflowY: "auto",
+    padding: "1rem",
+    paddingBottom: 80,
+  };
+  const logoutButtonStyle: CSSProperties = {
+    position: "sticky",
+    bottom: 0,
+    margin: "0 1rem 1rem 1rem",
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    zIndex: 1000,
+  };
+
   const overlayStyle: CSSProperties = {
     position: "fixed",
     top: 56,
@@ -558,12 +575,14 @@ ${languageActivities}
     zIndex: 998,
   };
   const navLinkStyle: CSSProperties = {
+    display: "block",
     padding: "0.5rem 1rem",
     backgroundColor: "#1976d2",
     color: "white",
     fontWeight: "bold",
     borderRadius: 6,
     textDecoration: "none",
+    marginBottom: "0.5rem",
   };
 
   return (
@@ -594,47 +613,39 @@ ${languageActivities}
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー */}
-      <div style={menuStyle} aria-hidden={!menuOpen}>
-        <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          🏠 ホーム
-        </Link>
-        <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          📋 授業作成
-        </Link>
-        <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          📖 計画履歴
-        </Link>
-        <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          📷 実践履歴
-        </Link>
-        <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          ✏️ 教育観作成
-        </Link>
-        <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          📚 教育観一覧
-        </Link>
-        <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          🕒 教育観履歴
-        </Link>
+      {/* メニュー全体 */}
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* スクロール可能なリンク部分 */}
+        <div style={menuScrollStyle}>
+          <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🏠 ホーム
+          </Link>
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📋 授業作成
+          </Link>
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📖 計画履歴
+          </Link>
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📷 実践履歴
+          </Link>
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            ✏️ 教育観作成
+          </Link>
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📚 教育観一覧
+          </Link>
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🕒 教育観履歴
+          </Link>
+        </div>
 
+        {/* 固定表示のログアウトボタン */}
         <button
           onClick={() => {
             import("next-auth/react").then(({ signOut }) => signOut());
           }}
-          style={{
-            position: "absolute",
-            bottom: 20,
-            left: 16,
-            right: 16,
-            padding: "0.5rem 1rem",
-            backgroundColor: "#e53935",
-            color: "white",
-            fontWeight: "bold",
-            borderRadius: 6,
-            border: "none",
-            cursor: "pointer",
-          }}
+          style={logoutButtonStyle}
         >
           🔓 ログアウト
         </button>
