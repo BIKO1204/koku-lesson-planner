@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
+import { signOut } from "next-auth/react";
 
 type BoardImage = { name: string; src: string };
 type PracticeRecord = {
@@ -42,23 +43,14 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
-export default function HistoryPage() {
+export default function PracticeHistoryPage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle">(
     "practiceDate"
   );
+  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
-
-  const [windowWidth, setWindowWidth] = useState<number>(
-    typeof window !== "undefined" ? window.innerWidth : 800
-  );
-
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   useEffect(() => {
     getAllRecords()
@@ -74,6 +66,8 @@ export default function HistoryPage() {
       }
     }
   }, []);
+
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   const sorted = [...records].sort((a, b) => {
     if (sortKey === "lessonTitle")
@@ -91,105 +85,86 @@ export default function HistoryPage() {
     }
   };
 
-  const handleExportRecordPdf = async (lessonId: string) => {
-    const { default: html2pdf } = await import("html2pdf.js");
-    const el = document.getElementById(`record-${lessonId}`);
-    if (!el) return alert("PDF化用の要素が見つかりませんでした。");
-
-    const oldMargin = el.style.margin;
-    const oldPadding = el.style.padding;
-    el.style.margin = "0";
-    el.style.padding = "0";
-
-    el.scrollTop = 0;
-    el.scrollLeft = 0;
-
-    await Promise.all(
-      Array.from(el.querySelectorAll("img")).map(
-        (img) =>
-          new Promise((resolve) => {
-            if (img.complete) resolve(null);
-            else {
-              img.onload = () => resolve(null);
-              img.onerror = () => resolve(null);
-            }
-          })
-      )
-    );
-
-    await html2pdf()
-      .from(el)
-      .set({
-        margin: [5, 5, 5, 5],
-        filename:
-          `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale: 1.5 },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .save();
-
-    el.style.margin = oldMargin;
-    el.style.padding = oldPadding;
+  const navBarStyle: CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 56,
+    backgroundColor: "#1976d2",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 1rem",
+    zIndex: 1000,
   };
-
-  const handleDriveSave = async (lessonId: string) => {
-    const { default: html2pdf } = await import("html2pdf.js");
-    const el = document.getElementById(`record-${lessonId}`);
-    if (!el) return alert("Drive保存用の要素が見つかりませんでした。");
-
-    await Promise.all(
-      Array.from(el.querySelectorAll("img")).map(
-        (img) =>
-          new Promise((resolve) => {
-            if (img.complete) resolve(null);
-            else {
-              img.onload = () => resolve(null);
-              img.onerror = () => resolve(null);
-            }
-          })
-      )
-    );
-
-    const pdfBlob: Blob = await html2pdf()
-      .from(el)
-      .set({
-        margin: [5, 5, 5, 5],
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale: 1.5 },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .outputPdf("blob");
-
-    const { uploadToDrive } = await import("../../../lib/drive");
-
-    try {
-      await uploadToDrive(
-        pdfBlob,
-        `${sorted.find((r) => r.lessonId === lessonId)?.lessonTitle || lessonId}_実践記録.pdf`,
-        "application/pdf"
-      );
-      alert("Driveへの保存が完了しました。");
-    } catch (e) {
-      console.error(e);
-      alert("Drive保存に失敗しました。");
-    }
+  const hamburgerStyle: CSSProperties = {
+    cursor: "pointer",
+    width: 30,
+    height: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
   };
-
-  // スタイル定義
-  const navLinkStyle: React.CSSProperties = {
-    padding: "8px 12px",
+  const barStyle: CSSProperties = {
+    height: 4,
+    backgroundColor: "white",
+    borderRadius: 2,
+  };
+  const menuWrapperStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: 250,
+    height: "100vh",
+    backgroundColor: "#f0f0f0",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+    transition: "transform 0.3s ease",
+    zIndex: 999,
+    display: "flex",
+    flexDirection: "column",
+  };
+  const menuScrollStyle: CSSProperties = {
+    padding: "1rem",
+    paddingBottom: 80,
+    overflowY: "auto",
+    flexGrow: 1,
+  };
+  const logoutButtonStyle: CSSProperties = {
+    margin: "0 1rem 1rem 1rem",
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    zIndex: 1000,
+  };
+  const overlayStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+  const navLinkStyle: CSSProperties = {
+    display: "block",
+    padding: "0.5rem 1rem",
     backgroundColor: "#1976d2",
     color: "white",
-    border: "none",
+    fontWeight: "bold",
     borderRadius: 6,
-    fontSize: "1rem",
     textDecoration: "none",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
+    marginBottom: "0.5rem",
   };
 
-  const cardStyle: React.CSSProperties = {
+  const cardStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
     backgroundColor: "#fdfdfd",
@@ -201,7 +176,7 @@ export default function HistoryPage() {
     wordBreak: "break-word",
   };
 
-  const buttonBaseStyle: React.CSSProperties = {
+  const buttonBaseStyle: CSSProperties = {
     padding: "8px 12px",
     fontSize: "0.9rem",
     borderRadius: 6,
@@ -214,26 +189,27 @@ export default function HistoryPage() {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
+    whiteSpace: "nowrap",
   };
 
-  const pdfBtn: React.CSSProperties = {
+  const pdfBtn: CSSProperties = {
     ...buttonBaseStyle,
     backgroundColor: "#FF9800",
   };
-  const driveBtn: React.CSSProperties = {
+  const driveBtn: CSSProperties = {
     ...buttonBaseStyle,
     backgroundColor: "#2196F3",
   };
-  const actionBtn: React.CSSProperties = {
+  const actionBtn: CSSProperties = {
     ...buttonBaseStyle,
     backgroundColor: "#4CAF50",
   };
-  const deleteBtn: React.CSSProperties = {
+  const deleteBtn: CSSProperties = {
     ...buttonBaseStyle,
     backgroundColor: "#f44336",
   };
 
-  const planBlockStyle: React.CSSProperties = {
+  const planBlockStyle: CSSProperties = {
     backgroundColor: "#fafafa",
     border: "1px solid #ccc",
     borderRadius: 6,
@@ -244,257 +220,336 @@ export default function HistoryPage() {
     fontSize: "0.9rem",
   };
 
-  const mainContainerStyle: React.CSSProperties = {
+  const mainContainerStyle: CSSProperties = {
     padding: 16,
     fontFamily: "sans-serif",
-    maxWidth: windowWidth > 768 ? 900 : 600,
+    maxWidth: 960,
     width: "100%",
     margin: "0 auto",
+    paddingTop: 72,
   };
 
-  const boardImageContainerStyle: React.CSSProperties = {
+  const boardImageContainerStyle: CSSProperties = {
     width: "100%",
     marginBottom: 12,
     pageBreakInside: "avoid",
   };
 
   return (
-    <main style={mainContainerStyle}>
-      <nav
-        style={{
-          display: "flex",
-          gap: 12,
-          overflowX: "auto",
-          marginBottom: 24,
-          justifyContent: "center",
-        }}
-      >
-        <Link href="/" style={navLinkStyle}>
-          🏠 ホーム
-        </Link>
-        <Link href="/plan" style={navLinkStyle}>
-          📋 授業作成
-        </Link>
-        <Link href="/plan/history" style={navLinkStyle}>
-          📖 計画履歴
-        </Link>
-        <Link href="/practice/history" style={navLinkStyle}>
-          📷 実践履歴
-        </Link>
-        <Link href="/models/create" style={navLinkStyle}>
-          ✏️ 教育観作成
-        </Link>
-        <Link href="/models" style={navLinkStyle}>
-          📚 教育観一覧
-        </Link>
-        <Link href="/models/history" style={navLinkStyle}>
-          🕒 教育観履歴
-        </Link>
+    <>
+      {/* ナビバー */}
+      <nav style={navBarStyle}>
+        <div
+          style={hamburgerStyle}
+          onClick={toggleMenu}
+          aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+        >
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+        </div>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
-      <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
+      {/* メニューオーバーレイ */}
+      <div
+        style={overlayStyle}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
 
-      <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
-        並び替え：
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as any)}
-          style={{ marginLeft: 8, padding: 6, fontSize: "1rem" }}
-        >
-          <option value="practiceDate">実施日順</option>
-          <option value="lessonTitle">タイトル順</option>
-        </select>
-      </label>
-
-      {sorted.length === 0 ? (
-        <p style={{ textAlign: "center", fontSize: "1.2rem" }}>
-          まだ実践記録がありません。
-        </p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          {sorted.map((r, idx) => {
-            const plan = lessonPlans.find((p) => p.id === r.lessonId);
-            return (
-              <article key={`${r.lessonId}-${idx}`} style={cardStyle}>
-                <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
-                  <h3 style={{ margin: "0 0 8px" }}>{r.lessonTitle}</h3>
-
-                  {plan && typeof plan.result === "object" && (
-                    <div style={planBlockStyle}>
-                      <strong>授業案</strong>
-                      <div>
-                        <p>
-                          <strong>教科書名：</strong>
-                          {plan.result["教科書名"] || "－"}
-                        </p>
-                        <p>
-                          <strong>単元名：</strong>
-                          {plan.result["単元名"] || "－"}
-                        </p>
-                        <p>
-                          <strong>授業時間数：</strong>
-                          {plan.result["授業時間数"] || "－"}時間
-                        </p>
-                        <p>
-                          <strong>単元の目標：</strong>
-                          {plan.result["単元の目標"] || "－"}
-                        </p>
-
-                        {plan.result["評価の観点"] && (
-                          <div style={{ marginTop: 8 }}>
-                            <strong>評価の観点：</strong>
-
-                            <strong>知識・技能</strong>
-                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-                                ? plan.result["評価の観点"]["知識・技能"]
-                                : plan.result["評価の観点"]?.["知識・技能"]
-                                ? [plan.result["評価の観点"]["知識・技能"]]
-                                : []
-                              ).map((v: string, i: number) => (
-                                <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
-                              ))}
-                            </ul>
-
-                            <strong>思考・判断・表現</strong>
-                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-                                ? plan.result["評価の観点"]["思考・判断・表現"]
-                                : plan.result["評価の観点"]?.["思考・判断・表現"]
-                                ? [plan.result["評価の観点"]["思考・判断・表現"]]
-                                : []
-                              ).map((v: string, i: number) => (
-                                <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
-                              ))}
-                            </ul>
-
-                            <strong>主体的に学習に取り組む態度</strong>
-                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
-                                ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                                : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                                ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-                                : plan.result["評価の観点"]?.["態度"]
-                                ? [plan.result["評価の観点"]["態度"]]
-                                : []
-                              ).map((v: string, i: number) => (
-                                <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        <p>
-                          <strong>育てたい子どもの姿：</strong>
-                          {plan.result["育てたい子どもの姿"] || "－"}
-                        </p>
-
-                        <p>
-                          <strong>言語活動の工夫：</strong>
-                          {plan.result["言語活動の工夫"] || "－"}
-                        </p>
-
-                        {plan.result["授業の流れ"] && (
-                          <div style={{ marginTop: 8 }}>
-                            <strong>授業の流れ：</strong>
-                            <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                              {Object.entries(plan.result["授業の流れ"]).map(
-                                ([key, val]) => {
-                                  const content =
-                                    typeof val === "string" ? val : JSON.stringify(val);
-                                  return (
-                                    <li key={key}>
-                                      <strong>{key}:</strong> {content}
-                                    </li>
-                                  );
-                                }
-                              )}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <p style={{ marginTop: 16 }}>
-                    <strong>実施日：</strong> {r.practiceDate}
-                  </p>
-
-                  <p>
-                    <strong>振り返り：</strong>
-                    <br />
-                    {r.reflection}
-                  </p>
-
-                  {r.boardImages.length > 0 && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                      }}
-                    >
-                      {r.boardImages.map((img, i) => (
-                        <div key={`${img.name}-${i}`} style={boardImageContainerStyle}>
-                          <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                            板書{i + 1}
-                          </div>
-                          <img
-                            src={img.src}
-                            alt={img.name}
-                            style={{
-                              width: "100%",
-                              height: "auto",
-                              borderRadius: 8,
-                              border: "1px solid #ccc",
-                              display: "block",
-                              maxWidth: "100%",
-                              objectFit: "contain",
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 8,
-                    marginTop: 16,
-                    justifyContent: "flex-start",
-                  }}
-                >
-                  <button
-                    onClick={() => handleExportRecordPdf(r.lessonId)}
-                    style={pdfBtn}
-                  >
-                    📄 PDF出力
-                  </button>
-                  <button
-                    onClick={() => handleDriveSave(r.lessonId)}
-                    style={driveBtn}
-                  >
-                    ☁️ Drive保存
-                  </button>
-                  <Link href={`/practice/add/${r.lessonId}`}>
-                    <button style={actionBtn}>✏️ 編集</button>
-                  </Link>
-                  <button
-                    onClick={() => handleDelete(r.lessonId)}
-                    style={deleteBtn}
-                  >
-                    🗑 削除
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+      {/* メニュー全体 */}
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* メニューリンク */}
+        <div style={menuScrollStyle}>
+          <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🏠 ホーム
+          </Link>
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📋 授業作成
+          </Link>
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📖 計画履歴
+          </Link>
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📷 実践履歴
+          </Link>
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            ✏️ 教育観作成
+          </Link>
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📚 教育観一覧
+          </Link>
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🕒 教育観履歴
+          </Link>
         </div>
-      )}
-    </main>
+
+        {/* ログアウトボタン */}
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
+          🔓 ログアウト
+        </button>
+      </div>
+
+      {/* メインコンテンツ */}
+      <main style={mainContainerStyle}>
+        <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
+
+        <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
+          並び替え：
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as any)}
+            style={{ marginLeft: 8, padding: 6, fontSize: "1rem" }}
+          >
+            <option value="practiceDate">実施日順</option>
+            <option value="lessonTitle">タイトル順</option>
+          </select>
+        </label>
+
+        {sorted.length === 0 ? (
+          <p style={{ textAlign: "center", fontSize: "1.2rem" }}>
+            まだ実践記録がありません。
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {sorted.map((r, idx) => {
+              const plan = lessonPlans.find((p) => p.id === r.lessonId);
+              return (
+                <article key={`${r.lessonId}-${idx}`} style={cardStyle}>
+                  <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
+                    <h3 style={{ margin: "0 0 8px" }}>{r.lessonTitle}</h3>
+
+                    {plan && typeof plan.result === "object" && (
+                      <div style={planBlockStyle}>
+                        <strong>授業案</strong>
+                        <div>
+                          <p>
+                            <strong>教科書名：</strong>
+                            {plan.result["教科書名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>単元名：</strong>
+                            {plan.result["単元名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>授業時間数：</strong>
+                            {plan.result["授業時間数"] || "－"}時間
+                          </p>
+                          <p>
+                            <strong>単元の目標：</strong>
+                            {plan.result["単元の目標"] || "－"}
+                          </p>
+
+                          {plan.result["評価の観点"] && (
+                            <div style={{ marginTop: 8 }}>
+                              <strong>評価の観点：</strong>
+
+                              <strong>知識・技能</strong>
+                              <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                                {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+                                  ? plan.result["評価の観点"]["知識・技能"]
+                                  : plan.result["評価の観点"]?.["知識・技能"]
+                                  ? [plan.result["評価の観点"]["知識・技能"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
+                                ))}
+                              </ul>
+
+                              <strong>思考・判断・表現</strong>
+                              <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                                {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+                                  ? plan.result["評価の観点"]["思考・判断・表現"]
+                                  : plan.result["評価の観点"]?.["思考・判断・表現"]
+                                  ? [plan.result["評価の観点"]["思考・判断・表現"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
+                                ))}
+                              </ul>
+
+                              <strong>主体的に学習に取り組む態度</strong>
+                              <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                                {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
+                                  ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+                                  : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                                  ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+                                  : plan.result["評価の観点"]?.["態度"]
+                                  ? [plan.result["評価の観点"]["態度"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p>
+                            <strong>育てたい子どもの姿：</strong>
+                            {plan.result["育てたい子どもの姿"] || "－"}
+                          </p>
+
+                          <p>
+                            <strong>言語活動の工夫：</strong>
+                            {plan.result["言語活動の工夫"] || "－"}
+                          </p>
+
+                          {plan.result["授業の流れ"] && (
+                            <div style={{ marginTop: 8 }}>
+                              <strong>授業の流れ：</strong>
+                              <ul style={{ marginTop: 4, paddingLeft: 16 }}>
+                                {Object.entries(plan.result["授業の流れ"]).map(
+                                  ([key, val]) => {
+                                    const content =
+                                      typeof val === "string" ? val : JSON.stringify(val);
+                                    return (
+                                      <li key={key}>
+                                        <strong>{key}:</strong> {content}
+                                      </li>
+                                    );
+                                  }
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <p style={{ marginTop: 16 }}>
+                      <strong>実施日：</strong> {r.practiceDate}
+                    </p>
+
+                    <p>
+                      <strong>振り返り：</strong>
+                      <br />
+                      {r.reflection}
+                    </p>
+
+                    {r.boardImages.length > 0 && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                        }}
+                      >
+                        {r.boardImages.map((img, i) => (
+                          <div
+                            key={`${img.name}-${i}`}
+                            style={boardImageContainerStyle}
+                          >
+                            <div style={{ marginBottom: 6, fontWeight: "bold" }}>
+                              板書{i + 1}
+                            </div>
+                            <img
+                              src={img.src}
+                              alt={img.name}
+                              style={{
+                                width: "100%",
+                                height: "auto",
+                                borderRadius: 8,
+                                border: "1px solid #ccc",
+                                display: "block",
+                                maxWidth: "100%",
+                                objectFit: "contain",
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginTop: 16,
+                      justifyContent: "flex-start",
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        import("html2pdf.js").then(({ default: html2pdf }) => {
+                          const el = document.getElementById(`record-${r.lessonId}`);
+                          if (!el) return alert("PDF化用の要素が見つかりませんでした。");
+
+                          html2pdf()
+                            .from(el)
+                            .set({
+                              margin: [5, 5, 5, 5],
+                              filename: `${r.lessonTitle}_実践記録.pdf`,
+                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                              html2canvas: { useCORS: true, scale: 1.5 },
+                              pagebreak: { mode: ["css", "legacy"] },
+                            })
+                            .save();
+                        });
+                      }}
+                      style={pdfBtn}
+                    >
+                      📄 PDF出力
+                    </button>
+                    <button
+                      onClick={() => {
+                        import("html2pdf.js").then(async ({ default: html2pdf }) => {
+                          const el = document.getElementById(`record-${r.lessonId}`);
+                          if (!el) return alert("Drive保存用の要素が見つかりませんでした。");
+
+                          const pdfBlob = await html2pdf()
+                            .from(el)
+                            .set({
+                              margin: [5, 5, 5, 5],
+                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                              html2canvas: { useCORS: true, scale: 1.5 },
+                              pagebreak: { mode: ["css", "legacy"] },
+                            })
+                            .outputPdf("blob");
+
+                          // ドライブアップロード関数を別途用意してください
+                          try {
+                            const { uploadToDrive } = await import("../../../lib/drive");
+                            await uploadToDrive(
+                              pdfBlob,
+                              `${r.lessonTitle}_実践記録.pdf`,
+                              "application/pdf"
+                            );
+                            alert("Driveへの保存が完了しました。");
+                          } catch (e) {
+                            console.error(e);
+                            alert("Drive保存に失敗しました。");
+                          }
+                        });
+                      }}
+                      style={driveBtn}
+                    >
+                      ☁️ Drive保存
+                    </button>
+                    <Link href={`/practice/add/${r.lessonId}`}>
+                      <button style={actionBtn}>✏️ 編集</button>
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(r.lessonId)}
+                      style={deleteBtn}
+                    >
+                      🗑 削除
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </>
   );
 }
