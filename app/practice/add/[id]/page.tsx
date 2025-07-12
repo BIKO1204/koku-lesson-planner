@@ -166,7 +166,7 @@ export default function PracticeAddPage() {
     }
   };
 
-  // スタイル（ナビバーとメニュー）
+  // --- スタイル（ナビバーとメニュー） ---
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -192,12 +192,14 @@ export default function PracticeAddPage() {
     backgroundColor: "white",
     borderRadius: 2,
   };
+
+  // メニュー全体の高さを画面いっぱいにし、flexで縦に並べる
   const menuWrapperStyle: React.CSSProperties = {
     position: "fixed",
     top: 56,
     left: 0,
     width: 250,
-    height: "auto",
+    height: "calc(100vh - 56px)",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
@@ -206,13 +208,9 @@ export default function PracticeAddPage() {
     display: "flex",
     flexDirection: "column",
   };
-  const menuScrollStyle: React.CSSProperties = {
-    padding: "1rem",
-    paddingBottom: 80,
-    overflowY: "visible",
-  };
+
+  // ログアウトボタンはメニューの上部固定（flexShrink: 0）
   const logoutButtonStyle: React.CSSProperties = {
-    margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -220,20 +218,17 @@ export default function PracticeAddPage() {
     borderRadius: 6,
     border: "none",
     cursor: "pointer",
-    zIndex: 1000,
+    flexShrink: 0,
+    margin: "1rem",
   };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
+
+  // メニューリンク部分は縦スクロール可能
+  const menuLinksWrapperStyle: React.CSSProperties = {
+    overflowY: "auto",
+    flexGrow: 1,
+    padding: "1rem",
   };
+
   const navBtnStyle: React.CSSProperties = {
     marginBottom: 8,
     padding: "0.5rem 1rem",
@@ -245,6 +240,19 @@ export default function PracticeAddPage() {
     display: "block",
     width: "100%",
     textAlign: "center",
+  };
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "calc(100vh - 56px)",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
   };
 
   const containerStyle: React.CSSProperties = {
@@ -285,8 +293,19 @@ export default function PracticeAddPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン */}
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
+
         {/* メニューリンク */}
-        <div style={menuScrollStyle}>
+        <div style={menuLinksWrapperStyle}>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
           </button>
@@ -309,11 +328,6 @@ export default function PracticeAddPage() {
             🕒 教育観履歴
           </button>
         </div>
-
-        {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
-          🔓 ログアウト
-        </button>
       </div>
 
       {/* メインコンテンツ */}

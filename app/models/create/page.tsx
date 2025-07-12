@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { v4 as uuidv4 } from "uuid";
+import { signOut } from "next-auth/react";
 
 type EducationModel = {
   id: string;
@@ -33,6 +32,9 @@ export default function CreateModelPage() {
   });
   const [editId, setEditId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   useEffect(() => {
     const stored = localStorage.getItem("styleModels");
@@ -81,7 +83,7 @@ export default function CreateModelPage() {
     } else {
       updatedModels = [
         {
-          id: uuidv4(),
+          id: crypto.randomUUID(),
           name: form.name.trim(),
           philosophy: cleanText(form.philosophy),
           evaluationFocus: cleanText(form.evaluationFocus),
@@ -114,254 +116,349 @@ export default function CreateModelPage() {
     router.push("/models/history");
   };
 
+  // --- 共通スタイル ---
+  const navBarStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 56,
+    backgroundColor: "#1976d2",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 1rem",
+    zIndex: 1000,
+  };
+  const hamburgerStyle: React.CSSProperties = {
+    cursor: "pointer",
+    width: 30,
+    height: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  };
+  const barStyle: React.CSSProperties = {
+    height: 4,
+    backgroundColor: "white",
+    borderRadius: 2,
+  };
+
+  // メニュー全体高さとレイアウト
+  const menuWrapperStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: 250,
+    height: "calc(100vh - 56px)",
+    backgroundColor: "#f0f0f0",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+    transition: "transform 0.3s ease",
+    zIndex: 999,
+    display: "flex",
+    flexDirection: "column",
+  };
+
+  // ログアウトボタンは固定で上部に
+  const logoutButtonStyle: React.CSSProperties = {
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+  };
+
+  // メニューリンクはスクロール可能に
+  const menuLinksWrapperStyle: React.CSSProperties = {
+    overflowY: "auto",
+    flexGrow: 1,
+    padding: "1rem",
+  };
+
+  const navBtnStyle: React.CSSProperties = {
+    marginBottom: 8,
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    display: "block",
+    width: "100%",
+    textAlign: "center",
+  };
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "calc(100vh - 56px)",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+
+  const mainContainerStyle: React.CSSProperties = {
+    padding: "72px 24px 24px",
+    maxWidth: 900,
+    margin: "auto",
+    fontFamily: "sans-serif",
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
+  };
+
   return (
     <>
-      <style>{`
-        /* 共通のボディ・メイン */
-        body {
-          background-color: #f7f8fa;
-          margin: 0;
-          padding: 0;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-            Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-        }
-        main {
-          max-width: 960px;
-          margin: 3rem auto 4rem auto;
-          padding: 2rem 1.5rem;
-          background-color: #fff;
-          border-radius: 10px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-        }
+      {/* ナビバー */}
+      <nav style={navBarStyle}>
+        <div
+          style={hamburgerStyle}
+          onClick={toggleMenu}
+          aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+        >
+          <span style={barStyle} />
+          <span style={barStyle} />
+          <span style={barStyle} />
+        </div>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
+      </nav>
 
-        /* ナビゲーション */
-        nav {
-          display: flex;
-          gap: 12px;
-          overflow-x: auto;
-          justify-content: center;
-          margin-bottom: 2rem;
-        }
-        nav a {
-          padding: 8px 14px;
-          background-color: #1976d2;
-          color: white;
-          border-radius: 6px;
-          text-decoration: none;
-          white-space: nowrap;
-          font-weight: 600;
-          font-size: 1rem;
-          flex-shrink: 0;
-          transition: background-color 0.3s ease;
-        }
-        nav a:hover,
-        nav a.active {
-          background-color: #4caf50;
-        }
+      {/* メニューオーバーレイ */}
+      <div
+        style={overlayStyle}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
 
-        /* タイトル */
-        h1 {
-          font-size: 2.5rem;
-          margin-bottom: 2rem;
-          text-align: center;
-          color: #222;
-          letter-spacing: 0.02em;
-        }
+      {/* メニュー全体 */}
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン */}
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
 
-        /* エラーメッセージ */
-        p.error {
-          color: #d32f2f;
-          margin-bottom: 1.5rem;
-          text-align: center;
-          font-weight: 700;
-          font-size: 1.1rem;
-        }
+        {/* メニューリンク */}
+        <div style={menuLinksWrapperStyle}>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
+            🏠 ホーム
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
+            📋 授業作成
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
+            📖 計画履歴
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
+            📷 実践履歴
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
+            ✏️ 教育観作成
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
+            📚 教育観一覧
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
+            🕒 教育観履歴
+          </button>
+        </div>
+      </div>
 
-        /* フォームラベル */
-        label {
-          display: block;
-          margin-bottom: 18px;
-          font-weight: 600;
-          color: #444;
-          font-size: 1.15rem;
-        }
-
-        /* フォームセクション */
-        section.form-section {
-          background-color: #f9fafb;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          padding: 28px 36px;
-          margin-bottom: 2rem;
-        }
-
-        /* 入力フォーム */
-        input, textarea {
-          width: 100%;
-          padding: 16px 18px;
-          font-size: 1.2rem;
-          border-radius: 6px;
-          border: 1.2px solid #bbb;
-          margin-top: 6px;
-          box-sizing: border-box;
-          font-family: inherit;
-          background-color: #fff;
-          color: #222;
-          transition: border-color 0.25s ease;
-          resize: vertical;
-        }
-        input:focus, textarea:focus {
-          outline: none;
-          border-color: #1976d2;
-          box-shadow: 0 0 8px #1976d2cc;
-          background-color: #fff;
-        }
-
-        /* フォーム内のヒント文 */
-        label > div.hint {
-          font-size: 0.9rem;
-          color: #666;
-          margin-top: 6px;
-          margin-bottom: 16px;
-          font-style: italic;
-          user-select: none;
-        }
-
-        /* 保存ボタン */
-        button.save-button {
-          background-color: #4caf50;
-          color: white;
-          font-weight: 700;
-          font-size: 1.35rem;
-          padding: 1.1rem 3.2rem;
-          border: none;
-          border-radius: 10px;
-          cursor: pointer;
-          display: block;
-          margin: 0 auto;
-          box-shadow: 0 5px 14px #4caf50bb;
-          transition: background-color 0.35s ease;
-        }
-        button.save-button:hover {
-          background-color: #43a047;
-        }
-
-        /* スマホ対応 */
-        @media (max-width: 600px) {
-          main {
-            padding: 1.5rem 0.5rem !important;
-            max-width: 100%;
-            border-radius: 0;
-            box-shadow: none;
-            margin: 1rem auto 2rem auto;
-          }
-          label {
-            font-size: 1rem;
-            margin-bottom: 14px;
-          }
-          input, textarea {
-            font-size: 1.1rem;
-            padding: 12px 8px !important;
-          }
-          button.save-button {
-            width: 100%;
-            padding: 1.4rem;
-            font-size: 1.3rem;
-          }
-          nav {
-            justify-content: flex-start;
-          }
-        }
-      `}</style>
-
-      <main>
-        <nav>
-          {[
-            ["/", "🏠 ホーム"],
-            ["/plan", "📋 授業作成"],
-            ["/plan/history", "📖 計画履歴"],
-            ["/practice/history", "📷 実践履歴"],
-            ["/models/create", "✏️ 教育観作成"],
-            ["/models", "📚 教育観一覧"],
-            ["/models/history", "🕒 教育観履歴"],
-          ].map(([href, label]) => (
-            <Link
-              key={href}
-              href={href}
-              className={href === "/models/create" ? "active" : ""}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-
+      {/* メインコンテンツ */}
+      <main style={mainContainerStyle}>
         <h1>{editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}</h1>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p style={{ color: "#d32f2f", marginBottom: 24, fontWeight: "700", fontSize: "1.1rem", textAlign: "center" }}>{error}</p>}
 
-        <section className="form-section">
-          <label>
+        <section
+          style={{
+            padding: 28,
+            borderRadius: 8,
+            backgroundColor: "#f9fafb",
+            border: "1px solid #ddd",
+            marginBottom: 28,
+          }}
+        >
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             モデル名（必須）：
             <input
               type="text"
               value={form.name}
               onChange={(e) => handleChange("name", e.target.value)}
               placeholder="例）面白い授業、対話型授業、音読重視など"
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+              }}
             />
           </label>
 
-          <label>
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             教育観（必須）：
             <textarea
               rows={3}
               value={form.philosophy}
               onChange={(e) => handleChange("philosophy", e.target.value)}
               placeholder="例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。"
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+                resize: "vertical",
+              }}
             />
           </label>
 
-          <label>
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             評価観点の重視点（必須）：
             <textarea
               rows={3}
               value={form.evaluationFocus}
               onChange={(e) => handleChange("evaluationFocus", e.target.value)}
               placeholder="例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。"
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+                resize: "vertical",
+              }}
             />
           </label>
 
-          <label>
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             言語活動の重視点（必須）：
             <textarea
               rows={3}
               value={form.languageFocus}
               onChange={(e) => handleChange("languageFocus", e.target.value)}
               placeholder="例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。"
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+                resize: "vertical",
+              }}
             />
           </label>
 
-          <label>
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             育てたい子どもの姿（必須）：
             <textarea
               rows={3}
               value={form.childFocus}
               onChange={(e) => handleChange("childFocus", e.target.value)}
               placeholder="例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。"
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+                resize: "vertical",
+              }}
             />
           </label>
 
-          <label>
+          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
             更新メモ（任意）：
             <textarea
               rows={2}
               value={form.note}
               onChange={(e) => handleChange("note", e.target.value)}
-              style={{ fontStyle: "italic" }}
+              style={{
+                fontStyle: "italic",
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+                resize: "vertical",
+              }}
               placeholder="例）今年度の授業で重視したい点や変更点などを書いてください。"
             />
           </label>
 
-          <button className="save-button" onClick={handleSave}>
+          <button
+            onClick={handleSave}
+            className="save-button"
+            style={{
+              padding: "1.1rem 3.2rem",
+              fontSize: "1.35rem",
+              backgroundColor: "#4caf50",
+              color: "white",
+              border: "none",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontWeight: "700",
+              display: "block",
+              margin: "0 auto",
+              boxShadow: "0 5px 14px #4caf50bb",
+              transition: "background-color 0.35s ease",
+            }}
+          >
             {editId ? "更新して保存" : "作成して保存"}
           </button>
         </section>
