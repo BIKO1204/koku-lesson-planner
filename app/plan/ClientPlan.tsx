@@ -503,6 +503,7 @@ ${languageActivities}
     marginBottom: "1rem",
   };
 
+  // ナビバー＆メニュー関連スタイル
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -546,11 +547,11 @@ ${languageActivities}
     flex: 1,
     overflowY: "auto",
     padding: "1rem",
-    paddingBottom: 80,
+    paddingBottom: 0,
   };
   const logoutButtonStyle: CSSProperties = {
     position: "sticky",
-    bottom: 0,
+    top: 0,
     margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -615,6 +616,16 @@ ${languageActivities}
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* 固定表示のログアウトボタン */}
+        <button
+          onClick={() => {
+            import("next-auth/react").then(({ signOut }) => signOut());
+          }}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
+
         {/* スクロール可能なリンク部分 */}
         <div style={menuScrollStyle}>
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
@@ -640,15 +651,6 @@ ${languageActivities}
           </Link>
         </div>
 
-        {/* 固定表示のログアウトボタン */}
-        <button
-          onClick={() => {
-            import("next-auth/react").then(({ signOut }) => signOut());
-          }}
-          style={logoutButtonStyle}
-        >
-          🔓 ログアウト
-        </button>
       </div>
 
       {/* メインコンテンツ */}
@@ -861,7 +863,7 @@ ${languageActivities}
               <button
                 onClick={handlePdfDownloadOnly}
                 style={{
-                  padding: "12px",
+                  padding: 12,
                   backgroundColor: "#FF9800",
                   color: "white",
                   fontSize: "1.1rem",

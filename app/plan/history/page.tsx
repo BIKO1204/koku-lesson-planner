@@ -67,6 +67,7 @@ export default function HistoryPage() {
     localStorage.setItem("lessonPlans", JSON.stringify(updated));
   };
 
+  // --- スタイル ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -97,7 +98,7 @@ export default function HistoryPage() {
     top: 56,
     left: 0,
     width: 250,
-    height: "auto",
+    height: "calc(100vh - 56px)",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
@@ -107,11 +108,14 @@ export default function HistoryPage() {
     flexDirection: "column",
   };
   const menuScrollStyle: CSSProperties = {
+    flex: 1,
+    overflowY: "auto",
     padding: "1rem",
-    paddingBottom: 80,
-    overflowY: "visible",
+    paddingBottom: 0,
   };
   const logoutButtonStyle: CSSProperties = {
+    position: "sticky",
+    top: 0,
     margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -195,6 +199,14 @@ export default function HistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン（上部に固定） */}
+        <button
+          onClick={() => signOut()}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
+
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
@@ -219,14 +231,6 @@ export default function HistoryPage() {
             🕒 教育観履歴
           </Link>
         </div>
-
-        {/* ログアウトボタン */}
-        <button
-          onClick={() => signOut()}
-          style={logoutButtonStyle}
-        >
-          🔓 ログアウト
-        </button>
       </div>
 
       {/* メインコンテンツ */}
