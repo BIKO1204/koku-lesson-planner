@@ -539,6 +539,7 @@ ${languageActivities}
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
     transition: "transform 0.3s ease",
     padding: "1rem",
+    paddingBottom: "60px", // ログアウトボタン用の余裕
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
@@ -611,7 +612,7 @@ ${languageActivities}
           ✏️ 教育観作成
         </Link>
         <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
-          📚 教育観覧
+          📚 教育観一覧
         </Link>
         <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
           🕒 教育観履歴
@@ -622,7 +623,10 @@ ${languageActivities}
             import("next-auth/react").then(({ signOut }) => signOut());
           }}
           style={{
-            marginTop: "auto",
+            position: "absolute",
+            bottom: 20,
+            left: 16,
+            right: 16,
             padding: "0.5rem 1rem",
             backgroundColor: "#e53935",
             color: "white",
