@@ -147,6 +147,26 @@ export default function HistoryPage() {
 
   return (
     <>
+      <style>{`
+        /* スマホ向け */
+        @media (max-width: 600px) {
+          article {
+            flex-direction: column !important;
+          }
+          article > div:first-child {
+            max-width: 100% !important;
+          }
+          article > div:last-child {
+            flex-direction: row !important;
+            width: 100% !important;
+            gap: 8px !important;
+          }
+          article > div:last-child > button {
+            flex: 1 1 auto !important;
+          }
+        }
+      `}</style>
+
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
