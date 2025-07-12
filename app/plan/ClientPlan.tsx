@@ -10,9 +10,6 @@ import { useSession } from "next-auth/react";
 
 const EDIT_KEY = "editLessonPlan";
 
-// Google Drive フォルダID（環境に合わせて差し替え or 外部import推奨）
-const GOOGLE_DRIVE_FOLDER_ID = "1BJPdPWLPq1N5Nqf0-rAj6CzFVfUkU__9";
-
 type StyleModel = {
   id: string;
   name: string;
@@ -48,7 +45,6 @@ type LessonPlanStored = {
 };
 
 export default function ClientPlan() {
-  // NextAuth セッション取得（アクセストークン含む）
   const { data: session, status } = useSession();
 
   useEffect(() => {
@@ -86,11 +82,9 @@ export default function ClientPlan() {
   const [editId, setEditId] = useState<string | null>(null);
   const [initialData, setInitialData] = useState<LessonPlanStored | null>(null);
 
-  // ハンバーガーメニュー開閉状態
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 初期読み込み（編集モード判定）
   useEffect(() => {
     const storedEdit = localStorage.getItem(EDIT_KEY);
     if (storedEdit) {
@@ -123,7 +117,6 @@ export default function ClientPlan() {
     }
   }, [searchParams]);
 
-  // 教育観モデル読み込み
   useEffect(() => {
     const storedModels = localStorage.getItem("styleModels");
     if (storedModels) {
@@ -136,7 +129,6 @@ export default function ClientPlan() {
     }
   }, []);
 
-  // CSVテンプレート読み込み（評価の観点）
   useEffect(() => {
     fetch("/templates.csv")
       .then((res) => res.text())
@@ -167,12 +159,10 @@ export default function ClientPlan() {
       .catch(() => {});
   }, [grade, genre]);
 
-  // 教育観モデル選択変更ハンドラ
   const handleStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedStyleId(e.target.value);
   };
 
-  // 評価の観点追加・削除・変更ハンドラ
   const handleAddPoint = (f: keyof EvaluationPoints) =>
     setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
 
@@ -192,14 +182,12 @@ export default function ClientPlan() {
     setEvaluationPoints((p) => ({ ...p, [f]: arr }));
   };
 
-  // 授業展開手入力変更ハンドラ
   const handleLessonChange = (i: number, v: string) => {
     const arr = [...lessonPlanList];
     arr[i] = v;
     setLessonPlanList(arr);
   };
 
-  // 授業案生成・表示ボタン（Submit）処理
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -238,7 +226,6 @@ export default function ClientPlan() {
       return;
     }
 
-    // AIモードの場合はAPIに投げて取得
     try {
       const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
       const modelContent = selectedModel ? selectedModel.content : "";
@@ -333,12 +320,10 @@ ${languageActivities}
     }
   };
 
-  // Google Driveアップロード処理
   const uploadPdfToGoogleDrive = async (pdfBlob: Blob, fileName: string, accessToken: string) => {
     const metadata = {
       name: fileName,
       mimeType: "application/pdf",
-      // parents指定なし＝Googleドライブのマイドライブ直下に保存されます
     };
 
     const formData = new FormData();
@@ -360,7 +345,6 @@ ${languageActivities}
     return await res.json();
   };
 
-  // 一括保存ボタン処理：ローカル・Firestore・Driveに保存
   const handleSaveAll = async () => {
     if (!parsedResult) {
       alert("まず授業案を生成してください");
@@ -444,7 +428,6 @@ ${languageActivities}
       return;
     }
 
-    // PDF Blob生成＋Google Driveアップロード
     const el = document.getElementById("result-content");
     if (!el) {
       alert("結果表示の要素が見つかりません");
@@ -478,7 +461,6 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
-  // PDFダウンロードのみ
   const handlePdfDownloadOnly = async () => {
     if (!parsedResult) {
       alert("まず授業案を生成してください");
@@ -521,7 +503,6 @@ ${languageActivities}
     marginBottom: "1rem",
   };
 
-  // ハンバーガーメニュー周辺スタイル
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -586,7 +567,7 @@ ${languageActivities}
 
   return (
     <>
-      {/* ヘッダー・ナビバー */}
+      {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -600,7 +581,9 @@ ${languageActivities}
           <span style={barStyle}></span>
           <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>授業プランナー</h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
       {/* メニューオーバーレイ */}
@@ -633,6 +616,24 @@ ${languageActivities}
         <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
           🕒 教育観履歴
         </Link>
+
+        <button
+          onClick={() => {
+            import("next-auth/react").then(({ signOut }) => signOut());
+          }}
+          style={{
+            marginTop: "auto",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#e53935",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          🔓 ログアウト
+        </button>
       </div>
 
       {/* メインコンテンツ */}
