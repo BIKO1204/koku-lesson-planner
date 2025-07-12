@@ -131,6 +131,8 @@ export default function PracticeHistoryPage() {
     flexGrow: 1,
   };
   const logoutButtonStyle: CSSProperties = {
+    position: "sticky",
+    top: 0,
     margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -265,6 +267,11 @@ export default function PracticeHistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン（上部に固定） */}
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
+          🔓 ログアウト
+        </button>
+
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
@@ -289,11 +296,6 @@ export default function PracticeHistoryPage() {
             🕒 教育観履歴
           </Link>
         </div>
-
-        {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
-          🔓 ログアウト
-        </button>
       </div>
 
       {/* メインコンテンツ */}
@@ -515,7 +517,6 @@ export default function PracticeHistoryPage() {
                             })
                             .outputPdf("blob");
 
-                          // ドライブアップロード関数を別途用意してください
                           try {
                             const { uploadToDrive } = await import("../../../lib/drive");
                             await uploadToDrive(
