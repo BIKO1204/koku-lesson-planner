@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { db } from "../../firebaseConfig.js";
 import { doc, deleteDoc } from "firebase/firestore";
+import { signOut } from "next-auth/react";
 
 type ParsedResult = { [key: string]: any };
 
@@ -24,6 +25,7 @@ type LessonPlan = {
 export default function HistoryPage() {
   const [plans, setPlans] = useState<LessonPlan[]>([]);
   const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">("timestamp");
+  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -36,6 +38,8 @@ export default function HistoryPage() {
       }
     }
   }, []);
+
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   const sortedPlans = [...plans].sort((a, b) => {
     if (sortKey === "grade") {
@@ -63,195 +67,158 @@ export default function HistoryPage() {
     localStorage.setItem("lessonPlans", JSON.stringify(updated));
   };
 
-  const handleEdit = (plan: LessonPlan) => {
-    localStorage.setItem("editLessonPlan", JSON.stringify(plan));
-    router.push("/plan");
+  const navBarStyle: CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 56,
+    backgroundColor: "#1976d2",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 1rem",
+    zIndex: 1000,
+  };
+  const hamburgerStyle: CSSProperties = {
+    cursor: "pointer",
+    width: 30,
+    height: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  };
+  const barStyle: CSSProperties = {
+    height: 4,
+    backgroundColor: "white",
+    borderRadius: 2,
+  };
+  const menuWrapperStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: 250,
+    height: "auto",
+    backgroundColor: "#f0f0f0",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+    transition: "transform 0.3s ease",
+    zIndex: 999,
+    display: "flex",
+    flexDirection: "column",
+  };
+  const menuScrollStyle: CSSProperties = {
+    padding: "1rem",
+    paddingBottom: 80,
+    overflowY: "visible",
+  };
+  const logoutButtonStyle: CSSProperties = {
+    margin: "0 1rem 1rem 1rem",
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    zIndex: 1000,
+  };
+  const overlayStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+  const navLinkStyle: CSSProperties = {
+    display: "block",
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    textDecoration: "none",
+    marginBottom: "0.5rem",
   };
 
   return (
     <>
-      <style>{`
-        /* ベース */
-        body {
-          font-family: sans-serif;
-          padding: 24px;
-          margin: 0 auto;
-          max-width: 960px;
-          font-size: 14px;
-        }
-        nav {
-          display: flex;
-          gap: 12px;
-          overflow-x: auto;
-          margin-bottom: 24px;
-          justify-content: center;
-        }
-        nav button, nav a {
-          padding: 8px 12px;
-          background-color: #1976d2;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          font-size: 1rem;
-          text-decoration: none;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          white-space: nowrap;
-          flex-shrink: 0;
-        }
-        h2 {
-          font-size: 1.8rem;
-          margin-bottom: 16px;
-        }
-        label {
-          display: block;
-          text-align: right;
-          margin-bottom: 16px;
-        }
-        select {
-          margin-left: 8px;
-          padding: 6px;
-          font-size: 1rem;
-        }
-        p.empty-message {
-          text-align: center;
-          font-size: 1.2rem;
-        }
+      {/* ナビバー */}
+      <nav style={navBarStyle}>
+        <div
+          style={hamburgerStyle}
+          onClick={toggleMenu}
+          aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+        >
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+        </div>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
+      </nav>
 
-        /* 授業案カード */
-        article.card {
-          display: flex;
-          flex-wrap: wrap;
-          flex-direction: row;
-          justify-content: space-between;
-          align-items: flex-start;
-          background-color: #fdfdfd;
-          border: 2px solid #ddd;
-          border-radius: 12px;
-          padding: 16px;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-          gap: 16px;
-        }
-        .left-content {
-          flex: 1 1 auto;
-          min-width: 0;
-          max-width: calc(100% - 160px);
-          box-sizing: border-box;
-        }
-        .result-card {
-          background-color: #fafafa;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          padding: 12px;
-          margin-top: 12px;
-        }
-        .result-title {
-          font-weight: bold;
-          margin-bottom: 8px;
-          font-size: 1rem;
-        }
-        ul.list-no-style {
-          list-style: none;
-          padding-left: 0;
-          margin: 0;
-        }
+      {/* メニューオーバーレイ */}
+      <div
+        style={overlayStyle}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
 
-        /* ボタン群 */
-        .button-container {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          width: 140px;
-          flex-shrink: 0;
-          box-sizing: border-box;
-        }
-        button.action-button {
-          width: 100%;
-          padding: 10px 16px;
-          border-radius: 6px;
-          font-size: 1rem;
-          cursor: pointer;
-          color: white;
-          border: none;
-          text-align: center;
-          box-sizing: border-box;
-        }
-        button.action-button.practice {
-          background-color: #4caf50;
-        }
-        button.action-button.edit {
-          background-color: #ffb300;
-        }
-        button.action-button.delete {
-          background-color: #f44336;
-        }
+      {/* メニュー全体 */}
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* メニューリンク */}
+        <div style={menuScrollStyle}>
+          <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🏠 ホーム
+          </Link>
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📋 授業作成
+          </Link>
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📖 計画履歴
+          </Link>
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📷 実践履歴
+          </Link>
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            ✏️ 教育観作成
+          </Link>
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            📚 教育観一覧
+          </Link>
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🕒 教育観履歴
+          </Link>
+        </div>
 
-        /* スマホ向け */
-        @media (max-width: 600px) {
-          body {
-            font-size: 16px;
-            padding: 12px;
-          }
-          article.card {
-            flex-direction: column;
-          }
-          .left-content {
-            max-width: 100%;
-          }
-          .button-container {
-            width: 100%;
-            flex-direction: row;
-            gap: 8px;
-          }
-          .button-container button {
-            flex: 1;
-          }
-          nav {
-            justify-content: flex-start;
-          }
-        }
+        {/* ログアウトボタン */}
+        <button
+          onClick={() => signOut()}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
+      </div>
 
-        /* タブレット向け */
-        @media (min-width: 601px) and (max-width: 900px) {
-          body {
-            font-size: 15px;
-            padding: 20px;
-          }
-          article.card {
-            flex-direction: row;
-          }
-          .left-content {
-            max-width: calc(100% - 160px);
-          }
-          .button-container {
-            width: 140px;
-            flex-direction: column;
-          }
-          nav {
-            justify-content: center;
-          }
-        }
-      `}</style>
-
-      <main>
-        <nav>
-          <button onClick={() => router.push("/")}>🏠 ホーム</button>
-          <Link href="/plan">📋 授業作成</Link>
-          <Link href="/plan/history">📖 計画履歴</Link>
-          <Link href="/practice/history">📷 実践履歴</Link>
-          <Link href="/models/create">✏️ 教育観作成</Link>
-          <Link href="/models">📚 教育観一覧</Link>
-          <Link href="/models/history">🕒 教育観履歴</Link>
-        </nav>
-
+      {/* メインコンテンツ */}
+      <main style={{ padding: "72px 24px 24px 24px", maxWidth: 960, margin: "auto" }}>
         <h2>保存された授業案一覧</h2>
 
-        <label>
+        <label style={{ display: "block", marginBottom: 16, textAlign: "right" }}>
           並び替え：
           <select
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as any)}
+            style={{ marginLeft: 8, padding: 6, fontSize: 16 }}
           >
             <option value="timestamp">新着順</option>
             <option value="grade">学年順</option>
@@ -260,15 +227,35 @@ export default function HistoryPage() {
         </label>
 
         {sortedPlans.length === 0 ? (
-          <p className="empty-message">まだ授業案が保存されていません。</p>
+          <p style={{ textAlign: "center", fontSize: 18 }}>まだ授業案が保存されていません。</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {sortedPlans.map((plan) => (
-              <article key={plan.id} className="card">
-                <div className="left-content">
-                  <h3 style={{ margin: "0 0 8px 0", fontSize: "1.4rem" }}>
-                    {plan.unit}
-                  </h3>
+              <article
+                key={plan.id}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  backgroundColor: "#fdfdfd",
+                  border: "2px solid #ddd",
+                  borderRadius: 12,
+                  padding: 16,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                  gap: 16,
+                }}
+              >
+                <div
+                  style={{
+                    flex: "1 1 auto",
+                    minWidth: 0,
+                    maxWidth: "calc(100% - 160px)",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <h3 style={{ margin: "0 0 8px 0", fontSize: "1.4rem" }}>{plan.unit}</h3>
                   <p>
                     <strong>学年・ジャンル：</strong>
                     {plan.grade}・{plan.genre}
@@ -287,8 +274,18 @@ export default function HistoryPage() {
 
                   {plan.result && (
                     <>
-                      <div className="result-card">
-                        <div className="result-title">授業の概要</div>
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          授業の概要
+                        </div>
                         <p>教科書名：{plan.result["教科書名"]}</p>
                         <p>学年：{plan.result["学年"]}</p>
                         <p>ジャンル：{plan.result["ジャンル"]}</p>
@@ -297,16 +294,36 @@ export default function HistoryPage() {
                         <p>育てたい子どもの姿：{plan.result["育てたい子どもの姿"] || ""}</p>
                       </div>
 
-                      <div className="result-card">
-                        <div className="result-title">単元の目標</div>
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          単元の目標
+                        </div>
                         <p>{plan.result["単元の目標"]}</p>
                       </div>
 
-                      <div className="result-card">
-                        <div className="result-title">評価の観点</div>
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          評価の観点
+                        </div>
 
                         <strong>知識・技能</strong>
-                        <ul className="list-no-style">
+                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
                             ? plan.result["評価の観点"]["知識・技能"]
                             : plan.result["評価の観点"]?.["知識・技能"]
@@ -318,7 +335,7 @@ export default function HistoryPage() {
                         </ul>
 
                         <strong>思考・判断・表現</strong>
-                        <ul className="list-no-style">
+                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
                             ? plan.result["評価の観点"]["思考・判断・表現"]
                             : plan.result["評価の観点"]?.["思考・判断・表現"]
@@ -330,7 +347,7 @@ export default function HistoryPage() {
                         </ul>
 
                         <strong>主体的に学習に取り組む態度</strong>
-                        <ul className="list-no-style">
+                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
                             ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
                             : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
@@ -344,14 +361,34 @@ export default function HistoryPage() {
                         </ul>
                       </div>
 
-                      <div className="result-card">
-                        <div className="result-title">言語活動の工夫</div>
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          言語活動の工夫
+                        </div>
                         <p>{plan.result["言語活動の工夫"]}</p>
                       </div>
 
-                      <div className="result-card">
-                        <div className="result-title">授業の流れ</div>
-                        <ul className="list-no-style">
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          授業の流れ
+                        </div>
+                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {plan.result["授業の流れ"] &&
                             typeof plan.result["授業の流れ"] === "object" &&
                             Object.entries(plan.result["授業の流れ"]).map(
@@ -365,21 +402,70 @@ export default function HistoryPage() {
                       </div>
                     </>
                   )}
+
                 </div>
 
-                <div className="button-container">
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                    width: 140,
+                    flexShrink: 0,
+                    boxSizing: "border-box",
+                  }}
+                >
                   <button
                     onClick={() => router.push(`/practice/add/${plan.id}`)}
-                    className="action-button practice"
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      borderRadius: 6,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                      color: "white",
+                      border: "none",
+                      textAlign: "center",
+                      backgroundColor: "#4caf50",
+                    }}
                   >
                     ✍️ 実践記録
                   </button>
 
-                  <button onClick={() => handleEdit(plan)} className="action-button edit">
+                  <button
+                    onClick={() => {
+                      localStorage.setItem("editLessonPlan", JSON.stringify(plan));
+                      router.push("/plan");
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      borderRadius: 6,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                      color: "white",
+                      border: "none",
+                      textAlign: "center",
+                      backgroundColor: "#ffb300",
+                    }}
+                  >
                     ✏️ 編集
                   </button>
 
-                  <button onClick={() => handleDeleteBoth(plan.id)} className="action-button delete">
+                  <button
+                    onClick={() => handleDeleteBoth(plan.id)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      borderRadius: 6,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                      color: "white",
+                      border: "none",
+                      textAlign: "center",
+                      backgroundColor: "#f44336",
+                    }}
+                  >
                     🗑 削除
                   </button>
                 </div>
