@@ -146,7 +146,7 @@ export default function EducationModelsPage() {
         /\n/g,
         "<br>"
       )}</p>
-      <p style="margin-top: 32px; font-size: 0.9rem; color: #666;">
+      <p style="margin-top: 32px; fontSize: 0.9rem; color: #666;">
         更新日時: ${new Date(m.updatedAt).toLocaleString()}
       </p>
     `;
@@ -221,7 +221,7 @@ export default function EducationModelsPage() {
     top: 56,
     left: 0,
     width: 250,
-    height: "auto",
+    height: "calc(100vh - 56px)", // 画面全高からナビバーを除いた高さ
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
@@ -231,9 +231,10 @@ export default function EducationModelsPage() {
     flexDirection: "column",
   };
   const menuScrollStyle: React.CSSProperties = {
+    flexGrow: 1,
+    overflowY: "auto",
     padding: "1rem",
     paddingBottom: 20,
-    overflowY: "auto",
   };
   const logoutButtonStyle: React.CSSProperties = {
     margin: "1rem",
@@ -268,6 +269,7 @@ export default function EducationModelsPage() {
     fontWeight: "bold",
     whiteSpace: "nowrap",
     marginBottom: 8,
+    cursor: "pointer",
   };
 
   const cardStyle: React.CSSProperties = {
@@ -329,38 +331,88 @@ export default function EducationModelsPage() {
 
       {/* メニュー本体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        <div style={menuScrollStyle}>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
-            🏠 ホーム
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
-            📋 授業作成
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
-            📖 計画履歴
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
-            📷 実践履歴
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
-            ✏️ 教育観作成
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
-            📚 教育観一覧
-          </button>
-          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
-            🕒 教育観履歴
-          </button>
-        </div>
-
         {/* ログアウトボタン */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
+
+        {/* メニューリンク */}
+        <div style={menuScrollStyle}>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/");
+            }}
+          >
+            🏠 ホーム
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan");
+            }}
+          >
+            📋 授業作成
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan/history");
+            }}
+          >
+            📖 計画履歴
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/history");
+            }}
+          >
+            📷 実践履歴
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/create");
+            }}
+          >
+            ✏️ 教育観作成
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models");
+            }}
+          >
+            📚 教育観一覧
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/history");
+            }}
+          >
+            🕒 教育観履歴
+          </button>
+        </div>
       </div>
 
       {/* メインコンテンツ */}
-      <main style={{ padding: 24, maxWidth: 900, margin: "72px auto 48px auto", fontFamily: "sans-serif" }}>
+      <main
+        style={{
+          padding: 24,
+          maxWidth: 900,
+          margin: "72px auto 48px auto",
+          fontFamily: "sans-serif",
+        }}
+      >
         <h1 style={{ fontSize: 24, marginBottom: 16 }}>教育観モデル一覧・編集</h1>
 
         {/* 並び替え */}
@@ -402,7 +454,14 @@ export default function EducationModelsPage() {
               <p>
                 <strong>育てたい子ども：</strong> {m.childFocus}
               </p>
-              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 16,
+                  flexWrap: "wrap",
+                }}
+              >
                 <button onClick={() => startEdit(m)} style={buttonPrimary}>
                   編集
                 </button>
@@ -440,7 +499,9 @@ export default function EducationModelsPage() {
                     placeholder="評価観点の重視点"
                     rows={2}
                     value={form.evaluationFocus}
-                    onChange={(e) => handleChange("evaluationFocus", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("evaluationFocus", e.target.value)
+                    }
                     style={inputStyle}
                   />
                   <textarea
@@ -458,10 +519,22 @@ export default function EducationModelsPage() {
                     style={inputStyle}
                   />
                   <div style={{ marginTop: 16 }}>
-                    <button onClick={() => { if(saveModel()) setError(""); }} style={buttonPrimary}>
+                    <button
+                      onClick={() => {
+                        if (saveModel()) setError("");
+                      }}
+                      style={buttonPrimary}
+                    >
                       保存
                     </button>
-                    <button onClick={cancelEdit} style={{ ...buttonPrimary, backgroundColor: "#757575", marginLeft: 8 }}>
+                    <button
+                      onClick={cancelEdit}
+                      style={{
+                        ...buttonPrimary,
+                        backgroundColor: "#757575",
+                        marginLeft: 8,
+                      }}
+                    >
                       キャンセル
                     </button>
                   </div>
@@ -486,6 +559,7 @@ const navLinkStyle: React.CSSProperties = {
   fontWeight: "bold",
   whiteSpace: "nowrap",
   marginBottom: 8,
+  cursor: "pointer",
 };
 
 const cardStyle: React.CSSProperties = {
