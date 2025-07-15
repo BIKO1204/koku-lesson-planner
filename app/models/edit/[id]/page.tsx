@@ -373,7 +373,7 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 const logoutButtonStyle: React.CSSProperties = {
-  margin: "0 0 1rem 0",
+  margin: "1rem 0 1rem 0", // 上に余白追加
   padding: "0.75rem 1rem",
   backgroundColor: "#e53935",
   color: "white",
