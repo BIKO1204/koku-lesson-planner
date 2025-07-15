@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { usePathname } from "next/navigation";
 
 type AuthWrapperProps = {
   children: ReactNode;
@@ -12,9 +13,13 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   const { data: session, status } = useSession();
   const [isMobile, setIsMobile] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname() ?? ""; // nullの場合は空文字列を代入
+
+  // 認証不要ページのパス
+  const noAuthPaths = ["/chatbot"]; // 必要に応じて追加してください
 
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (status === "unauthenticated" && !noAuthPaths.includes(pathname)) {
       signIn();
     }
 
@@ -22,10 +27,20 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
-  }, [status]);
+  }, [status, pathname]);
 
   if (status === "loading") {
     return <p>読み込み中...</p>;
+  }
+
+  // 認証不要ページなら認証スキップして即レンダー
+  if (noAuthPaths.includes(pathname)) {
+    return (
+      <>
+        {/* 認証なしでも使えるページの中身 */}
+        <main style={{ paddingTop: 48 }}>{children}</main>
+      </>
+    );
   }
 
   if (status === "authenticated") {

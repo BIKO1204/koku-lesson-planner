@@ -215,6 +215,13 @@ export default function CreateModelPage() {
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
   };
 
+  const guideTextStyle: React.CSSProperties = {
+    fontSize: "0.9rem",
+    color: "#666",
+    marginTop: 4,
+    marginBottom: 6,
+  };
+
   return (
     <>
       {/* ナビバー */}
@@ -286,7 +293,19 @@ export default function CreateModelPage() {
       <main style={mainContainerStyle}>
         <h1>{editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}</h1>
 
-        {error && <p style={{ color: "#d32f2f", marginBottom: 24, fontWeight: "700", fontSize: "1.1rem", textAlign: "center" }}>{error}</p>}
+        {error && (
+          <p
+            style={{
+              color: "#d32f2f",
+              marginBottom: 24,
+              fontWeight: "700",
+              fontSize: "1.1rem",
+              textAlign: "center",
+            }}
+          >
+            {error}
+          </p>
+        )}
 
         <section
           style={{
@@ -297,13 +316,24 @@ export default function CreateModelPage() {
             marginBottom: 28,
           }}
         >
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             モデル名（必須）：
+            <div style={guideTextStyle}>
+              例）面白い授業、対話型授業、音読重視など
+            </div>
             <input
               type="text"
               value={form.name}
               onChange={(e) => handleChange("name", e.target.value)}
-              placeholder="例）面白い授業、対話型授業、音読重視など"
+              placeholder=""
               style={{
                 width: "100%",
                 padding: 16,
@@ -320,13 +350,24 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             教育観（必須）：
+            <div style={guideTextStyle}>
+              例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。
+            </div>
             <textarea
               rows={3}
               value={form.philosophy}
               onChange={(e) => handleChange("philosophy", e.target.value)}
-              placeholder="例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。"
+              placeholder=""
               style={{
                 width: "100%",
                 padding: 16,
@@ -344,13 +385,24 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             評価観点の重視点（必須）：
+            <div style={guideTextStyle}>
+              例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。
+            </div>
             <textarea
               rows={3}
               value={form.evaluationFocus}
               onChange={(e) => handleChange("evaluationFocus", e.target.value)}
-              placeholder="例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。"
+              placeholder=""
               style={{
                 width: "100%",
                 padding: 16,
@@ -368,13 +420,24 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             言語活動の重視点（必須）：
+            <div style={guideTextStyle}>
+              例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。
+            </div>
             <textarea
               rows={3}
               value={form.languageFocus}
               onChange={(e) => handleChange("languageFocus", e.target.value)}
-              placeholder="例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。"
+              placeholder=""
               style={{
                 width: "100%",
                 padding: 16,
@@ -392,13 +455,24 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             育てたい子どもの姿（必須）：
+            <div style={guideTextStyle}>
+              例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。
+            </div>
             <textarea
               rows={3}
               value={form.childFocus}
               onChange={(e) => handleChange("childFocus", e.target.value)}
-              placeholder="例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。"
+              placeholder=""
               style={{
                 width: "100%",
                 padding: 16,
@@ -416,12 +490,24 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label style={{ display: "block", marginBottom: 18, fontWeight: 600, color: "#444", fontSize: "1.15rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             更新メモ（任意）：
+            <div style={guideTextStyle}>
+              例）今年度の授業で重視したい点や変更点などを書いてください。
+            </div>
             <textarea
               rows={2}
               value={form.note}
               onChange={(e) => handleChange("note", e.target.value)}
+              placeholder=""
               style={{
                 fontStyle: "italic",
                 width: "100%",
@@ -437,7 +523,6 @@ export default function CreateModelPage() {
                 transition: "border-color 0.25s ease",
                 resize: "vertical",
               }}
-              placeholder="例）今年度の授業で重視したい点や変更点などを書いてください。"
             />
           </label>
 
