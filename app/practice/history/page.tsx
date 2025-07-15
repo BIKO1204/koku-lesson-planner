@@ -130,10 +130,8 @@ export default function PracticeHistoryPage() {
     overflowY: "auto",
     flexGrow: 1,
   };
+  // ここを修正：position stickyを解除し余白を1remに統一
   const logoutButtonStyle: CSSProperties = {
-    position: "sticky",
-    top: 0,
-    margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -141,6 +139,9 @@ export default function PracticeHistoryPage() {
     borderRadius: 6,
     border: "none",
     cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+    position: "relative",
     zIndex: 1000,
   };
   const overlayStyle: CSSProperties = {
@@ -267,7 +268,7 @@ export default function PracticeHistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン（上部に固定） */}
+        {/* ログアウトボタン（上に少し余白） */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
@@ -277,22 +278,46 @@ export default function PracticeHistoryPage() {
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
           </Link>
-          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🕒 教育観履歴
           </Link>
         </div>
