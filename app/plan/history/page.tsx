@@ -114,9 +114,6 @@ export default function HistoryPage() {
     paddingBottom: 0,
   };
   const logoutButtonStyle: CSSProperties = {
-    position: "sticky",
-    top: 0,
-    margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -124,6 +121,9 @@ export default function HistoryPage() {
     borderRadius: 6,
     border: "none",
     cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+    position: "relative",
     zIndex: 1000,
   };
   const overlayStyle: CSSProperties = {
@@ -199,7 +199,7 @@ export default function HistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン（上部に固定） */}
+        {/* ログアウトボタン */}
         <button
           onClick={() => signOut()}
           style={logoutButtonStyle}

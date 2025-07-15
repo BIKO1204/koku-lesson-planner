@@ -550,9 +550,6 @@ ${languageActivities}
     paddingBottom: 0,
   };
   const logoutButtonStyle: CSSProperties = {
-    position: "sticky",
-    top: 0,
-    margin: "0 1rem 1rem 1rem",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -560,6 +557,9 @@ ${languageActivities}
     borderRadius: 6,
     border: "none",
     cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+    position: "relative",
     zIndex: 1000,
   };
 
@@ -650,7 +650,6 @@ ${languageActivities}
             🕒 教育観履歴
           </Link>
         </div>
-
       </div>
 
       {/* メインコンテンツ */}
