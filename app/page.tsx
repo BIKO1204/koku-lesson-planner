@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { useAuth } from "./contexts/AuthContext";
 
 export default function HomeRedirect() {
@@ -51,12 +52,27 @@ function Dashboard() {
         }
       `}</style>
 
+      {/* ナビバー */}
+      <nav style={navBarStyle}>
+        <h1 style={{ color: "white", fontSize: "1.25rem", margin: 0 }}>
+          国語授業プランナー
+        </h1>
+        <button
+          onClick={() => signOut()}
+          style={logoutButtonStyle}
+          aria-label="ログアウト"
+          title="ログアウト"
+        >
+          ログアウト
+        </button>
+      </nav>
+
       <main
         style={{
           padding: 24,
           fontFamily: "sans-serif",
           maxWidth: 500,
-          margin: "0 auto",
+          margin: "80px auto 0 auto", // ナビバーの高さ+余白
         }}
       >
         {/* ヘッダー */}
@@ -110,3 +126,31 @@ function Dashboard() {
     </>
   );
 }
+
+// --- スタイル ---
+
+const navBarStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: 56,
+  backgroundColor: "#1976d2",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "0 1rem",
+  zIndex: 1000,
+};
+
+const logoutButtonStyle: React.CSSProperties = {
+  backgroundColor: "#e53935",
+  color: "white",
+  border: "none",
+  borderRadius: 6,
+  padding: "0.5rem 1rem",
+  cursor: "pointer",
+  fontWeight: "bold",
+  fontSize: "0.9rem",
+};
+
