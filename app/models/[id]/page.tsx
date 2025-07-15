@@ -1,14 +1,15 @@
-// app/models/[id]/page.tsx
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 
 export default function StyleDetailPage() {
-  const params = useParams();
-  const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
   const router = useRouter();
+  const params = new URLSearchParams(window.location.search);
+  const id = window.location.pathname.split("/").pop() || "";
+
   const [style, setStyle] = useState<any>(null);
   const [relatedPlans, setRelatedPlans] = useState<any[]>([]);
 
@@ -26,8 +27,39 @@ export default function StyleDetailPage() {
     return <p style={{ padding: 24 }}>読み込み中…</p>;
   }
 
+  // ログアウトボタンを追加
+  const handleLogout = () => {
+    signOut();
+  };
+
   return (
-    <main style={{ padding: 24, maxWidth: 800, margin: "0 auto", fontFamily: "sans-serif" }}>
+    <main
+      style={{
+        padding: 24,
+        maxWidth: 800,
+        margin: "0 auto",
+        fontFamily: "sans-serif",
+      }}
+    >
+      {/* ログアウトボタン（上に余白を入れる） */}
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={handleLogout}
+          style={{
+            width: "100%",
+            padding: "0.75rem 1rem",
+            backgroundColor: "#e53935",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          🔓 ログアウト
+        </button>
+      </div>
+
       {/* 完全横並びナビ */}
       <nav style={navStyle}>
         {[
@@ -37,11 +69,7 @@ export default function StyleDetailPage() {
           ["/practice/history", "📷 実践履歴"],
           ["/models", "📚 教育観一覧"],
         ].map(([href, label]) => (
-          <button
-            key={href}
-            onClick={() => router.push(href)}
-            style={navButtonStyle}
-          >
+          <button key={href} onClick={() => router.push(href)} style={navButtonStyle}>
             {label}
           </button>
         ))}
@@ -50,16 +78,29 @@ export default function StyleDetailPage() {
       <h1 style={{ fontSize: "1.6rem", margin: "1.5rem 0 1rem" }}>{style.name}</h1>
 
       <section style={detailBoxStyle}>
-        <p><strong>教育観：</strong><br />{style.philosophy}</p>
-        <p><strong>評価観点：</strong><br />{style.evaluationFocus}</p>
-        <p><strong>言語活動：</strong><br />{style.languageFocus}</p>
-        <p><strong>育てたい姿：</strong><br />{style.childFocus}</p>
+        <p>
+          <strong>教育観：</strong>
+          <br />
+          {style.philosophy}
+        </p>
+        <p>
+          <strong>評価観点：</strong>
+          <br />
+          {style.evaluationFocus}
+        </p>
+        <p>
+          <strong>言語活動：</strong>
+          <br />
+          {style.languageFocus}
+        </p>
+        <p>
+          <strong>育てたい姿：</strong>
+          <br />
+          {style.childFocus}
+        </p>
       </section>
 
-      <button
-        onClick={() => router.push(`/plan?styleId=${style.id}`)}
-        style={primaryButtonStyle}
-      >
+      <button onClick={() => router.push(`/plan?styleId=${style.id}`)} style={primaryButtonStyle}>
         ▶︎ このスタイルで授業作成
       </button>
 
@@ -70,11 +111,10 @@ export default function StyleDetailPage() {
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {relatedPlans.map((p) => (
             <li key={p.id} style={cardStyle}>
-              <p><strong>{p.unit}</strong> ({p.grade}・{p.genre})</p>
-              <button
-                onClick={() => router.push("/plan/history")}
-                style={secondaryButtonStyle}
-              >
+              <p>
+                <strong>{p.unit}</strong> ({p.grade}・{p.genre})
+              </p>
+              <button onClick={() => router.push("/plan/history")} style={secondaryButtonStyle}>
                 📖 履歴で確認
               </button>
             </li>
