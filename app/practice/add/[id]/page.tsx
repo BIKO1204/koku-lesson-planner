@@ -3,10 +3,9 @@
 import React, { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { openDB } from "idb";
-import { useSession, signOut } from "next-auth/react";
-
-import { db } from "@/lib/firebase";
+import { signOut } from "next-auth/react";
 import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type BoardImage = { name: string; src: string };
 
@@ -14,8 +13,7 @@ type PracticeRecord = {
   lessonId: string;
   practiceDate: string;
   reflection: string;
-  boardImages: BoardImage[];        // フルサイズ（ローカル保存用）
-  compressedImages: BoardImage[];   // 圧縮版（Firestore保存用）
+  boardImages: BoardImage[]; // フルサイズ画像（ローカル保存用）
   lessonTitle: string;
 };
 
@@ -28,6 +26,7 @@ const DB_NAME = "PracticeDB";
 const STORE_NAME = "practiceRecords";
 const DB_VERSION = 1;
 
+// IndexedDB初期化・取得
 async function getDB() {
   return openDB(DB_NAME, DB_VERSION, {
     upgrade(db) {
@@ -38,17 +37,19 @@ async function getDB() {
   });
 }
 
+// IndexedDBからレコード取得
 async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> {
   const db = await getDB();
   return db.get(STORE_NAME, lessonId);
 }
 
+// IndexedDBにレコード保存
 async function saveRecord(record: PracticeRecord) {
   const db = await getDB();
   await db.put(STORE_NAME, record);
 }
 
-// Base64変換（ファイル → Base64）
+// ファイルをBase64に変換（フルサイズ用）
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -103,23 +104,156 @@ function resizeAndCompressFile(
   });
 }
 
+// 表示用に安全に変換
+function safeRender(value: any): string {
+  if (typeof value === "string") {
+    return value.replace(/(、\s*)+(?=（[1-5]）)/g, "");
+  }
+  if (typeof value === "number") return value.toString();
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) {
+    return value.map(safeRender).join("、");
+  }
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value);
+}
+
 export default function PracticeAddPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
-  const { data: session } = useSession();
-  const userId = session?.user?.email || "guest";
 
+  // 状態管理
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
-  const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
-  const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
+  const [boardImages, setBoardImages] = useState<BoardImage[]>([]); // フルサイズ（ローカル用）
+  const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]); // 圧縮版（Firestore用）
   const [lessonTitle, setLessonTitle] = useState("");
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // --- ナビバーとメニュー用スタイル ---
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
+
+  // ローカルストレージから授業計画を取得＆IndexedDBから実践記録を取得
+  useEffect(() => {
+    const plansJson = localStorage.getItem("lessonPlans") || "[]";
+    let plans: LessonPlan[];
+    try {
+      plans = JSON.parse(plansJson) as LessonPlan[];
+    } catch {
+      plans = [];
+    }
+    const plan = plans.find((p) => p.id === id) || null;
+    setLessonPlan(plan);
+
+    if (plan && plan.result) {
+      if (typeof plan.result === "string") {
+        const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
+        setLessonTitle(firstLine);
+      } else if (typeof plan.result === "object") {
+        const unitName = (plan.result as any)["単元名"];
+        setLessonTitle(typeof unitName === "string" ? unitName : "");
+      } else {
+        setLessonTitle("");
+      }
+    } else {
+      setLessonTitle("");
+    }
+
+    getRecord(id).then((existing) => {
+      if (existing) {
+        setPracticeDate(existing.practiceDate);
+        setReflection(existing.reflection);
+        setBoardImages(existing.boardImages);
+        setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
+      }
+    });
+  }, [id]);
+
+  // 画像アップロード時、フルサイズと圧縮版のBase64を同時生成
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+
+    const newFullImages: BoardImage[] = [];
+    const newCompressedImages: BoardImage[] = [];
+
+    for (const file of files) {
+      try {
+        const fullBase64 = await fileToBase64(file);
+        const compressedBase64 = await resizeAndCompressFile(file, 800, 600, 0.7);
+        newFullImages.push({ name: file.name, src: fullBase64 });
+        newCompressedImages.push({ name: file.name, src: compressedBase64 });
+      } catch (error) {
+        console.error("画像処理失敗", error);
+      }
+    }
+
+    setBoardImages((prev) => [...prev, ...newFullImages]);
+    setCompressedImages((prev) => [...prev, ...newCompressedImages]);
+
+    e.target.value = "";
+  };
+
+  // 画像削除（両方の配列から）
+  const handleRemoveImage = (i: number) => {
+    setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
+    setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  // プレビュー作成
+  const handlePreview = (e: FormEvent) => {
+    e.preventDefault();
+    setRecord({
+      lessonId: id,
+      practiceDate,
+      reflection,
+      boardImages,
+      lessonTitle,
+    });
+  };
+
+  // IndexedDBに保存（フルサイズ画像）
+  async function saveRecordToIndexedDB(record: PracticeRecord) {
+    const dbLocal = await getDB();
+    await dbLocal.put(STORE_NAME, record);
+  }
+
+  // Firestoreに保存（圧縮画像）
+  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
+    const docRef = doc(db, "practiceRecords", record.lessonId);
+    await setDoc(docRef, {
+      practiceDate: record.practiceDate,
+      reflection: record.reflection,
+      boardImages: record.compressedImages,
+      lessonTitle: record.lessonTitle,
+      createdAt: new Date(),
+    });
+  }
+
+  // ローカルとFirestoreに一括保存
+  const handleSaveBoth = async () => {
+    if (!record) {
+      alert("プレビューを作成してください");
+      return;
+    }
+    setUploading(true);
+    try {
+      await saveRecordToIndexedDB(record);
+      await saveRecordToFirestore({ ...record, compressedImages });
+      alert("ローカルとFirebaseに保存しました");
+      router.push("/practice/history");
+    } catch (e) {
+      alert("保存に失敗しました");
+      console.error(e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // --- スタイル省略（元コードのまま） ---
+
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -207,135 +341,6 @@ export default function PracticeAddPage() {
     paddingTop: 72,
   };
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
-
-  useEffect(() => {
-    // ローカル保存された授業案から単元名を取得
-    const plansJson = localStorage.getItem("lessonPlans") || "[]";
-    let plans: LessonPlan[];
-    try {
-      plans = JSON.parse(plansJson) as LessonPlan[];
-    } catch {
-      plans = [];
-    }
-    const plan = plans.find((p) => p.id === id) || null;
-    setLessonPlan(plan);
-
-    if (plan && plan.result) {
-      if (typeof plan.result === "string") {
-        const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
-        setLessonTitle(firstLine);
-      } else if (typeof plan.result === "object") {
-        const unitName = (plan.result as any)["単元名"];
-        setLessonTitle(typeof unitName === "string" ? unitName : "");
-      } else {
-        setLessonTitle("");
-      }
-    } else {
-      setLessonTitle("");
-    }
-
-    // IndexedDBから既存実践記録を取得
-    getRecord(id).then((existing) => {
-      if (existing) {
-        setPracticeDate(existing.practiceDate);
-        setReflection(existing.reflection);
-        setBoardImages(existing.boardImages);
-        setCompressedImages(existing.compressedImages || []);
-        setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-      }
-    });
-  }, [id]);
-
-  // 画像選択時にフルサイズと圧縮版Base64を両方作成して保存
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-
-    const newFullImages: BoardImage[] = [];
-    const newCompressedImages: BoardImage[] = [];
-
-    for (const file of files) {
-      try {
-        const fullBase64 = await fileToBase64(file);
-        const compressedBase64 = await resizeAndCompressFile(file, 800, 600, 0.7);
-        newFullImages.push({ name: file.name, src: fullBase64 });
-        newCompressedImages.push({ name: file.name, src: compressedBase64 });
-      } catch (error) {
-        console.error("画像処理失敗", error);
-      }
-    }
-
-    setBoardImages((prev) => [...prev, ...newFullImages]);
-    setCompressedImages((prev) => [...prev, ...newCompressedImages]);
-
-    e.target.value = "";
-  };
-
-  const handleRemoveImage = (i: number) => {
-    setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
-    setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  // プレビュー作成
-  const handlePreview = (e: FormEvent) => {
-    e.preventDefault();
-    setRecord({
-      lessonId: id,
-      practiceDate,
-      reflection,
-      boardImages,
-      compressedImages,
-      lessonTitle,
-    });
-  };
-
-  // Firestoreに圧縮画像で保存
-  async function saveRecordToFirestore(record: PracticeRecord) {
-    if (!userId) {
-      alert("ログインしてください");
-      return;
-    }
-    setUploading(true);
-    try {
-      const docRef = doc(db, "practiceRecords", record.lessonId);
-      await setDoc(docRef, {
-        practiceDate: record.practiceDate,
-        reflection: record.reflection,
-        boardImages: record.compressedImages, // 圧縮版を保存
-        lessonTitle: record.lessonTitle,
-        createdBy: userId,
-        createdAt: new Date(),
-      });
-      alert("Firebaseに保存しました");
-      router.push("/practice/history");
-    } catch (e) {
-      alert("Firebaseへの保存に失敗しました");
-      console.error(e);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  // IndexedDBに保存（フルサイズ画像でたっぷり保存）
-  const handleSaveLocal = async () => {
-    if (!record) {
-      alert("プレビューを作成してください");
-      return;
-    }
-    setUploading(true);
-    try {
-      await saveRecord(record);
-      alert("IndexedDBに保存しました");
-      router.push("/practice/history");
-    } catch (e) {
-      alert("IndexedDBへの保存に失敗しました。");
-      console.error(e);
-    } finally {
-      setUploading(false);
-    }
-  };
-
   return (
     <>
       {/* ナビバー */}
@@ -366,6 +371,7 @@ export default function PracticeAddPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン */}
         <button
           onClick={() => {
             signOut();
@@ -376,6 +382,7 @@ export default function PracticeAddPage() {
           🔓 ログアウト
         </button>
 
+        {/* メニューリンク */}
         <div style={menuLinksWrapperStyle}>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
@@ -423,7 +430,7 @@ export default function PracticeAddPage() {
             <label>
               振り返り：<br />
               <textarea
-                value={reflection}
+                value={record?.reflection ?? reflection}
                 required
                 onChange={(e) => setReflection(e.target.value)}
                 rows={6}
@@ -451,6 +458,7 @@ export default function PracticeAddPage() {
               accept="image/*"
               onChange={handleFileChange}
               style={{ display: "none" }}
+              disabled={uploading}
             />
           </label>
 
@@ -504,29 +512,162 @@ export default function PracticeAddPage() {
               cursor: "pointer",
               marginTop: 16,
             }}
+            disabled={uploading}
           >
-            プレビューを生成
+            {uploading ? "アップロード中..." : "プレビューを生成"}
           </button>
         </form>
 
+        {record && (
+          <section
+            id="practice-preview"
+            style={{
+              marginTop: 24,
+              padding: 24,
+              border: "1px solid #ccc",
+              borderRadius: 6,
+              backgroundColor: "#fff",
+              fontSize: 14,
+              lineHeight: 1.6,
+              fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif",
+            }}
+          >
+            <h2>
+              {lessonPlan?.result && typeof lessonPlan.result === "object"
+                ? safeRender((lessonPlan.result as any)["単元名"])
+                : lessonTitle}
+            </h2>
+
+            {lessonPlan?.result && typeof lessonPlan.result === "object" && (
+              <>
+                <section style={{ marginBottom: 16 }}>
+                  <h3>授業の概要</h3>
+                  <p>
+                    <strong>教科書名：</strong>
+                    {safeRender((lessonPlan.result as any)["教科書名"])}
+                  </p>
+                  <p>
+                    <strong>学年：</strong>
+                    {safeRender((lessonPlan.result as any)["学年"])}
+                  </p>
+                  <p>
+                    <strong>ジャンル：</strong>
+                    {safeRender((lessonPlan.result as any)["ジャンル"])}
+                  </p>
+                  <p>
+                    <strong>授業時間数：</strong>
+                    {safeRender((lessonPlan.result as any)["授業時間数"])}時間
+                  </p>
+                  <p>
+                    <strong>育てたい子どもの姿：</strong>
+                    {safeRender((lessonPlan.result as any)["育てたい子どもの姿"])}
+                  </p>
+                </section>
+
+                <section style={{ marginBottom: 16 }}>
+                  <h3>単元の目標</h3>
+                  <p>{safeRender((lessonPlan.result as any)["単元の目標"])}</p>
+                </section>
+
+                {(lessonPlan.result as any)["評価の観点"] && (
+                  <section style={{ marginBottom: 16 }}>
+                    <h3>評価の観点</h3>
+                    {Object.entries((lessonPlan.result as any)["評価の観点"]).map(
+                      ([category, items]) => {
+                        const numberedItems = Array.isArray(items)
+                          ? items.map((item, i) => `（${i + 1}）${item}`)
+                          : [String(items)];
+
+                        return (
+                          <div key={category} style={{ marginBottom: 8 }}>
+                            <strong>{category}</strong>
+                            <ul style={{ paddingLeft: 20, marginTop: 4 }}>
+                              {numberedItems.map((text, index) => (
+                                <li key={index}>{safeRender(text)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      }
+                    )}
+                  </section>
+                )}
+
+                {(lessonPlan.result as any)["言語活動の工夫"] && (
+                  <section style={{ marginBottom: 16 }}>
+                    <h3>言語活動の工夫</h3>
+                    <p>{safeRender((lessonPlan.result as any)["言語活動の工夫"])}</p>
+                  </section>
+                )}
+
+                {(lessonPlan.result as any)["授業の流れ"] && (
+                  <section style={{ marginBottom: 16 }}>
+                    <h3>授業の流れ</h3>
+                    <ul>
+                      {Object.entries((lessonPlan.result as any)["授業の流れ"]).map(
+                        ([key, value]) => (
+                          <li key={key}>
+                            <strong>{key}：</strong>
+                            {typeof value === "string" ? value : safeRender(value)}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </section>
+                )}
+              </>
+            )}
+
+            <section style={{ marginTop: 24 }}>
+              <h3>実施記録</h3>
+              <p>
+                <strong>実施日：</strong> {record.practiceDate}
+              </p>
+              <p>
+                <strong>振り返り：</strong>
+              </p>
+              <p>{record.reflection}</p>
+
+              {record.boardImages.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <strong>板書写真：</strong>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    {record.boardImages.map((img, i) => (
+                      <div key={img.name + i} style={{ width: "100%" }}>
+                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>
+                          板書{i + 1}
+                        </div>
+                        <img
+                          src={img.src}
+                          alt={img.name}
+                          style={{
+                            width: "100%",
+                            height: "auto",
+                            borderRadius: 8,
+                            border: "1px solid #ccc",
+                            display: "block",
+                            maxWidth: "100%",
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          </section>
+        )}
+
+        {/* 一括保存ボタン */}
         <button
-          onClick={async () => {
-            if (!record) {
-              alert("プレビューを作成してください");
-              return;
-            }
-            setUploading(true);
-            try {
-              await saveRecord(record);
-              alert("IndexedDBに保存しました");
-              router.push("/practice/history");
-            } catch (e) {
-              alert("IndexedDBへの保存に失敗しました。");
-              console.error(e);
-            } finally {
-              setUploading(false);
-            }
-          }}
+          onClick={handleSaveBoth}
           style={{
             padding: 12,
             backgroundColor: "#4caf50",
@@ -539,33 +680,9 @@ export default function PracticeAddPage() {
           }}
           disabled={uploading}
         >
-          💾 ローカルに保存して実践履歴へ
-        </button>
-
-        <button
-          onClick={async () => {
-            if (!record) {
-              alert("プレビューを作成してください");
-              return;
-            }
-            await saveRecordToFirestore(record);
-          }}
-          style={{
-            padding: 12,
-            backgroundColor: "#2196f3",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            width: "100%",
-            cursor: "pointer",
-            marginTop: 12,
-          }}
-          disabled={uploading}
-        >
-          ☁️ Firebaseに保存
+          {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
         </button>
       </main>
     </>
   );
 }
-
