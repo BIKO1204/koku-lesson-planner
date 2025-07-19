@@ -18,6 +18,7 @@ type PracticeRecord = {
   grade?: string;      // 学年
   genre?: string;      // ジャンル
   unitName?: string;   // 単元名
+  author?: string;     // ← 追加 作成者名
 };
 
 type LessonPlan = {
@@ -134,6 +135,7 @@ export default function PracticeAddPage() {
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
+  const [author, setAuthor] = useState("");  // ← 作成者名の状態追加
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
@@ -265,6 +267,7 @@ export default function PracticeAddPage() {
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
+        setAuthor(existing.author || "");  // ← 既存データあればセット
       }
     });
   }, [id]);
@@ -312,6 +315,7 @@ export default function PracticeAddPage() {
       grade,
       genre,
       unitName,
+      author,  // ← 追加
     });
   };
 
@@ -332,6 +336,7 @@ export default function PracticeAddPage() {
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
+      author: record.author || "",  // ← 追加
       createdAt: new Date(),
     });
   }
@@ -411,6 +416,9 @@ export default function PracticeAddPage() {
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
             📷 実践履歴
           </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
+           🌐 共有版実践記録 
+          </button>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
           </button>
@@ -460,6 +468,21 @@ export default function PracticeAddPage() {
                 <option value="5年">5年</option>
                 <option value="6年">6年</option>
               </select>
+            </label>
+          </div>
+
+          {/* 作成者名 */}
+          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <label>
+              作成者名：
+              <input
+                type="text"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+                placeholder="例: 山田 太郎"
+              />
             </label>
           </div>
 
@@ -696,6 +719,9 @@ export default function PracticeAddPage() {
               <h3>実施記録</h3>
               <p>
                 <strong>実施日：</strong> {record.practiceDate}
+              </p>
+              <p>
+                <strong>作成者：</strong> {record.author || "不明"}
               </p>
               <p>
                 <strong>振り返り：</strong>

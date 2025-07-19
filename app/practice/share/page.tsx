@@ -30,6 +30,7 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string;
+  author?: string; // 作成者名追加
 };
 type LessonPlan = {
   id: string;
@@ -44,15 +45,18 @@ export default function PracticeSharePage() {
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
+  const [inputAuthor, setInputAuthor] = useState<string>(""); // 作成者検索入力
 
   // 検索条件反映用フィルター
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
+  const [authorFilter, setAuthorFilter] = useState<string | null>(null); // 作成者フィルター
 
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [newComments, setNewComments] = useState<Record<string, string>>({});
+  const [commentAuthors, setCommentAuthors] = useState<Record<string, string>>({}); // コメント投稿者名管理
   const [menuOpen, setMenuOpen] = useState(false);
 
   // 画面幅によるレスポンシブ判定
@@ -66,6 +70,7 @@ export default function PracticeSharePage() {
         ...(doc.data() as PracticeRecord),
         lessonId: doc.id,
         likedUsers: (doc.data() as any).likedUsers || [],
+        author: (doc.data() as any).author || "", // 作成者名取得
       }));
       setRecords(recs);
     });
@@ -96,6 +101,7 @@ export default function PracticeSharePage() {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
     setUnitNameFilter(inputUnitName.trim() || null);
+    setAuthorFilter(inputAuthor.trim() || null); // 作成者検索反映
   };
 
   // フィルター適用
@@ -103,6 +109,7 @@ export default function PracticeSharePage() {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
+    if (authorFilter && !r.author?.includes(authorFilter)) return false; // 作成者フィルター
     return true;
   });
 
@@ -159,6 +166,11 @@ export default function PracticeSharePage() {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
 
+  // コメント投稿者名入力管理
+  const handleCommentAuthorChange = (lessonId: string, value: string) => {
+    setCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
+  };
+
   // コメント投稿
   const handleAddComment = async (lessonId: string) => {
     if (!session) {
@@ -166,6 +178,7 @@ export default function PracticeSharePage() {
       return;
     }
     const comment = newComments[lessonId]?.trim();
+    const commentAuthor = commentAuthors[lessonId]?.trim() || "名無し";
     if (!comment) {
       alert("コメントを入力してください");
       return;
@@ -174,12 +187,13 @@ export default function PracticeSharePage() {
       const docRef = doc(db, "practiceRecords", lessonId);
       await updateDoc(docRef, {
         comments: arrayUnion({
-          userId,
+          userId: commentAuthor, // コメント投稿者名として保存
           comment,
           createdAt: new Date().toISOString(),
         }),
       });
       setNewComments((prev) => ({ ...prev, [lessonId]: "" }));
+      setCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
     } catch (e) {
       console.error("コメント追加失敗", e);
       alert("コメントの投稿に失敗しました");
@@ -331,6 +345,13 @@ export default function PracticeSharePage() {
     border: "none",
     borderRadius: 4,
     cursor: "pointer",
+  };
+  const commentAuthorInputStyle: CSSProperties = {
+    width: "100%",
+    padding: 6,
+    marginTop: 8,
+    borderRadius: 4,
+    border: "1px solid #aaa",
   };
   const navLinkStyle: CSSProperties = {
     display: "block",
@@ -506,6 +527,25 @@ export default function PracticeSharePage() {
             />
           </div>
 
+          {/* 作成者名 */}
+          <div>
+            <div style={filterSectionTitleStyle}>作成者名</div>
+            <input
+              type="text"
+              placeholder="作成者名で検索"
+              value={inputAuthor}
+              onChange={(e) => setInputAuthor(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
           <button
             onClick={handleSearch}
             style={{
@@ -535,6 +575,11 @@ export default function PracticeSharePage() {
               return (
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
+
+                  {/* 作成者名表示 */}
+                  <p>
+                    <strong>作成者：</strong> {r.author || "不明"}
+                  </p>
 
                   {/* 授業案詳細（スマホでもスクロールできるように調整） */}
                   {plan && typeof plan.result === "object" && (
@@ -710,6 +755,18 @@ export default function PracticeSharePage() {
                       ))}
                     </div>
 
+                    {/* コメント者名入力欄 */}
+                    <input
+                      type="text"
+                      placeholder="コメント者名"
+                      value={commentAuthors[r.lessonId] || ""}
+                      onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
+                      style={commentAuthorInputStyle}
+                      disabled={!session}
+                      title={session ? undefined : "ログインしてください"}
+                    />
+
+                    {/* コメント入力欄 */}
                     <textarea
                       rows={3}
                       placeholder="コメントを入力"
