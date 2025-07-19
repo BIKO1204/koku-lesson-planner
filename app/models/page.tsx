@@ -1,11 +1,19 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { v4 as uuidv4 } from "uuid";
-import html2pdf from "html2pdf.js";
+import {
+  collection,
+  query,
+  orderBy,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  deleteDoc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type EducationModel = {
   id: string;
@@ -15,11 +23,11 @@ type EducationModel = {
   languageFocus: string;
   childFocus: string;
   updatedAt: string;
+  creatorName?: string; // 作成者名（optional）
 };
 
 export default function EducationModelsPage() {
   const router = useRouter();
-
   const [models, setModels] = useState<EducationModel[]>([]);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -35,16 +43,29 @@ export default function EducationModelsPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // Firestoreデータ取得＆ローカルストレージにも保存
   useEffect(() => {
-    const stored = localStorage.getItem("styleModels");
-    if (stored) {
+    async function fetchModels() {
       try {
-        setModels(JSON.parse(stored));
-      } catch {
-        setModels([]);
+        const colRef = collection(db, "educationModels");
+        const q = query(
+          colRef,
+          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+        );
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as EducationModel[];
+        setModels(data);
+        // ローカルにも同期しておく
+        localStorage.setItem("styleModels", JSON.stringify(data));
+      } catch (e) {
+        console.error("Firestoreからの読み込みエラー:", e);
       }
     }
-  }, []);
+    fetchModels();
+  }, [sortOrder]);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -75,7 +96,7 @@ export default function EducationModelsPage() {
     setError("");
   };
 
-  const saveModel = () => {
+  const saveModel = async () => {
     if (
       !form.name.trim() ||
       !form.philosophy.trim() ||
@@ -88,35 +109,91 @@ export default function EducationModelsPage() {
     }
 
     const now = new Date().toISOString();
-    let updatedModels: EducationModel[];
 
-    if (editId) {
-      updatedModels = models.map((m) =>
-        m.id === editId ? { ...m, ...form, updatedAt: now } : m
-      );
-    } else {
-      updatedModels = [
-        {
-          id: uuidv4(),
+    try {
+      let newModel: EducationModel;
+
+      if (editId) {
+        // 更新
+        const docRef = doc(db, "educationModels", editId);
+        await updateDoc(docRef, {
           name: form.name.trim(),
           philosophy: form.philosophy.trim(),
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           updatedAt: now,
-        },
-        ...models,
-      ];
-    }
+        });
+        newModel = {
+          id: editId,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+        };
+      } else {
+        // 新規追加
+        const colRef = collection(db, "educationModels");
+        const docRef = await addDoc(colRef, {
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+        });
+        newModel = {
+          id: docRef.id,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+        };
+      }
 
-    localStorage.setItem("styleModels", JSON.stringify(updatedModels));
-    setModels(updatedModels);
-    cancelEdit();
-    setMenuOpen(false);
-    return true;
+      // ローカルストレージ同期用配列を作成
+      const updatedLocalModels = editId
+        ? models.map((m) => (m.id === editId ? newModel : m))
+        : [newModel, ...models];
+
+      // ローカルストレージ保存
+      localStorage.setItem("styleModels", JSON.stringify(updatedLocalModels));
+      setModels(updatedLocalModels);
+
+      cancelEdit();
+      setMenuOpen(false);
+      setError("");
+      return true;
+    } catch (e) {
+      console.error("Firestore保存エラー", e);
+      setError("保存に失敗しました。");
+      return false;
+    }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("このモデルを削除しますか？")) return;
+    try {
+      await deleteDoc(doc(db, "educationModels", id));
+      const filtered = models.filter((m) => m.id !== id);
+      setModels(filtered);
+      localStorage.setItem("styleModels", JSON.stringify(filtered));
+      if (editId === id) cancelEdit();
+      setMenuOpen(false);
+    } catch (e) {
+      alert("削除に失敗しました。");
+      console.error(e);
+    }
+  };
+
+  // PDF生成関数（html2pdf.jsを動的インポート）
   async function generatePdfFromModel(m: EducationModel) {
+    const html2pdf = (await import("html2pdf.js")).default;
+
     const tempDiv = document.createElement("div");
     tempDiv.style.padding = "20px";
     tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', sans-serif";
@@ -126,25 +203,13 @@ export default function EducationModelsPage() {
     tempDiv.innerHTML = `
       <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${m.name}</h1>
       <h2 style="color: #4CAF50; margin-top: 24px;">1. 教育観</h2>
-      <p style="white-space: pre-wrap; margin-left: 12px;">${m.philosophy.replace(
-        /\n/g,
-        "<br>"
-      )}</p>
+      <p style="white-space: pre-wrap; margin-left: 12px;">${m.philosophy.replace(/\n/g, "<br>")}</p>
       <h2 style="color: #4CAF50; margin-top: 24px;">2. 評価観点の重視点</h2>
-      <p style="white-space: pre-wrap; margin-left: 12px;">${m.evaluationFocus.replace(
-        /\n/g,
-        "<br>"
-      )}</p>
+      <p style="white-space: pre-wrap; margin-left: 12px;">${m.evaluationFocus.replace(/\n/g, "<br>")}</p>
       <h2 style="color: #4CAF50; margin-top: 24px;">3. 言語活動の重視点</h2>
-      <p style="white-space: pre-wrap; margin-left: 12px;">${m.languageFocus.replace(
-        /\n/g,
-        "<br>"
-      )}</p>
+      <p style="white-space: pre-wrap; margin-left: 12px;">${m.languageFocus.replace(/\n/g, "<br>")}</p>
       <h2 style="color: #4CAF50; margin-top: 24px;">4. 育てたい子どもの姿</h2>
-      <p style="white-space: pre-wrap; margin-left: 12px;">${m.childFocus.replace(
-        /\n/g,
-        "<br>"
-      )}</p>
+      <p style="white-space: pre-wrap; margin-left: 12px;">${m.childFocus.replace(/\n/g, "<br>")}</p>
       <p style="margin-top: 32px; font-size: 0.9rem; color: #666;">
         更新日時: ${new Date(m.updatedAt).toLocaleString()}
       </p>
@@ -170,6 +235,7 @@ export default function EducationModelsPage() {
     }
   }
 
+  // Firestore側でorderByしてるけど念のためフロント側もソート
   const sortedModels = () => {
     const copy = [...models];
     if (sortOrder === "newest") {
@@ -180,16 +246,7 @@ export default function EducationModelsPage() {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm("このモデルを削除しますか？")) return;
-    const remaining = models.filter((m) => m.id !== id);
-    localStorage.setItem("styleModels", JSON.stringify(remaining));
-    setModels(remaining);
-    if (editId === id) cancelEdit();
-    setMenuOpen(false);
-  };
-
-  // Styles
+  // 省略しないUIスタイル
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -228,17 +285,10 @@ export default function EducationModelsPage() {
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
-    padding: "0 1rem",  // ← これで左右に余白を確保
+    padding: "0 1rem",
     boxSizing: "border-box",
   };
-  const menuScrollStyle: React.CSSProperties = {
-    flexGrow: 1,
-    overflowY: "auto",
-    paddingTop: "1rem",
-    paddingBottom: "20px",
-  };
   const logoutButtonStyle: React.CSSProperties = {
-    margin: "1rem 0",
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
     color: "white",
@@ -246,9 +296,53 @@ export default function EducationModelsPage() {
     borderRadius: 6,
     border: "none",
     cursor: "pointer",
-    zIndex: 1000,
-    width: "100%",          // 幅をメニューいっぱいに統一
-    boxSizing: "border-box",
+    flexShrink: 0,
+    margin: "1rem",
+  };
+  const menuScrollStyle: React.CSSProperties = {
+    overflowY: "auto",
+    flexGrow: 1,
+    paddingTop: "1rem",
+    paddingBottom: "20px",
+  };
+  const navBtnStyle: React.CSSProperties = {
+    marginBottom: 8,
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    display: "block",
+    width: "100%",
+    textAlign: "center",
+  };
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "calc(100vh - 56px)",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+  const mainContainerStyle: React.CSSProperties = {
+    padding: "72px 24px 24px",
+    maxWidth: 900,
+    margin: "auto",
+    fontFamily: "sans-serif",
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
+  };
+  const guideTextStyle: React.CSSProperties = {
+    fontSize: "0.9rem",
+    color: "#666",
+    marginTop: 4,
+    marginBottom: 6,
   };
   const navLinkStyle: React.CSSProperties = {
     display: "block",
@@ -261,10 +355,9 @@ export default function EducationModelsPage() {
     whiteSpace: "nowrap",
     marginBottom: 8,
     cursor: "pointer",
-    width: "100%",          // 幅をメニューいっぱいに統一
+    width: "100%",
     boxSizing: "border-box",
   };
-
   const cardStyle: React.CSSProperties = {
     border: "1px solid #ccc",
     borderRadius: 12,
@@ -273,7 +366,6 @@ export default function EducationModelsPage() {
     backgroundColor: "white",
     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
   };
-
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: 8,
@@ -283,9 +375,8 @@ export default function EducationModelsPage() {
     border: "1px solid #ccc",
     boxSizing: "border-box",
   };
-
   const buttonPrimary: React.CSSProperties = {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#4caf50",
     color: "white",
     padding: "8px 16px",
     border: "none",
@@ -310,25 +401,14 @@ export default function EducationModelsPage() {
           <span style={barStyle}></span>
           <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: 24 }}>
           国語授業プランナー
         </h1>
       </nav>
 
       {/* メニューオーバーレイ */}
       <div
-        style={{
-          position: "fixed",
-          top: 56,
-          left: 0,
-          width: "100vw",
-          height: "100vh",
-          backgroundColor: "rgba(0,0,0,0.3)",
-          opacity: menuOpen ? 1 : 0,
-          visibility: menuOpen ? "visible" : "hidden",
-          transition: "opacity 0.3s ease",
-          zIndex: 998,
-        }}
+        style={overlayStyle}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
@@ -343,7 +423,7 @@ export default function EducationModelsPage() {
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/");
@@ -352,7 +432,7 @@ export default function EducationModelsPage() {
             🏠 ホーム
           </button>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/plan");
@@ -361,7 +441,7 @@ export default function EducationModelsPage() {
             📋 授業作成
           </button>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/plan/history");
@@ -370,7 +450,7 @@ export default function EducationModelsPage() {
             📖 計画履歴
           </button>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/practice/history");
@@ -379,34 +459,34 @@ export default function EducationModelsPage() {
             📷 実践履歴
           </button>
           <button
-            style={navLinkStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/create");
-            }}
-          >
-            🌐 共有版実践記録
-          </button>
-          <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/practice/share");
             }}
           >
-            ✏️ 教育観作成
+            🌐 共有版実践記録
           </button>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/models/create");
             }}
           >
+            ✏️ 教育観作成
+          </button>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models");
+            }}
+          >
             📚 教育観一覧
           </button>
           <button
-            style={navLinkStyle}
+            style={navBtnStyle}
             onClick={() => {
               setMenuOpen(false);
               router.push("/models/history");
@@ -418,15 +498,10 @@ export default function EducationModelsPage() {
       </div>
 
       {/* メインコンテンツ */}
-      <main
-        style={{
-          padding: 24,
-          maxWidth: 900,
-          margin: "72px auto 48px auto",
-          fontFamily: "sans-serif",
-        }}
-      >
-        <h1 style={{ fontSize: 24, marginBottom: 16 }}>教育観モデル一覧・編集</h1>
+      <main style={mainContainerStyle}>
+        <h1 style={{ fontSize: 24, marginBottom: 16 }}>
+          教育観モデル一覧・編集
+        </h1>
 
         {/* 並び替え */}
         <label style={{ display: "block", marginBottom: 16 }}>
@@ -533,8 +608,9 @@ export default function EducationModelsPage() {
                   />
                   <div style={{ marginTop: 16 }}>
                     <button
-                      onClick={() => {
-                        if (saveModel()) setError("");
+                      onClick={async () => {
+                        const success = await saveModel();
+                        if (success) setError("");
                       }}
                       style={buttonPrimary}
                     >
@@ -561,7 +637,67 @@ export default function EducationModelsPage() {
   );
 }
 
-// Styles
+// --- スタイル ---
+const navBarStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: 56,
+  backgroundColor: "#1976d2",
+  display: "flex",
+  alignItems: "center",
+  padding: "0 1rem",
+  zIndex: 1000,
+};
+const hamburgerStyle: React.CSSProperties = {
+  cursor: "pointer",
+  width: 30,
+  height: 22,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
+};
+const barStyle: React.CSSProperties = {
+  height: 4,
+  backgroundColor: "white",
+  borderRadius: 2,
+};
+const menuWrapperStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: 250,
+  height: "calc(100vh - 56px)",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transform: "translateX(0)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+  padding: "0 1rem",
+  boxSizing: "border-box",
+};
+const menuScrollStyle: React.CSSProperties = {
+  flexGrow: 1,
+  overflowY: "auto",
+  paddingTop: "1rem",
+  paddingBottom: "20px",
+};
+const logoutButtonStyle: React.CSSProperties = {
+  margin: "1rem 0",
+  padding: "0.75rem 1rem",
+  backgroundColor: "#e53935",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  zIndex: 1000,
+  width: "100%",
+  boxSizing: "border-box",
+};
 const navLinkStyle: React.CSSProperties = {
   display: "block",
   padding: "0.5rem 1rem",
@@ -573,10 +709,9 @@ const navLinkStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   marginBottom: 8,
   cursor: "pointer",
-  width: "100%", // 幅を100%に揃えている
+  width: "100%",
   boxSizing: "border-box",
 };
-
 const cardStyle: React.CSSProperties = {
   border: "1px solid #ccc",
   borderRadius: 12,
@@ -585,7 +720,6 @@ const cardStyle: React.CSSProperties = {
   backgroundColor: "white",
   boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
 };
-
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 8,
@@ -595,7 +729,6 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid #ccc",
   boxSizing: "border-box",
 };
-
 const buttonPrimary: React.CSSProperties = {
   backgroundColor: "#4CAF50",
   color: "white",
@@ -605,4 +738,3 @@ const buttonPrimary: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: "bold",
 };
-
