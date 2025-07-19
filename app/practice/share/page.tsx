@@ -2,17 +2,7 @@
 
 import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  doc,
-  updateDoc,
-  arrayUnion,
-  increment,
-} from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, arrayUnion, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
 
@@ -26,6 +16,9 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   likes?: number;
   comments?: Comment[];
+  grade?: string;   // 学年（1年〜6年など） ※Firestoreに保存されている想定
+  genre?: string;   // ジャンル（物語文、説明文、詩など）
+  unitName?: string; // 単元名（例：おおきなかぶ）
 };
 type LessonPlan = {
   id: string;
@@ -36,21 +29,46 @@ export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "guest";
 
+  // フィルター用状態
+  const [gradeFilter, setGradeFilter] = useState<string | null>(null);
+  const [genreFilter, setGenreFilter] = useState<string | null>(null);
+  const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
+
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
-  const router = useRouter();
+
+  // フィルター用の一覧を計算するための状態
+  const [gradeList, setGradeList] = useState<string[]>([]);
+  const [genreList, setGenreList] = useState<string[]>([]);
+  const [unitNameList, setUnitNameList] = useState<string[]>([]);
 
   useEffect(() => {
-    // Firestoreから実践記録をリアルタイム取得（実施日降順）
+    // Firestoreから実践記録を取得（実施日降順）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
         ...(doc.data() as PracticeRecord),
         lessonId: doc.id,
       }));
+
       setRecords(recs);
+
+      // フィルター一覧作成
+      const grades = new Set<string>();
+      const genres = new Set<string>();
+      const units = new Set<string>();
+
+      recs.forEach((r) => {
+        if (r.grade) grades.add(r.grade);
+        if (r.genre) genres.add(r.genre);
+        if (r.unitName) units.add(r.unitName);
+      });
+
+      setGradeList(Array.from(grades).sort());
+      setGenreList(Array.from(genres).sort());
+      setUnitNameList(Array.from(units).sort((a, b) => a.localeCompare(b, "ja")));
     });
 
     // ローカルストレージから授業案を取得
@@ -65,6 +83,21 @@ export default function PracticeSharePage() {
 
     return () => unsubscribe();
   }, []);
+
+  // フィルターに合う実践記録だけ抽出
+  const filteredRecords = records.filter((r) => {
+    if (gradeFilter && r.grade !== gradeFilter) return false;
+    if (genreFilter && r.genre !== genreFilter) return false;
+    if (unitNameFilter && r.unitName !== unitNameFilter) return false;
+    return true;
+  });
+
+  // フィルター解除ボタン
+  const clearFilters = () => {
+    setGradeFilter(null);
+    setGenreFilter(null);
+    setUnitNameFilter(null);
+  };
 
   // ハンバーガーメニュー開閉
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -107,7 +140,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- スタイル群 ---
+  // --- スタイル ---
 
   const navBarStyle: CSSProperties = {
     position: "fixed",
@@ -180,13 +213,34 @@ export default function PracticeSharePage() {
     zIndex: 998,
   };
 
-  const containerStyle: CSSProperties = {
-    maxWidth: 960,
+  // 画面全体の横並びレイアウト
+  const wrapperStyle: CSSProperties = {
+    display: "flex",
+    maxWidth: 1200,
     margin: "auto",
-    padding: 16,
-    fontFamily: "sans-serif",
     paddingTop: 72,
+    gap: 24,
   };
+
+  // 左の絞り込みサイドバー
+  const sidebarStyle: CSSProperties = {
+    width: 280,
+    padding: 16,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    boxShadow: "0 0 6px rgba(0,0,0,0.1)",
+    height: "calc(100vh - 72px)",
+    overflowY: "auto",
+    position: "sticky",
+    top: 72,
+  };
+
+  // メインコンテンツ（右側）
+  const mainContentStyle: CSSProperties = {
+    flex: 1,
+    fontFamily: "sans-serif",
+  };
+
   const cardStyle: CSSProperties = {
     border: "2px solid #ddd",
     borderRadius: 12,
@@ -241,6 +295,27 @@ export default function PracticeSharePage() {
     borderRadius: 6,
     textDecoration: "none",
     marginBottom: "0.5rem",
+  };
+
+  const filterSectionTitleStyle: CSSProperties = {
+    fontWeight: "bold",
+    marginTop: 12,
+    marginBottom: 8,
+    fontSize: "1.1rem",
+  };
+
+  const filterItemStyle: CSSProperties = {
+    cursor: "pointer",
+    padding: "4px 8px",
+    borderRadius: 6,
+    marginBottom: 6,
+  };
+
+  // フィルター選択時のハイライト色
+  const selectedFilterStyle: CSSProperties = {
+    backgroundColor: "#1976d2",
+    color: "white",
+    fontWeight: "bold",
   };
 
   return (
@@ -319,205 +394,289 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* メインコンテンツ */}
-      <main style={containerStyle}>
-        <h1 style={{ fontSize: "2rem", marginBottom: 24 }}>共有版 実践記録一覧</h1>
+      {/* 画面横並びの全体ラッパー */}
+      <div style={wrapperStyle}>
+        {/* 左サイドバー */}
+        <aside style={sidebarStyle}>
+          <h2 style={{ fontSize: "1.3rem", marginBottom: 16 }}>絞り込み</h2>
 
-        {records.length === 0 && <p>まだ実践記録がありません。</p>}
+          <div>
+            <div style={filterSectionTitleStyle}>学年</div>
+            {gradeList.length === 0 && <p>なし</p>}
+            {gradeList.map((grade) => (
+              <div
+                key={grade}
+                style={{
+                  ...filterItemStyle,
+                  ...(gradeFilter === grade ? selectedFilterStyle : {}),
+                }}
+                onClick={() => setGradeFilter(gradeFilter === grade ? null : grade)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => (e.key === "Enter" ? setGradeFilter(gradeFilter === grade ? null : grade) : null)}
+              >
+                {grade}
+              </div>
+            ))}
+          </div>
 
-        {records.map((r) => {
-          const plan = lessonPlans.find((p) => p.id === r.lessonId);
+          <div>
+            <div style={filterSectionTitleStyle}>ジャンル</div>
+            {genreList.length === 0 && <p>なし</p>}
+            {genreList.map((genre) => (
+              <div
+                key={genre}
+                style={{
+                  ...filterItemStyle,
+                  ...(genreFilter === genre ? selectedFilterStyle : {}),
+                }}
+                onClick={() => setGenreFilter(genreFilter === genre ? null : genre)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => (e.key === "Enter" ? setGenreFilter(genreFilter === genre ? null : genre) : null)}
+              >
+                {genre}
+              </div>
+            ))}
+          </div>
 
-          return (
-            <article key={r.lessonId} style={cardStyle}>
-              <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
+          <div>
+            <div style={filterSectionTitleStyle}>単元名</div>
+            {unitNameList.length === 0 && <p>なし</p>}
+            {unitNameList.map((unit) => (
+              <div
+                key={unit}
+                style={{
+                  ...filterItemStyle,
+                  ...(unitNameFilter === unit ? selectedFilterStyle : {}),
+                }}
+                onClick={() => setUnitNameFilter(unitNameFilter === unit ? null : unit)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => (e.key === "Enter" ? setUnitNameFilter(unitNameFilter === unit ? null : unit) : null)}
+              >
+                {unit}
+              </div>
+            ))}
+          </div>
 
-              {plan && typeof plan.result === "object" && (
-                <section
-                  style={{
-                    backgroundColor: "#fafafa",
-                    padding: 12,
-                    borderRadius: 6,
-                    marginBottom: 16,
-                  }}
-                >
-                  <strong>授業案</strong>
-                  <p>
-                    <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
-                  </p>
-                  <p>
-                    <strong>単元名：</strong> {plan.result["単元名"] || "－"}
-                  </p>
-                  <p>
-                    <strong>授業時間数：</strong> {plan.result["授業時間数"] || "－"}時間
-                  </p>
-                  <p>
-                    <strong>単元の目標：</strong> {plan.result["単元の目標"] || "－"}
-                  </p>
+          <button
+            onClick={clearFilters}
+            style={{
+              marginTop: 24,
+              width: "100%",
+              padding: "8px 0",
+              backgroundColor: "#f44336",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            絞り込み解除
+          </button>
+        </aside>
 
-                  {plan.result["評価の観点"] && (
-                    <div>
-                      <strong>評価の観点：</strong>
+        {/* メインコンテンツ */}
+        <main style={mainContentStyle}>
+          {filteredRecords.length === 0 ? (
+            <p>条件に合う実践記録がありません。</p>
+          ) : (
+            filteredRecords.map((r) => {
+              const plan = lessonPlans.find((p) => p.id === r.lessonId);
 
-                      <strong>知識・技能</strong>
-                      <ul>
-                        {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-                          ? plan.result["評価の観点"]["知識・技能"]
-                          : plan.result["評価の観点"]?.["知識・技能"]
-                          ? [plan.result["評価の観点"]["知識・技能"]]
-                          : []
-                        ).map((v: string, i: number) => (
-                          <li key={i}>{v}</li>
-                        ))}
-                      </ul>
+              return (
+                <article key={r.lessonId} style={cardStyle}>
+                  <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
-                      <strong>思考・判断・表現</strong>
-                      <ul>
-                        {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-                          ? plan.result["評価の観点"]["思考・判断・表現"]
-                          : plan.result["評価の観点"]?.["思考・判断・表現"]
-                          ? [plan.result["評価の観点"]["思考・判断・表現"]]
-                          : []
-                        ).map((v: string, i: number) => (
-                          <li key={i}>{v}</li>
-                        ))}
-                      </ul>
+                  {plan && typeof plan.result === "object" && (
+                    <section
+                      style={{
+                        backgroundColor: "#fafafa",
+                        padding: 12,
+                        borderRadius: 6,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <strong>授業案</strong>
+                      <p>
+                        <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
+                      </p>
+                      <p>
+                        <strong>単元名：</strong> {plan.result["単元名"] || "－"}
+                      </p>
+                      <p>
+                        <strong>授業時間数：</strong> {plan.result["授業時間数"] || "－"}時間
+                      </p>
+                      <p>
+                        <strong>単元の目標：</strong> {plan.result["単元の目標"] || "－"}
+                      </p>
 
-                      <strong>主体的に学習に取り組む態度</strong>
-                      <ul>
-                        {(Array.isArray(
-                          plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                        )
-                          ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                          : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                          ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-                          : plan.result["評価の観点"]?.["態度"]
-                          ? [plan.result["評価の観点"]["態度"]]
-                          : []
-                        ).map((v: string, i: number) => (
-                          <li key={i}>{v}</li>
-                        ))}
-                      </ul>
-                    </div>
+                      {plan.result["評価の観点"] && (
+                        <div>
+                          <strong>評価の観点：</strong>
+
+                          <strong>知識・技能</strong>
+                          <ul>
+                            {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+                              ? plan.result["評価の観点"]["知識・技能"]
+                              : plan.result["評価の観点"]?.["知識・技能"]
+                              ? [plan.result["評価の観点"]["知識・技能"]]
+                              : []
+                            ).map((v: string, i: number) => (
+                              <li key={i}>{v}</li>
+                            ))}
+                          </ul>
+
+                          <strong>思考・判断・表現</strong>
+                          <ul>
+                            {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+                              ? plan.result["評価の観点"]["思考・判断・表現"]
+                              : plan.result["評価の観点"]?.["思考・判断・表現"]
+                              ? [plan.result["評価の観点"]["思考・判断・表現"]]
+                              : []
+                            ).map((v: string, i: number) => (
+                              <li key={i}>{v}</li>
+                            ))}
+                          </ul>
+
+                          <strong>主体的に学習に取り組む態度</strong>
+                          <ul>
+                            {(Array.isArray(
+                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                            )
+                              ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+                              : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+                              : plan.result["評価の観点"]?.["態度"]
+                              ? [plan.result["評価の観点"]["態度"]]
+                              : []
+                            ).map((v: string, i: number) => (
+                              <li key={i}>{v}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <p>
+                        <strong>育てたい子どもの姿：</strong>{" "}
+                        {plan.result["育てたい子どもの姿"] || "－"}
+                      </p>
+                      <p>
+                        <strong>言語活動の工夫：</strong>{" "}
+                        {plan.result["言語活動の工夫"] || "－"}
+                      </p>
+
+                      {plan.result["授業の流れ"] && (
+                        <div>
+                          <strong>授業の流れ：</strong>
+                          <ul>
+                            {Object.entries(plan.result["授業の流れ"]).map(
+                              ([key, val]) => {
+                                const content =
+                                  typeof val === "string" ? val : JSON.stringify(val);
+                                return (
+                                  <li key={key}>
+                                    <strong>{key}:</strong> {content}
+                                  </li>
+                                );
+                              }
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
                   )}
 
                   <p>
-                    <strong>育てたい子どもの姿：</strong>{" "}
-                    {plan.result["育てたい子どもの姿"] || "－"}
+                    <strong>実施日：</strong> {r.practiceDate}
                   </p>
                   <p>
-                    <strong>言語活動の工夫：</strong>{" "}
-                    {plan.result["言語活動の工夫"] || "－"}
+                    <strong>振り返り：</strong>
+                    <br />
+                    {r.reflection}
                   </p>
 
-                  {plan.result["授業の流れ"] && (
-                    <div>
-                      <strong>授業の流れ：</strong>
-                      <ul>
-                        {Object.entries(plan.result["授業の流れ"]).map(
-                          ([key, val]) => {
-                            const content =
-                              typeof val === "string" ? val : JSON.stringify(val);
-                            return (
-                              <li key={key}>
-                                <strong>{key}:</strong> {content}
-                              </li>
-                            );
-                          }
-                        )}
-                      </ul>
+                  {r.boardImages.length > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                        marginTop: 12,
+                      }}
+                    >
+                      {r.boardImages.map((img, i) => (
+                        <div key={i} style={boardImageContainerStyle}>
+                          <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+                            板書{i + 1}
+                          </div>
+                          <img
+                            src={img.src}
+                            alt={img.name}
+                            style={{
+                              width: "100%",
+                              height: "auto",
+                              borderRadius: 8,
+                              border: "1px solid #ccc",
+                              objectFit: "contain",
+                            }}
+                          />
+                        </div>
+                      ))}
                     </div>
                   )}
-                </section>
-              )}
 
-              <p>
-                <strong>実施日：</strong> {r.practiceDate}
-              </p>
-              <p>
-                <strong>振り返り：</strong>
-                <br />
-                {r.reflection}
-              </p>
+                  {/* いいねとコメント */}
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      style={likeBtnStyle}
+                      onClick={() => handleLike(r.lessonId)}
+                      disabled={!session}
+                      title={session ? undefined : "ログインしてください"}
+                    >
+                      👍 いいね {r.likes || 0}
+                    </button>
+                  </div>
 
-              {r.boardImages.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                    marginTop: 12,
-                  }}
-                >
-                  {r.boardImages.map((img, i) => (
-                    <div key={i} style={boardImageContainerStyle}>
-                      <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-                        板書{i + 1}
-                      </div>
-                      <img
-                        src={img.src}
-                        alt={img.name}
-                        style={{
-                          width: "100%",
-                          height: "auto",
-                          borderRadius: 8,
-                          border: "1px solid #ccc",
-                          objectFit: "contain",
-                        }}
-                      />
+                  <div style={{ marginTop: 12 }}>
+                    <strong>コメント</strong>
+                    <div style={commentListStyle}>
+                      {(r.comments || []).map((c, i) => (
+                        <div key={i}>
+                          <b>{c.userId}</b>{" "}
+                          <small>({new Date(c.createdAt).toLocaleString()})</small>
+                          <br />
+                          {c.comment}
+                          <hr />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
 
-              {/* いいねとコメント */}
-              <div style={{ marginTop: 12 }}>
-                <button
-                  style={likeBtnStyle}
-                  onClick={() => handleLike(r.lessonId)}
-                  disabled={!session}
-                  title={session ? undefined : "ログインしてください"}
-                >
-                  👍 いいね {r.likes || 0}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <strong>コメント</strong>
-                <div style={commentListStyle}>
-                  {(r.comments || []).map((c, i) => (
-                    <div key={i}>
-                      <b>{c.userId}</b>{" "}
-                      <small>({new Date(c.createdAt).toLocaleString()})</small>
-                      <br />
-                      {c.comment}
-                      <hr />
-                    </div>
-                  ))}
-                </div>
-
-                <textarea
-                  rows={3}
-                  placeholder="コメントを入力"
-                  value={newComments[r.lessonId] || ""}
-                  onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
-                  style={commentInputStyle}
-                  disabled={!session}
-                  title={session ? undefined : "ログインしてください"}
-                />
-                <button
-                  style={commentBtnStyle}
-                  onClick={() => handleAddComment(r.lessonId)}
-                  disabled={!session}
-                  title={session ? undefined : "ログインしてください"}
-                >
-                  コメント投稿
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </main>
+                    <textarea
+                      rows={3}
+                      placeholder="コメントを入力"
+                      value={newComments[r.lessonId] || ""}
+                      onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
+                      style={commentInputStyle}
+                      disabled={!session}
+                      title={session ? undefined : "ログインしてください"}
+                    />
+                    <button
+                      style={commentBtnStyle}
+                      onClick={() => handleAddComment(r.lessonId)}
+                      disabled={!session}
+                      title={session ? undefined : "ログインしてください"}
+                    >
+                      コメント投稿
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </main>
+      </div>
     </>
   );
 }
