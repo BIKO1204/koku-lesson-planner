@@ -299,15 +299,15 @@ export default function PracticeHistoryPage() {
             📷 実践履歴
           </Link>
           <Link
-            href="/models/create"
+            href="/practice/share"
             style={navLinkStyle}
             onClick={() => setMenuOpen(false)}
           >
             🌐 共有版実践記録
           </Link>
           <Link
-            href="/practice/share"
-            style={{ ...navLinkStyle, backgroundColor: "#9C27B0" }}
+            href="/models/create"
+            style={navLinkStyle}
             onClick={() => setMenuOpen(false)}
           >
             ✏️ 教育観作成
