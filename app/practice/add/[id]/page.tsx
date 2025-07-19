@@ -332,9 +332,10 @@ export default function PracticeAddPage() {
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,
-      boardImages: record.compressedImages, // 圧縮版base64画像配列を保存
+      // Firestoreには圧縮版Base64画像のsrc配列だけを保存
+      boardImages: record.compressedImages.map((img) => img.src),
       lessonTitle: record.lessonTitle,
-      author: record.author || "",  // 作成者を先に
+      author: record.author || "",
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
