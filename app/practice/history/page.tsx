@@ -577,6 +577,7 @@ export default function PracticeHistoryPage() {
                           backgroundColor: "#7e57c2", // 薄紫色
                           marginLeft: 8,
                         }}
+                        aria-label={`「${r.lessonTitle}」の共有ページを見る`}
                       >
                         🔗 共有ページで見る
                       </button>
