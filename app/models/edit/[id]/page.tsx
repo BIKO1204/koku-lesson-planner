@@ -158,7 +158,7 @@ export default function StyleDetailPage() {
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
             ["/practice/history", "📷 実践履歴"],
-            ["/practice/share", "🌐 共有版実践記録を見る"],
+            ["/practice/share", "🌐 共有版実践記録"],
             ["/models/create", "✏️ 教育観作成"],
             ["/models", "📚 教育観一覧"],
             ["/models/history", "🕒 教育観履歴"],

@@ -85,6 +85,7 @@ export default function PracticeHistoryPage() {
     }
   };
 
+  // --- スタイル定義 ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -594,18 +595,13 @@ export default function PracticeHistoryPage() {
                       🗑 削除
                     </button>
 
-                    {/* 共有ページへ飛ぶボタン追加 */}
-                    <Link href={`/practice/share/${r.lessonId}`}>
-                      <button
-                        style={{
-                          ...buttonBaseStyle,
-                          backgroundColor: "#9C27B0",
-                          marginLeft: 8,
-                        }}
-                      >
-                        🔗 共有ページ
-                      </button>
-                    </Link>
+                    {/* 共有ページへ飛ぶボタン（router.pushに変更） */}
+                    <button
+                      style={{ ...buttonBaseStyle, backgroundColor: "#9C27B0", marginLeft: 8 }}
+                      onClick={() => router.push(`/practice/share/${r.lessonId}`)}
+                    >
+                      🔗 共有ページ
+                    </button>
                   </div>
                 </article>
               );
