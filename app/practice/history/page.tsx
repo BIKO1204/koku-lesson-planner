@@ -267,7 +267,7 @@ export default function PracticeHistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
+        {/* ログアウトボタン（上に少し余白） */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
@@ -325,6 +325,24 @@ export default function PracticeHistoryPage() {
       {/* メインコンテンツ */}
       <main style={mainContainerStyle}>
         <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
+
+        {/* 共有ページへのリンク追加 */}
+        <div style={{ marginBottom: 20 }}>
+          <Link
+            href="/practice/share"
+            style={{
+              display: "inline-block",
+              backgroundColor: "#2196F3",
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: 6,
+              textDecoration: "none",
+              cursor: "pointer",
+            }}
+          >
+            共有版実践記録を見る
+          </Link>
+        </div>
 
         <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
           並び替え：
@@ -574,12 +592,11 @@ export default function PracticeHistoryPage() {
                       <button
                         style={{
                           ...buttonBaseStyle,
-                          backgroundColor: "#7e57c2", // 薄紫色
+                          backgroundColor: "#7e57c2", // 薄紫色,
                           marginLeft: 8,
                         }}
-                        aria-label={`「${r.lessonTitle}」の共有ページを見る`}
                       >
-                        🔗 共有ページで見る
+                        🔗 共有ページ
                       </button>
                     </Link>
                   </div>
