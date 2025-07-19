@@ -25,9 +25,9 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   likes?: number;
   comments?: Comment[];
-  grade?: string; // 学年（1年〜6年など）
-  genre?: string; // ジャンル（物語文、説明文、詩など）
-  unitName?: string; // 単元名（例：おおきなかぶ）
+  grade?: string; // 学年
+  genre?: string; // ジャンル
+  unitName?: string; // 単元名
 };
 type LessonPlan = {
   id: string;
@@ -38,23 +38,26 @@ export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "guest";
 
-  // フィルター用状態
+  // 入力状態（検索実行前）
+  const [inputGrade, setInputGrade] = useState<string>("");
+  const [inputGenre, setInputGenre] = useState<string>("");
+  const [inputUnitName, setInputUnitName] = useState<string>("");
+
+  // フィルター状態（検索実行後）
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
-  const [unitNameFilter, setUnitNameFilter] = useState<string>("");
+  const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
 
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // フィルター用の一覧を計算するための状態
   const [gradeList, setGradeList] = useState<string[]>([]);
   const [genreList, setGenreList] = useState<string[]>([]);
   const [unitNameList, setUnitNameList] = useState<string[]>([]);
 
   useEffect(() => {
-    // Firestoreから実践記録を取得（実施日降順）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
@@ -93,6 +96,13 @@ export default function PracticeSharePage() {
     return () => unsubscribe();
   }, []);
 
+  // 検索ボタン押下時にフィルターを更新
+  const handleSearch = () => {
+    setGradeFilter(inputGrade || null);
+    setGenreFilter(inputGenre || null);
+    setUnitNameFilter(inputUnitName.trim() || null);
+  };
+
   // フィルターに合う実践記録だけ抽出
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
@@ -101,17 +111,8 @@ export default function PracticeSharePage() {
     return true;
   });
 
-  // フィルター解除ボタン
-  const clearFilters = () => {
-    setGradeFilter(null);
-    setGenreFilter(null);
-    setUnitNameFilter("");
-  };
-
-  // ハンバーガーメニュー開閉
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // いいね処理
   const handleLike = async (lessonId: string) => {
     if (!session) return alert("ログインしてください");
     try {
@@ -123,12 +124,10 @@ export default function PracticeSharePage() {
     }
   };
 
-  // コメント入力変更
   const handleCommentChange = (lessonId: string, value: string) => {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
 
-  // コメント投稿
   const handleAddComment = async (lessonId: string) => {
     if (!session) return alert("ログインしてください");
     const comment = newComments[lessonId]?.trim();
@@ -149,8 +148,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- スタイル群 ---
-
+  // --- スタイル ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -222,6 +220,7 @@ export default function PracticeSharePage() {
     zIndex: 998,
   };
 
+  // 画面全体の横並びレイアウト
   const wrapperStyle: CSSProperties = {
     display: "flex",
     maxWidth: 1200,
@@ -230,6 +229,7 @@ export default function PracticeSharePage() {
     gap: 24,
   };
 
+  // 左の絞り込みサイドバー
   const sidebarStyle: CSSProperties = {
     width: 280,
     padding: 16,
@@ -242,6 +242,7 @@ export default function PracticeSharePage() {
     top: 72,
   };
 
+  // メインコンテンツ（右側）
   const mainContentStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
@@ -317,6 +318,7 @@ export default function PracticeSharePage() {
     marginBottom: 6,
   };
 
+  // フィルター選択時のハイライト色
   const selectedFilterStyle: CSSProperties = {
     backgroundColor: "#1976d2",
     color: "white",
@@ -395,50 +397,48 @@ export default function PracticeSharePage() {
 
           <div>
             <div style={filterSectionTitleStyle}>学年</div>
-            {gradeList.length === 0 && <p>なし</p>}
-            {gradeList.map((grade) => (
-              <div
-                key={grade}
-                style={{
-                  ...filterItemStyle,
-                  ...(gradeFilter === grade ? selectedFilterStyle : {}),
-                }}
-                onClick={() => setGradeFilter(gradeFilter === grade ? null : grade)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) =>
-                  e.key === "Enter"
-                    ? setGradeFilter(gradeFilter === grade ? null : grade)
-                    : null
-                }
-              >
-                {grade}
-              </div>
-            ))}
+            <select
+              value={inputGrade}
+              onChange={(e) => setInputGrade(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="">すべて</option>
+              {gradeList.map((grade) => (
+                <option key={grade} value={grade}>
+                  {grade}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
             <div style={filterSectionTitleStyle}>ジャンル</div>
-            {genreList.length === 0 && <p>なし</p>}
-            {genreList.map((genre) => (
-              <div
-                key={genre}
-                style={{
-                  ...filterItemStyle,
-                  ...(genreFilter === genre ? selectedFilterStyle : {}),
-                }}
-                onClick={() => setGenreFilter(genreFilter === genre ? null : genre)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) =>
-                  e.key === "Enter"
-                    ? setGenreFilter(genreFilter === genre ? null : genre)
-                    : null
-                }
-              >
-                {genre}
-              </div>
-            ))}
+            <select
+              value={inputGenre}
+              onChange={(e) => setInputGenre(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="">すべて</option>
+              {genreList.map((genre) => (
+                <option key={genre} value={genre}>
+                  {genre}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -446,8 +446,8 @@ export default function PracticeSharePage() {
             <input
               type="text"
               placeholder="単元名を入力"
-              value={unitNameFilter}
-              onChange={(e) => setUnitNameFilter(e.target.value)}
+              value={inputUnitName}
+              onChange={(e) => setInputUnitName(e.target.value)}
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -460,19 +460,20 @@ export default function PracticeSharePage() {
           </div>
 
           <button
-            onClick={clearFilters}
+            onClick={handleSearch}
             style={{
-              marginTop: 24,
+              marginTop: 12,
               width: "100%",
               padding: "8px 0",
-              backgroundColor: "#f44336",
+              backgroundColor: "#1976d2",
               color: "white",
               border: "none",
               borderRadius: 6,
               cursor: "pointer",
+              fontWeight: "bold",
             }}
           >
-            絞り込み解除
+            検索
           </button>
         </aside>
 
