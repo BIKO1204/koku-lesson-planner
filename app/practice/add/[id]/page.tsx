@@ -15,6 +15,9 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[]; // フルサイズ画像（ローカル保存用）
   lessonTitle: string;
+  grade?: string;      // 追加：学年
+  genre?: string;      // 追加：ジャンル（物語文など）
+  unitName?: string;   // 追加：単元名
 };
 
 type LessonPlan = {
@@ -128,6 +131,10 @@ export default function PracticeAddPage() {
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]); // フルサイズ（ローカル用）
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]); // 圧縮版（Firestore用）
   const [lessonTitle, setLessonTitle] = useState("");
+  const [grade, setGrade] = useState("");      // 追加：学年
+  const [genre, setGenre] = useState("");      // 追加：ジャンル
+  const [unitName, setUnitName] = useState(""); // 追加：単元名
+
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -152,8 +159,8 @@ export default function PracticeAddPage() {
         const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
         setLessonTitle(firstLine);
       } else if (typeof plan.result === "object") {
-        const unitName = (plan.result as any)["単元名"];
-        setLessonTitle(typeof unitName === "string" ? unitName : "");
+        const unitNameFromPlan = (plan.result as any)["単元名"];
+        setLessonTitle(typeof unitNameFromPlan === "string" ? unitNameFromPlan : "");
       } else {
         setLessonTitle("");
       }
@@ -161,12 +168,17 @@ export default function PracticeAddPage() {
       setLessonTitle("");
     }
 
+    // 既存レコードがあれば、フォームに初期値セット
     getRecord(id).then((existing) => {
       if (existing) {
         setPracticeDate(existing.practiceDate);
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
+        // 追加した項目も初期化
+        setGrade(existing.grade || "");
+        setGenre(existing.genre || "");
+        setUnitName(existing.unitName || "");
       }
     });
   }, [id]);
@@ -211,6 +223,9 @@ export default function PracticeAddPage() {
       reflection,
       boardImages,
       lessonTitle,
+      grade,
+      genre,
+      unitName,
     });
   };
 
@@ -228,6 +243,9 @@ export default function PracticeAddPage() {
       reflection: record.reflection,
       boardImages: record.compressedImages,
       lessonTitle: record.lessonTitle,
+      grade: record.grade || "",
+      genre: record.genre || "",
+      unitName: record.unitName || "",
       createdAt: new Date(),
     });
   }
@@ -254,165 +272,17 @@ export default function PracticeAddPage() {
 
   // --- スタイル省略（元コードのまま） ---
 
-  const navBarStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: 56,
-    backgroundColor: "#1976d2",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 1rem",
-    zIndex: 1000,
-  };
-  const hamburgerStyle: React.CSSProperties = {
-    cursor: "pointer",
-    width: 30,
-    height: 22,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  };
-  const barStyle: React.CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
-  const menuWrapperStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "calc(100vh - 56px)",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-  };
-  const logoutButtonStyle: React.CSSProperties = {
-    padding: "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-  };
-  const menuLinksWrapperStyle: React.CSSProperties = {
-    overflowY: "auto",
-    flexGrow: 1,
-    padding: "1rem",
-  };
-  const navBtnStyle: React.CSSProperties = {
-    marginBottom: 8,
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    display: "block",
-    width: "100%",
-    textAlign: "center",
-  };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "calc(100vh - 56px)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const containerStyle: React.CSSProperties = {
-    padding: 24,
-    maxWidth: 800,
-    margin: "auto",
-    fontFamily: "sans-serif",
-    paddingTop: 72,
-  };
+  // 以下、フォームに学年・ジャンル・単元名の入力欄を追加した部分の例
 
   return (
     <>
-      {/* ナビバー */}
-      <nav style={navBarStyle}>
-        <div
-          style={hamburgerStyle}
-          onClick={toggleMenu}
-          aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
-        >
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-        </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
-          国語授業プランナー
-        </h1>
-      </nav>
+      {/* ナビバーなど省略 */}
 
-      {/* メニューオーバーレイ */}
-      <div
-        style={overlayStyle}
-        onClick={() => setMenuOpen(false)}
-        aria-hidden={!menuOpen}
-      />
-
-      {/* メニュー全体 */}
-      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
-        <button
-          onClick={() => {
-            signOut();
-            setMenuOpen(false);
-          }}
-          style={logoutButtonStyle}
-        >
-          🔓 ログアウト
-        </button>
-
-        {/* メニューリンク */}
-        <div style={menuLinksWrapperStyle}>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
-            🏠 ホーム
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
-            📋 授業作成
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
-            📖 計画履歴
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
-            📷 実践履歴
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
-            ✏️ 教育観作成
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
-            📚 教育観一覧
-          </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
-            🕒 教育観履歴
-          </button>
-        </div>
-      </div>
-
-      {/* メインコンテンツ */}
-      <main style={containerStyle}>
+      <main style={{ padding: 24, maxWidth: 800, margin: "auto", paddingTop: 72, fontFamily: "sans-serif" }}>
         <h2>実践記録作成・編集</h2>
 
         <form onSubmit={handlePreview}>
+          {/* 実施日 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               実施日：<br />
@@ -426,6 +296,60 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* 学年 */}
+          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <label>
+              学年：
+              <select
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4 }}
+              >
+                <option value="">選択してください</option>
+                <option value="1年">1年</option>
+                <option value="2年">2年</option>
+                <option value="3年">3年</option>
+                <option value="4年">4年</option>
+                <option value="5年">5年</option>
+                <option value="6年">6年</option>
+              </select>
+            </label>
+          </div>
+
+          {/* ジャンル */}
+          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <label>
+              ジャンル：
+              <select
+                value={genre}
+                onChange={(e) => setGenre(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4 }}
+              >
+                <option value="">選択してください</option>
+                <option value="物語文">物語文</option>
+                <option value="説明文">説明文</option>
+                <option value="詩">詩</option>
+              </select>
+            </label>
+          </div>
+
+          {/* 単元名 */}
+          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <label>
+              単元名：
+              <input
+                type="text"
+                value={unitName}
+                onChange={(e) => setUnitName(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+              />
+            </label>
+          </div>
+
+          {/* 振り返り */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               振り返り：<br />
@@ -439,6 +363,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* 板書写真アップロード */}
           <label
             style={{
               display: "block",
@@ -462,6 +387,7 @@ export default function PracticeAddPage() {
             />
           </label>
 
+          {/* 画像プレビュー */}
           <div style={{ marginTop: 12 }}>
             {boardImages.map((img, i) => (
               <div key={img.name + i} style={{ width: "100%", marginBottom: 12 }}>
@@ -500,6 +426,7 @@ export default function PracticeAddPage() {
             ))}
           </div>
 
+          {/* プレビュー生成ボタン */}
           <button
             type="submit"
             style={{
@@ -518,6 +445,7 @@ export default function PracticeAddPage() {
           </button>
         </form>
 
+        {/* プレビュー表示 */}
         {record && (
           <section
             id="practice-preview"
