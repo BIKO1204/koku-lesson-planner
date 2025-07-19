@@ -1,8 +1,22 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
+
+import {
+  collection,
+  query,
+  orderBy,
+  where,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  deleteDoc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type EducationModel = {
   id: string;
@@ -12,45 +26,90 @@ type EducationModel = {
   languageFocus: string;
   childFocus: string;
   updatedAt: string;
+  creatorId: string;
+  creatorName: string;
 };
 
-type EducationHistory = EducationModel & {
-  note: string;
-};
-
-export default function CreateModelPage() {
+export default function EducationModelsPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+
+  const userId = session?.user?.email || "";
+  const userName = session?.user?.name || "名無し";
 
   const [models, setModels] = useState<EducationModel[]>([]);
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     philosophy: "",
     evaluationFocus: "",
     languageFocus: "",
     childFocus: "",
-    note: "",
   });
-  const [editId, setEditId] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [error, setError] = useState("");
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // Firestoreから「自分の」モデルだけ取得してローカルにも保存
   useEffect(() => {
-    const stored = localStorage.getItem("styleModels");
-    if (stored) setModels(JSON.parse(stored));
-  }, []);
+    if (!userId) {
+      setModels([]);
+      return;
+    }
+    async function fetchModels() {
+      try {
+        const colRef = collection(db, "educationModels");
+        const q = query(
+          colRef,
+          where("creatorId", "==", userId),
+          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+        );
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<EducationModel, "id">),
+        }));
+        setModels(data);
+        localStorage.setItem("styleModels", JSON.stringify(data));
+      } catch (e) {
+        console.error("Firestore読み込みエラー:", e);
+      }
+    }
+    fetchModels();
+  }, [sortOrder, userId]);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const cleanText = (text: string) => {
-    return text.trim().replace(/。(、)+/g, "。");
+  const startEdit = (m: EducationModel) => {
+    setEditId(m.id);
+    setForm({
+      name: m.name,
+      philosophy: m.philosophy,
+      evaluationFocus: m.evaluationFocus,
+      languageFocus: m.languageFocus,
+      childFocus: m.childFocus,
+    });
+    setError("");
+    setMenuOpen(false);
   };
 
-  const handleSave = () => {
+  const cancelEdit = () => {
+    setEditId(null);
+    setForm({
+      name: "",
+      philosophy: "",
+      evaluationFocus: "",
+      languageFocus: "",
+      childFocus: "",
+    });
     setError("");
+  };
+
+  const saveModel = async (): Promise<boolean> => {
     if (
       !form.name.trim() ||
       !form.philosophy.trim() ||
@@ -58,65 +117,111 @@ export default function CreateModelPage() {
       !form.languageFocus.trim() ||
       !form.childFocus.trim()
     ) {
-      setError("すべての必須項目を入力してください。");
-      return;
+      setError("必須項目をすべて入力してください。");
+      return false;
+    }
+    if (!userId) {
+      setError("ログイン状態が不明です。再ログインしてください。");
+      return false;
     }
 
     const now = new Date().toISOString();
 
-    let updatedModels: EducationModel[];
+    try {
+      let newModel: EducationModel;
 
-    if (editId) {
-      updatedModels = models.map((m) =>
-        m.id === editId
-          ? {
-              ...m,
-              name: form.name.trim(),
-              philosophy: cleanText(form.philosophy),
-              evaluationFocus: cleanText(form.evaluationFocus),
-              languageFocus: cleanText(form.languageFocus),
-              childFocus: cleanText(form.childFocus),
-              updatedAt: now,
-            }
-          : m
-      );
-    } else {
-      updatedModels = [
-        {
-          id: crypto.randomUUID(),
+      if (editId) {
+        const docRef = doc(db, "educationModels", editId);
+        await updateDoc(docRef, {
           name: form.name.trim(),
-          philosophy: cleanText(form.philosophy),
-          evaluationFocus: cleanText(form.evaluationFocus),
-          languageFocus: cleanText(form.languageFocus),
-          childFocus: cleanText(form.childFocus),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
           updatedAt: now,
-        },
-        ...models,
-      ];
+        });
+        newModel = {
+          id: editId,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+          creatorId: userId,
+          creatorName: userName,
+        };
+      } else {
+        const colRef = collection(db, "educationModels");
+        const docRef = await addDoc(colRef, {
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+          creatorId: userId,
+          creatorName: userName,
+        });
+        newModel = {
+          id: docRef.id,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          updatedAt: now,
+          creatorId: userId,
+          creatorName: userName,
+        };
+      }
+
+      // ローカル保存も更新
+      const updatedLocalModels = editId
+        ? models.map((m) => (m.id === editId ? newModel : m))
+        : [newModel, ...models];
+
+      localStorage.setItem("styleModels", JSON.stringify(updatedLocalModels));
+      setModels(updatedLocalModels);
+
+      cancelEdit();
+      setMenuOpen(false);
+      setError("");
+      return true;
+    } catch (e) {
+      console.error("Firestore保存エラー", e);
+      setError("保存に失敗しました。");
+      return false;
     }
-
-    localStorage.setItem("styleModels", JSON.stringify(updatedModels));
-    setModels(updatedModels);
-
-    const newHistoryEntry: EducationHistory = {
-      id: editId || updatedModels[0].id,
-      name: form.name.trim(),
-      philosophy: cleanText(form.philosophy),
-      evaluationFocus: cleanText(form.evaluationFocus),
-      languageFocus: cleanText(form.languageFocus),
-      childFocus: cleanText(form.childFocus),
-      updatedAt: now,
-      note: form.note.trim() || "（更新時にメモなし）",
-    };
-    const prevHistory = JSON.parse(localStorage.getItem("educationStylesHistory") || "[]") as EducationHistory[];
-    const updatedHistory = [newHistoryEntry, ...prevHistory];
-    localStorage.setItem("educationStylesHistory", JSON.stringify(updatedHistory));
-
-    alert("✅ ローカル保存が完了しました！");
-    router.push("/models/history");
   };
 
-  // --- 共通スタイル ---
+  const handleDelete = async (id: string) => {
+    if (!confirm("このモデルを削除しますか？")) return;
+    try {
+      await deleteDoc(doc(db, "educationModels", id));
+      const filtered = models.filter((m) => m.id !== id);
+      setModels(filtered);
+      localStorage.setItem("styleModels", JSON.stringify(filtered));
+      if (editId === id) cancelEdit();
+      setMenuOpen(false);
+    } catch (e) {
+      alert("削除に失敗しました。");
+      console.error(e);
+    }
+  };
+
+  // ソート処理
+  const sortedModels = () => {
+    const copy = [...models];
+    if (sortOrder === "newest") {
+      return copy.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    }
+    return copy.sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  // Styles
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -142,8 +247,6 @@ export default function CreateModelPage() {
     backgroundColor: "white",
     borderRadius: 2,
   };
-
-  // メニュー全体高さとレイアウト
   const menuWrapperStyle: React.CSSProperties = {
     position: "fixed",
     top: 56,
@@ -158,8 +261,6 @@ export default function CreateModelPage() {
     display: "flex",
     flexDirection: "column",
   };
-
-  // ログアウトボタンは固定で上部に
   const logoutButtonStyle: React.CSSProperties = {
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -171,14 +272,11 @@ export default function CreateModelPage() {
     flexShrink: 0,
     margin: "1rem",
   };
-
-  // メニューリンクはスクロール可能に
   const menuLinksWrapperStyle: React.CSSProperties = {
     overflowY: "auto",
     flexGrow: 1,
     padding: "1rem",
   };
-
   const navBtnStyle: React.CSSProperties = {
     marginBottom: 8,
     padding: "0.5rem 1rem",
@@ -191,7 +289,6 @@ export default function CreateModelPage() {
     width: "100%",
     textAlign: "center",
   };
-
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
     top: 56,
@@ -204,7 +301,6 @@ export default function CreateModelPage() {
     transition: "opacity 0.3s ease",
     zIndex: 998,
   };
-
   const mainContainerStyle: React.CSSProperties = {
     padding: "72px 24px 24px",
     maxWidth: 900,
@@ -214,12 +310,51 @@ export default function CreateModelPage() {
     borderRadius: 10,
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
   };
-
   const guideTextStyle: React.CSSProperties = {
     fontSize: "0.9rem",
     color: "#666",
     marginTop: 4,
     marginBottom: 6,
+  };
+  const navLinkStyle: React.CSSProperties = {
+    display: "block",
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    borderRadius: 6,
+    textDecoration: "none",
+    fontWeight: "bold",
+    whiteSpace: "nowrap",
+    marginBottom: 8,
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+  const cardStyle: React.CSSProperties = {
+    border: "1px solid #ccc",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    backgroundColor: "white",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+  };
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: 8,
+    marginBottom: 12,
+    fontSize: "1rem",
+    borderRadius: 6,
+    border: "1px solid #ccc",
+    boxSizing: "border-box",
+  };
+  const buttonPrimary: React.CSSProperties = {
+    backgroundColor: "#4caf50",
+    color: "white",
+    padding: "8px 16px",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontWeight: "bold",
   };
 
   return (
@@ -493,44 +628,11 @@ export default function CreateModelPage() {
             />
           </label>
 
-          <label
-            style={{
-              display: "block",
-              marginBottom: 18,
-              fontWeight: 600,
-              color: "#444",
-              fontSize: "1.15rem",
-            }}
-          >
-            更新メモ（任意）：
-            <div style={guideTextStyle}>
-              例）今年度の授業で重視したい点や変更点などを書いてください。
-            </div>
-            <textarea
-              rows={2}
-              value={form.note}
-              onChange={(e) => handleChange("note", e.target.value)}
-              placeholder=""
-              style={{
-                fontStyle: "italic",
-                width: "100%",
-                padding: 16,
-                fontSize: "1.2rem",
-                borderRadius: 6,
-                border: "1.2px solid #bbb",
-                marginTop: 6,
-                boxSizing: "border-box",
-                fontFamily: "inherit",
-                backgroundColor: "#fff",
-                color: "#222",
-                transition: "border-color 0.25s ease",
-                resize: "vertical",
-              }}
-            />
-          </label>
-
           <button
-            onClick={handleSave}
+            onClick={async () => {
+              const success = await saveModel();
+              if (success) setError("");
+            }}
             className="save-button"
             style={{
               padding: "1.1rem 3.2rem",
