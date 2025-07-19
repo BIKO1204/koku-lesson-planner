@@ -57,7 +57,11 @@ export default function PracticeSharePage() {
   const [genreList, setGenreList] = useState<string[]>([]);
   const [unitNameList, setUnitNameList] = useState<string[]>([]);
 
+  // レスポンシブ対応のための画面幅監視
+  const [isMobile, setIsMobile] = useState(false);
+
   useEffect(() => {
+    // Firestoreデータ取得
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
@@ -67,7 +71,7 @@ export default function PracticeSharePage() {
 
       setRecords(recs);
 
-      // フィルター一覧作成
+      // フィルター一覧作成（"すべて"除外）
       const grades = new Set<string>();
       const genres = new Set<string>();
       const units = new Set<string>();
@@ -93,7 +97,15 @@ export default function PracticeSharePage() {
       }
     }
 
-    return () => unsubscribe();
+    // 画面幅監視の設定
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   // 検索ボタン押下時にフィルターを更新
@@ -149,6 +161,7 @@ export default function PracticeSharePage() {
   };
 
   // --- スタイル ---
+
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -221,31 +234,34 @@ export default function PracticeSharePage() {
   };
 
   // 画面全体の横並びレイアウト
-  const wrapperStyle: CSSProperties = {
+  const wrapperResponsiveStyle: CSSProperties = {
     display: "flex",
     maxWidth: 1200,
     margin: "auto",
-    paddingTop: 72,
+    paddingTop: isMobile ? 16 : 72,
     gap: 24,
+    flexDirection: isMobile ? "column" : "row",
   };
 
   // 左の絞り込みサイドバー
-  const sidebarStyle: CSSProperties = {
-    width: 280,
+  const sidebarResponsiveStyle: CSSProperties = {
+    width: isMobile ? "100%" : 280,
     padding: 16,
     backgroundColor: "#f9f9f9",
     borderRadius: 8,
     boxShadow: "0 0 6px rgba(0,0,0,0.1)",
-    height: "calc(100vh - 72px)",
+    height: isMobile ? "auto" : "calc(100vh - 72px)",
     overflowY: "auto",
-    position: "sticky",
-    top: 72,
+    position: isMobile ? "relative" : "sticky",
+    top: isMobile ? "auto" : 72,
+    marginBottom: isMobile ? 16 : 0,
   };
 
   // メインコンテンツ（右側）
-  const mainContentStyle: CSSProperties = {
+  const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
+    width: isMobile ? "100%" : "auto",
   };
 
   const cardStyle: CSSProperties = {
@@ -368,13 +384,25 @@ export default function PracticeSharePage() {
           <Link href="/plan" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
+          <Link
+            href="/plan/history"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
+          <Link
+            href="/practice/history"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
+          <Link
+            href="/practice/share"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             🌐 共有版実践記録
           </Link>
           <Link href="/models/create" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
@@ -383,16 +411,20 @@ export default function PracticeSharePage() {
           <Link href="/models" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
+          <Link
+            href="/models/history"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
       {/* 画面横並びの全体ラッパー */}
-      <div style={wrapperStyle}>
+      <div style={wrapperResponsiveStyle}>
         {/* 左サイドバー */}
-        <aside style={sidebarStyle}>
+        <aside style={sidebarResponsiveStyle}>
           <h2 style={{ fontSize: "1.3rem", marginBottom: 16 }}>絞り込み</h2>
 
           <div>
@@ -409,7 +441,7 @@ export default function PracticeSharePage() {
                 boxSizing: "border-box",
               }}
             >
-              {/* ここで「すべて」は選択肢に出さない */}
+              <option value="">すべて</option>
               {gradeList.map((grade) => (
                 <option key={grade} value={grade}>
                   {grade}
@@ -432,7 +464,7 @@ export default function PracticeSharePage() {
                 boxSizing: "border-box",
               }}
             >
-              {/* ここで「すべて」は選択肢に出さない */}
+              <option value="">すべて</option>
               {genreList.map((genre) => (
                 <option key={genre} value={genre}>
                   {genre}
@@ -478,7 +510,7 @@ export default function PracticeSharePage() {
         </aside>
 
         {/* メインコンテンツ */}
-        <main style={mainContentStyle}>
+        <main style={mainContentResponsiveStyle}>
           {filteredRecords.length === 0 ? (
             <p>条件に合う実践記録がありません。</p>
           ) : (
