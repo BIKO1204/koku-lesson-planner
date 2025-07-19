@@ -45,14 +45,15 @@ export default function EducationModelsPage() {
     evaluationFocus: "",
     languageFocus: "",
     childFocus: "",
+    creatorName: "",
   });
   const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // Firestoreから「自分の」モデルだけ取得してローカルにも保存
   useEffect(() => {
     if (!userId) {
       setModels([]);
@@ -92,8 +93,10 @@ export default function EducationModelsPage() {
       evaluationFocus: m.evaluationFocus,
       languageFocus: m.languageFocus,
       childFocus: m.childFocus,
+      creatorName: m.creatorName,
     });
     setError("");
+    setSuccessMessage("");
     setMenuOpen(false);
   };
 
@@ -105,8 +108,10 @@ export default function EducationModelsPage() {
       evaluationFocus: "",
       languageFocus: "",
       childFocus: "",
+      creatorName: "",
     });
     setError("");
+    setSuccessMessage("");
   };
 
   const saveModel = async (): Promise<boolean> => {
@@ -115,13 +120,16 @@ export default function EducationModelsPage() {
       !form.philosophy.trim() ||
       !form.evaluationFocus.trim() ||
       !form.languageFocus.trim() ||
-      !form.childFocus.trim()
+      !form.childFocus.trim() ||
+      !form.creatorName.trim()
     ) {
       setError("必須項目をすべて入力してください。");
+      setSuccessMessage("");
       return false;
     }
     if (!userId) {
       setError("ログイン状態が不明です。再ログインしてください。");
+      setSuccessMessage("");
       return false;
     }
 
@@ -138,6 +146,7 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
         });
         newModel = {
@@ -147,9 +156,9 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
           creatorId: userId,
-          creatorName: userName,
         };
       } else {
         const colRef = collection(db, "educationModels");
@@ -159,9 +168,9 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
           creatorId: userId,
-          creatorName: userName,
         });
         newModel = {
           id: docRef.id,
@@ -170,13 +179,12 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
           creatorId: userId,
-          creatorName: userName,
         };
       }
 
-      // ローカル保存も更新
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
@@ -185,12 +193,15 @@ export default function EducationModelsPage() {
       setModels(updatedLocalModels);
 
       cancelEdit();
-      setMenuOpen(false);
       setError("");
+      setSuccessMessage("保存しました！");
+      setTimeout(() => setSuccessMessage(""), 3000);
+      setMenuOpen(false);
       return true;
     } catch (e) {
       console.error("Firestore保存エラー", e);
       setError("保存に失敗しました。");
+      setSuccessMessage("");
       return false;
     }
   };
@@ -210,7 +221,6 @@ export default function EducationModelsPage() {
     }
   };
 
-  // ソート処理
   const sortedModels = () => {
     const copy = [...models];
     if (sortOrder === "newest") {
@@ -221,7 +231,7 @@ export default function EducationModelsPage() {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  // Styles
+  // Styles including button active effect
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -347,6 +357,7 @@ export default function EducationModelsPage() {
     border: "1px solid #ccc",
     boxSizing: "border-box",
   };
+
   const buttonPrimary: React.CSSProperties = {
     backgroundColor: "#4caf50",
     color: "white",
@@ -355,7 +366,15 @@ export default function EducationModelsPage() {
     borderRadius: 6,
     cursor: "pointer",
     fontWeight: "bold",
+    transition: "background-color 0.3s ease",
   };
+
+  const buttonPrimaryActive: React.CSSProperties = {
+    backgroundColor: "#388e3c",
+  };
+
+  // State to track button pressed (for visual feedback)
+  const [btnPressed, setBtnPressed] = useState(false);
 
   return (
     <>
@@ -387,7 +406,6 @@ export default function EducationModelsPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
         <button
           onClick={() => {
             signOut();
@@ -397,31 +415,77 @@ export default function EducationModelsPage() {
         >
           🔓 ログアウト
         </button>
-
-        {/* メニューリンク */}
         <div style={menuLinksWrapperStyle}>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/");
+            }}
+          >
             🏠 ホーム
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan");
+            }}
+          >
             📋 授業作成
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan/history");
+            }}
+          >
             📖 計画履歴
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/history");
+            }}
+          >
             📷 実践履歴
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/share");
+            }}
+          >
             🌐 共有版実践記録
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/create");
+            }}
+          >
             ✏️ 教育観作成
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models");
+            }}
+          >
             📚 教育観一覧
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/history");
+            }}
+          >
             🕒 教育観履歴
           </button>
         </div>
@@ -445,6 +509,20 @@ export default function EducationModelsPage() {
           </p>
         )}
 
+        {successMessage && (
+          <p
+            style={{
+              color: "green",
+              marginBottom: 24,
+              fontWeight: "700",
+              fontSize: "1.1rem",
+              textAlign: "center",
+            }}
+          >
+            {successMessage}
+          </p>
+        )}
+
         <section
           style={{
             padding: 28,
@@ -463,8 +541,58 @@ export default function EducationModelsPage() {
               fontSize: "1.15rem",
             }}
           >
+            作成者名（必須）：
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
+              例）山田太郎
+            </div>
+            <input
+              type="text"
+              value={form.creatorName}
+              onChange={(e) => handleChange("creatorName", e.target.value)}
+              placeholder=""
+              style={{
+                width: "100%",
+                padding: 16,
+                fontSize: "1.2rem",
+                borderRadius: 6,
+                border: "1.2px solid #bbb",
+                marginTop: 6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                backgroundColor: "#fff",
+                color: "#222",
+                transition: "border-color 0.25s ease",
+              }}
+            />
+          </label>
+
+          {/* 他の入力欄も同様に例文含めて続く */}
+
+          <label
+            style={{
+              display: "block",
+              marginBottom: 18,
+              fontWeight: 600,
+              color: "#444",
+              fontSize: "1.15rem",
+            }}
+          >
             モデル名（必須）：
-            <div style={guideTextStyle}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
               例）面白い授業、対話型授業、音読重視など
             </div>
             <input
@@ -498,7 +626,14 @@ export default function EducationModelsPage() {
             }}
           >
             教育観（必須）：
-            <div style={guideTextStyle}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
               例）子ども一人ひとりの思いや考えを尊重し、対話を通して、自分の思いや考えを広げさせたり、深めさせたりする。
             </div>
             <textarea
@@ -533,7 +668,14 @@ export default function EducationModelsPage() {
             }}
           >
             評価観点の重視点（必須）：
-            <div style={guideTextStyle}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
               例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。
             </div>
             <textarea
@@ -568,7 +710,14 @@ export default function EducationModelsPage() {
             }}
           >
             言語活動の重視点（必須）：
-            <div style={guideTextStyle}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
               例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。
             </div>
             <textarea
@@ -603,7 +752,14 @@ export default function EducationModelsPage() {
             }}
           >
             育てたい子どもの姿（必須）：
-            <div style={guideTextStyle}>
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "#666",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
               例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。
             </div>
             <textarea
@@ -630,19 +786,17 @@ export default function EducationModelsPage() {
 
           <button
             onClick={async () => {
+              setBtnPressed(true);
               const success = await saveModel();
+              setBtnPressed(false);
               if (success) setError("");
             }}
-            className="save-button"
             style={{
+              ...buttonPrimary,
+              ...(btnPressed ? { backgroundColor: "#388e3c" } : {}),
               padding: "1.1rem 3.2rem",
               fontSize: "1.35rem",
-              backgroundColor: "#4caf50",
-              color: "white",
-              border: "none",
               borderRadius: 10,
-              cursor: "pointer",
-              fontWeight: "700",
               display: "block",
               margin: "0 auto",
               boxShadow: "0 5px 14px #4caf50bb",
@@ -652,6 +806,56 @@ export default function EducationModelsPage() {
             {editId ? "更新して保存" : "作成して保存"}
           </button>
         </section>
+
+        {/* モデル一覧表示 */}
+        {models.length === 0 ? (
+          <p>モデルがまだありません。</p>
+        ) : (
+          <section>
+            <h2>作成済みモデル一覧</h2>
+            {sortedModels().map((m) => (
+              <div
+                key={m.id}
+                style={{
+                  border: "1px solid #ccc",
+                  borderRadius: 8,
+                  padding: 16,
+                  marginBottom: 16,
+                }}
+              >
+                <h3>{m.name}</h3>
+                <p>
+                  <strong>作成者：</strong>
+                  {m.creatorName}
+                </p>
+                <p>
+                  <strong>更新日時：</strong>
+                  {new Date(m.updatedAt).toLocaleString()}
+                </p>
+                <p>
+                  <strong>教育観：</strong>
+                  {m.philosophy}
+                </p>
+                <p>
+                  <strong>評価観点の重視点：</strong>
+                  {m.evaluationFocus}
+                </p>
+                <p>
+                  <strong>言語活動の重視点：</strong>
+                  {m.languageFocus}
+                </p>
+                <p>
+                  <strong>育てたい子どもの姿：</strong>
+                  {m.childFocus}
+                </p>
+                <button onClick={() => startEdit(m)} style={{ marginRight: 8 }}>
+                  編集
+                </button>
+                <button onClick={() => handleDelete(m.id)}>削除</button>
+              </div>
+            ))}
+          </section>
+        )}
       </main>
     </>
   );
