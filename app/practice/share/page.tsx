@@ -427,50 +427,54 @@ export default function PracticeSharePage() {
         <aside style={sidebarResponsiveStyle}>
           <h2 style={{ fontSize: "1.3rem", marginBottom: 16 }}>絞り込み</h2>
 
+          {/* 学年セレクトボックス */}
           <div>
             <div style={filterSectionTitleStyle}>学年</div>
-            {gradeList.length === 0 && <p>なし</p>}
-            {gradeList.map((grade) => (
-              <div
-                key={grade}
-                style={{
-                  ...filterItemStyle,
-                  ...(gradeFilter === grade ? selectedFilterStyle : {}),
-                }}
-                onClick={() => setGradeFilter(gradeFilter === grade ? null : grade)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) =>
-                  e.key === "Enter" ? setGradeFilter(gradeFilter === grade ? null : grade) : null
-                }
-              >
-                {grade}
-              </div>
-            ))}
+            <select
+              value={inputGrade}
+              onChange={(e) => setInputGrade(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="">すべて</option>
+              <option value="1年">1年</option>
+              <option value="2年">2年</option>
+              <option value="3年">3年</option>
+              <option value="4年">4年</option>
+              <option value="5年">5年</option>
+              <option value="6年">6年</option>
+            </select>
           </div>
 
+          {/* ジャンルセレクトボックス */}
           <div>
             <div style={filterSectionTitleStyle}>ジャンル</div>
-            {genreList.length === 0 && <p>なし</p>}
-            {genreList.map((genre) => (
-              <div
-                key={genre}
-                style={{
-                  ...filterItemStyle,
-                  ...(genreFilter === genre ? selectedFilterStyle : {}),
-                }}
-                onClick={() => setGenreFilter(genreFilter === genre ? null : genre)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) =>
-                  e.key === "Enter" ? setGenreFilter(genreFilter === genre ? null : genre) : null
-                }
-              >
-                {genre}
-              </div>
-            ))}
+            <select
+              value={inputGenre}
+              onChange={(e) => setInputGenre(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="">すべて</option>
+              <option value="物語文">物語文</option>
+              <option value="説明文">説明文</option>
+              <option value="詩">詩</option>
+            </select>
           </div>
 
+          {/* 単元名テキスト入力 */}
           <div>
             <div style={filterSectionTitleStyle}>単元名</div>
             <input
@@ -489,6 +493,7 @@ export default function PracticeSharePage() {
             />
           </div>
 
+          {/* 表示ボタン */}
           <button
             onClick={handleSearch}
             style={{
@@ -503,31 +508,7 @@ export default function PracticeSharePage() {
               fontWeight: "bold",
             }}
           >
-            検索
-          </button>
-
-          <button
-            onClick={() => {
-              setGradeFilter(null);
-              setGenreFilter(null);
-              setUnitNameFilter(null);
-              setInputGrade("");
-              setInputGenre("");
-              setInputUnitName("");
-            }}
-            style={{
-              marginTop: 8,
-              width: "100%",
-              padding: "8px 0",
-              backgroundColor: "#f44336",
-              color: "white",
-              border: "none",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            絞り込み解除
+            表示
           </button>
         </aside>
 
