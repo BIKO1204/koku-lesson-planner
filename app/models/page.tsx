@@ -36,6 +36,7 @@ export default function EducationModelsPage() {
     evaluationFocus: "",
     languageFocus: "",
     childFocus: "",
+    creatorName: "",
   });
   const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -43,7 +44,6 @@ export default function EducationModelsPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // Firestoreデータ取得＆ローカルストレージにも保存
   useEffect(() => {
     async function fetchModels() {
       try {
@@ -58,7 +58,6 @@ export default function EducationModelsPage() {
           ...doc.data(),
         })) as EducationModel[];
         setModels(data);
-        // ローカルにも同期しておく
         localStorage.setItem("styleModels", JSON.stringify(data));
       } catch (e) {
         console.error("Firestoreからの読み込みエラー:", e);
@@ -79,6 +78,7 @@ export default function EducationModelsPage() {
       evaluationFocus: m.evaluationFocus,
       languageFocus: m.languageFocus,
       childFocus: m.childFocus,
+      creatorName: m.creatorName || "",
     });
     setError("");
     setMenuOpen(false);
@@ -92,6 +92,7 @@ export default function EducationModelsPage() {
       evaluationFocus: "",
       languageFocus: "",
       childFocus: "",
+      creatorName: "",
     });
     setError("");
   };
@@ -102,7 +103,8 @@ export default function EducationModelsPage() {
       !form.philosophy.trim() ||
       !form.evaluationFocus.trim() ||
       !form.languageFocus.trim() ||
-      !form.childFocus.trim()
+      !form.childFocus.trim() ||
+      !form.creatorName.trim()
     ) {
       setError("必須項目をすべて入力してください。");
       return false;
@@ -114,7 +116,6 @@ export default function EducationModelsPage() {
       let newModel: EducationModel;
 
       if (editId) {
-        // 更新
         const docRef = doc(db, "educationModels", editId);
         await updateDoc(docRef, {
           name: form.name.trim(),
@@ -122,6 +123,7 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
         });
         newModel = {
@@ -131,10 +133,10 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
         };
       } else {
-        // 新規追加
         const colRef = collection(db, "educationModels");
         const docRef = await addDoc(colRef, {
           name: form.name.trim(),
@@ -142,6 +144,7 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
         });
         newModel = {
@@ -151,16 +154,15 @@ export default function EducationModelsPage() {
           evaluationFocus: form.evaluationFocus.trim(),
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
           updatedAt: now,
         };
       }
 
-      // ローカルストレージ同期用配列を作成
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
 
-      // ローカルストレージ保存
       localStorage.setItem("styleModels", JSON.stringify(updatedLocalModels));
       setModels(updatedLocalModels);
 
@@ -190,7 +192,6 @@ export default function EducationModelsPage() {
     }
   };
 
-  // PDF生成関数（html2pdf.jsを動的インポート）
   async function generatePdfFromModel(m: EducationModel) {
     const html2pdf = (await import("html2pdf.js")).default;
 
@@ -212,6 +213,9 @@ export default function EducationModelsPage() {
       <p style="white-space: pre-wrap; margin-left: 12px;">${m.childFocus.replace(/\n/g, "<br>")}</p>
       <p style="margin-top: 32px; font-size: 0.9rem; color: #666;">
         更新日時: ${new Date(m.updatedAt).toLocaleString()}
+      </p>
+      <p style="font-size: 0.9rem; color: #666;">
+        作成者: ${m.creatorName || "不明"}
       </p>
     `;
 
@@ -235,7 +239,6 @@ export default function EducationModelsPage() {
     }
   }
 
-  // Firestore側でorderByしてるけど念のためフロント側もソート
   const sortedModels = () => {
     const copy = [...models];
     if (sortOrder === "newest") {
@@ -246,7 +249,7 @@ export default function EducationModelsPage() {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  // 省略しないUIスタイル
+  // スタイル群
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -299,7 +302,7 @@ export default function EducationModelsPage() {
     flexShrink: 0,
     margin: "1rem",
   };
-  const menuScrollStyle: React.CSSProperties = {
+  const menuLinksWrapperStyle: React.CSSProperties = {
     overflowY: "auto",
     flexGrow: 1,
     paddingTop: "1rem",
@@ -397,11 +400,11 @@ export default function EducationModelsPage() {
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
         >
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
+          <span style={barStyle} />
+          <span style={barStyle} />
+          <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: 24 }}>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
           国語授業プランナー
         </h1>
       </nav>
@@ -413,15 +416,21 @@ export default function EducationModelsPage() {
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー本体 */}
+      {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
           🔓 ログアウト
         </button>
 
         {/* メニューリンク */}
-        <div style={menuScrollStyle}>
+        <div style={menuLinksWrapperStyle}>
           <button
             style={navBtnStyle}
             onClick={() => {
@@ -531,6 +540,9 @@ export default function EducationModelsPage() {
             <div key={m.id} style={cardStyle}>
               <h3 style={{ marginTop: 0 }}>{m.name}</h3>
               <p>
+                <strong>作成者：</strong> {m.creatorName || "なし"}
+              </p>
+              <p>
                 <strong>教育観：</strong> {m.philosophy}
               </p>
               <p>
@@ -541,6 +553,9 @@ export default function EducationModelsPage() {
               </p>
               <p>
                 <strong>育てたい子ども：</strong> {m.childFocus}
+              </p>
+              <p style={{ fontSize: "0.8rem", color: "#666" }}>
+                更新日時: {new Date(m.updatedAt).toLocaleString()}
               </p>
               <div
                 style={{
@@ -570,6 +585,12 @@ export default function EducationModelsPage() {
               {editId === m.id && (
                 <section style={{ ...cardStyle, marginTop: 12 }}>
                   <h4>編集モード</h4>
+                  <input
+                    placeholder="作成者名"
+                    value={form.creatorName}
+                    onChange={(e) => handleChange("creatorName", e.target.value)}
+                    style={inputStyle}
+                  />
                   <input
                     placeholder="モデル名"
                     value={form.name}
@@ -637,104 +658,3 @@ export default function EducationModelsPage() {
   );
 }
 
-// --- スタイル ---
-const navBarStyle: React.CSSProperties = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "100%",
-  height: 56,
-  backgroundColor: "#1976d2",
-  display: "flex",
-  alignItems: "center",
-  padding: "0 1rem",
-  zIndex: 1000,
-};
-const hamburgerStyle: React.CSSProperties = {
-  cursor: "pointer",
-  width: 30,
-  height: 22,
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-};
-const barStyle: React.CSSProperties = {
-  height: 4,
-  backgroundColor: "white",
-  borderRadius: 2,
-};
-const menuWrapperStyle: React.CSSProperties = {
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: 250,
-  height: "calc(100vh - 56px)",
-  backgroundColor: "#f0f0f0",
-  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-  transform: "translateX(0)",
-  transition: "transform 0.3s ease",
-  zIndex: 999,
-  display: "flex",
-  flexDirection: "column",
-  padding: "0 1rem",
-  boxSizing: "border-box",
-};
-const menuScrollStyle: React.CSSProperties = {
-  flexGrow: 1,
-  overflowY: "auto",
-  paddingTop: "1rem",
-  paddingBottom: "20px",
-};
-const logoutButtonStyle: React.CSSProperties = {
-  margin: "1rem 0",
-  padding: "0.75rem 1rem",
-  backgroundColor: "#e53935",
-  color: "white",
-  fontWeight: "bold",
-  borderRadius: 6,
-  border: "none",
-  cursor: "pointer",
-  zIndex: 1000,
-  width: "100%",
-  boxSizing: "border-box",
-};
-const navLinkStyle: React.CSSProperties = {
-  display: "block",
-  padding: "0.5rem 1rem",
-  backgroundColor: "#1976d2",
-  color: "white",
-  borderRadius: 6,
-  textDecoration: "none",
-  fontWeight: "bold",
-  whiteSpace: "nowrap",
-  marginBottom: 8,
-  cursor: "pointer",
-  width: "100%",
-  boxSizing: "border-box",
-};
-const cardStyle: React.CSSProperties = {
-  border: "1px solid #ccc",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 24,
-  backgroundColor: "white",
-  boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-};
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 8,
-  marginBottom: 12,
-  fontSize: "1rem",
-  borderRadius: 6,
-  border: "1px solid #ccc",
-  boxSizing: "border-box",
-};
-const buttonPrimary: React.CSSProperties = {
-  backgroundColor: "#4CAF50",
-  color: "white",
-  padding: "8px 16px",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: "bold",
-};
