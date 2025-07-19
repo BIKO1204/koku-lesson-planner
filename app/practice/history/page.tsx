@@ -599,7 +599,7 @@ export default function PracticeHistoryPage() {
                       <button
                         style={{
                           ...buttonBaseStyle,
-                          backgroundColor: "#2196F3",
+                          backgroundColor: "#9C27B0",
                           marginLeft: 8,
                         }}
                       >

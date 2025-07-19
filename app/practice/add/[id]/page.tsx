@@ -132,10 +132,10 @@ export default function PracticeAddPage() {
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
+  const [author, setAuthor] = useState("");  // ← 作成者名の状態を学年の前に移動
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
-  const [author, setAuthor] = useState("");  // ← 作成者名の状態追加
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
@@ -264,10 +264,10 @@ export default function PracticeAddPage() {
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
+        setAuthor(existing.author || "");  // ← ここも順序合わせて作成者を先に
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
-        setAuthor(existing.author || "");  // ← 既存データあればセット
       }
     });
   }, [id]);
@@ -312,10 +312,10 @@ export default function PracticeAddPage() {
       reflection,
       boardImages,
       lessonTitle,
+      author,  // ← 作成者を先に
       grade,
       genre,
       unitName,
-      author,  // ← 追加
     });
   };
 
@@ -333,10 +333,10 @@ export default function PracticeAddPage() {
       reflection: record.reflection,
       boardImages: record.compressedImages,
       lessonTitle: record.lessonTitle,
+      author: record.author || "",  // ← 作成者先に
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
-      author: record.author || "",  // ← 追加
       createdAt: new Date(),
     });
   }
@@ -417,7 +417,7 @@ export default function PracticeAddPage() {
             📷 実践履歴
           </button>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
-           🌐 共有版実践記録 
+            🌐 共有版実践記録
           </button>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
@@ -450,6 +450,21 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* 作成者名 */}
+          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+            <label>
+              作成者名：
+              <input
+                type="text"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+                placeholder="例: 山田 太郎"
+              />
+            </label>
+          </div>
+
           {/* 学年 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
@@ -468,21 +483,6 @@ export default function PracticeAddPage() {
                 <option value="5年">5年</option>
                 <option value="6年">6年</option>
               </select>
-            </label>
-          </div>
-
-          {/* 作成者名 */}
-          <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
-            <label>
-              作成者名：
-              <input
-                type="text"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                required
-                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
-                placeholder="例: 山田 太郎"
-              />
             </label>
           </div>
 
