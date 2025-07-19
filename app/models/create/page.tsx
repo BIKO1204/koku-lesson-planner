@@ -278,7 +278,7 @@ export default function CreateModelPage() {
             📷 実践履歴
           </button>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
-            🌐 共有版実践記録を見る
+            🌐 共有版実践記録
           </button>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
