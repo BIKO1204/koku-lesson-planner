@@ -2,7 +2,16 @@
 
 import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, arrayUnion, increment } from "firebase/firestore";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  doc,
+  updateDoc,
+  arrayUnion,
+  increment,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
 
@@ -16,8 +25,8 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   likes?: number;
   comments?: Comment[];
-  grade?: string;   // 学年（1年〜6年など） ※Firestoreに保存されている想定
-  genre?: string;   // ジャンル（物語文、説明文、詩など）
+  grade?: string; // 学年（1年〜6年など）
+  genre?: string; // ジャンル（物語文、説明文、詩など）
   unitName?: string; // 単元名（例：おおきなかぶ）
 };
 type LessonPlan = {
@@ -32,7 +41,7 @@ export default function PracticeSharePage() {
   // フィルター用状態
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
-  const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
+  const [unitNameFilter, setUnitNameFilter] = useState<string>("");
 
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
@@ -88,7 +97,7 @@ export default function PracticeSharePage() {
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
-    if (unitNameFilter && r.unitName !== unitNameFilter) return false;
+    if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
     return true;
   });
 
@@ -96,7 +105,7 @@ export default function PracticeSharePage() {
   const clearFilters = () => {
     setGradeFilter(null);
     setGenreFilter(null);
-    setUnitNameFilter(null);
+    setUnitNameFilter("");
   };
 
   // ハンバーガーメニュー開閉
@@ -140,7 +149,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- スタイル ---
+  // --- スタイル群 ---
 
   const navBarStyle: CSSProperties = {
     position: "fixed",
@@ -213,7 +222,6 @@ export default function PracticeSharePage() {
     zIndex: 998,
   };
 
-  // 画面全体の横並びレイアウト
   const wrapperStyle: CSSProperties = {
     display: "flex",
     maxWidth: 1200,
@@ -222,7 +230,6 @@ export default function PracticeSharePage() {
     gap: 24,
   };
 
-  // 左の絞り込みサイドバー
   const sidebarStyle: CSSProperties = {
     width: 280,
     padding: 16,
@@ -235,7 +242,6 @@ export default function PracticeSharePage() {
     top: 72,
   };
 
-  // メインコンテンツ（右側）
   const mainContentStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
@@ -311,7 +317,6 @@ export default function PracticeSharePage() {
     marginBottom: 6,
   };
 
-  // フィルター選択時のハイライト色
   const selectedFilterStyle: CSSProperties = {
     backgroundColor: "#1976d2",
     color: "white",
@@ -361,25 +366,13 @@ export default function PracticeSharePage() {
           <Link href="/plan" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/plan/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/practice/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/practice/share" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🌐 共有版実践記録
           </Link>
           <Link href="/models/create" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
@@ -413,7 +406,11 @@ export default function PracticeSharePage() {
                 onClick={() => setGradeFilter(gradeFilter === grade ? null : grade)}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => (e.key === "Enter" ? setGradeFilter(gradeFilter === grade ? null : grade) : null)}
+                onKeyDown={(e) =>
+                  e.key === "Enter"
+                    ? setGradeFilter(gradeFilter === grade ? null : grade)
+                    : null
+                }
               >
                 {grade}
               </div>
@@ -433,7 +430,11 @@ export default function PracticeSharePage() {
                 onClick={() => setGenreFilter(genreFilter === genre ? null : genre)}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => (e.key === "Enter" ? setGenreFilter(genreFilter === genre ? null : genre) : null)}
+                onKeyDown={(e) =>
+                  e.key === "Enter"
+                    ? setGenreFilter(genreFilter === genre ? null : genre)
+                    : null
+                }
               >
                 {genre}
               </div>
@@ -442,22 +443,20 @@ export default function PracticeSharePage() {
 
           <div>
             <div style={filterSectionTitleStyle}>単元名</div>
-            {unitNameList.length === 0 && <p>なし</p>}
-            {unitNameList.map((unit) => (
-              <div
-                key={unit}
-                style={{
-                  ...filterItemStyle,
-                  ...(unitNameFilter === unit ? selectedFilterStyle : {}),
-                }}
-                onClick={() => setUnitNameFilter(unitNameFilter === unit ? null : unit)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => (e.key === "Enter" ? setUnitNameFilter(unitNameFilter === unit ? null : unit) : null)}
-              >
-                {unit}
-              </div>
-            ))}
+            <input
+              type="text"
+              placeholder="単元名を入力"
+              value={unitNameFilter}
+              onChange={(e) => setUnitNameFilter(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 4,
+                border: "1px solid #ccc",
+                marginBottom: 12,
+                boxSizing: "border-box",
+              }}
+            />
           </div>
 
           <button
