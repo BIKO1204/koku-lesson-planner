@@ -73,9 +73,9 @@ export default function PracticeSharePage() {
       const units = new Set<string>();
 
       recs.forEach((r) => {
-        if (r.grade) grades.add(r.grade);
-        if (r.genre) genres.add(r.genre);
-        if (r.unitName) units.add(r.unitName);
+        if (r.grade && r.grade !== "すべて") grades.add(r.grade);
+        if (r.genre && r.genre !== "すべて") genres.add(r.genre);
+        if (r.unitName && r.unitName !== "すべて") units.add(r.unitName);
       });
 
       setGradeList(Array.from(grades).sort());
@@ -409,7 +409,7 @@ export default function PracticeSharePage() {
                 boxSizing: "border-box",
               }}
             >
-              <option value="">すべて</option>
+              {/* ここで「すべて」は選択肢に出さない */}
               {gradeList.map((grade) => (
                 <option key={grade} value={grade}>
                   {grade}
@@ -432,7 +432,7 @@ export default function PracticeSharePage() {
                 boxSizing: "border-box",
               }}
             >
-              <option value="">すべて</option>
+              {/* ここで「すべて」は選択肢に出さない */}
               {genreList.map((genre) => (
                 <option key={genre} value={genre}>
                   {genre}
