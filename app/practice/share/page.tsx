@@ -233,7 +233,7 @@ export default function PracticeSharePage() {
     zIndex: 998,
   };
 
-  // 画面全体の横並びレイアウト
+  // 画面全体の横並びレイアウト（レスポンシブ対応）
   const wrapperResponsiveStyle: CSSProperties = {
     display: "flex",
     maxWidth: 1200,
@@ -243,7 +243,7 @@ export default function PracticeSharePage() {
     flexDirection: isMobile ? "column" : "row",
   };
 
-  // 左の絞り込みサイドバー
+  // 左の絞り込みサイドバー（レスポンシブ対応）
   const sidebarResponsiveStyle: CSSProperties = {
     width: isMobile ? "100%" : 280,
     padding: 16,
@@ -257,7 +257,7 @@ export default function PracticeSharePage() {
     marginBottom: isMobile ? 16 : 0,
   };
 
-  // メインコンテンツ（右側）
+  // メインコンテンツ（レスポンシブ対応）
   const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
@@ -429,48 +429,46 @@ export default function PracticeSharePage() {
 
           <div>
             <div style={filterSectionTitleStyle}>学年</div>
-            <select
-              value={inputGrade}
-              onChange={(e) => setInputGrade(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 4,
-                border: "1px solid #ccc",
-                marginBottom: 12,
-                boxSizing: "border-box",
-              }}
-            >
-              <option value="">すべて</option>
-              {gradeList.map((grade) => (
-                <option key={grade} value={grade}>
-                  {grade}
-                </option>
-              ))}
-            </select>
+            {gradeList.length === 0 && <p>なし</p>}
+            {gradeList.map((grade) => (
+              <div
+                key={grade}
+                style={{
+                  ...filterItemStyle,
+                  ...(gradeFilter === grade ? selectedFilterStyle : {}),
+                }}
+                onClick={() => setGradeFilter(gradeFilter === grade ? null : grade)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) =>
+                  e.key === "Enter" ? setGradeFilter(gradeFilter === grade ? null : grade) : null
+                }
+              >
+                {grade}
+              </div>
+            ))}
           </div>
 
           <div>
             <div style={filterSectionTitleStyle}>ジャンル</div>
-            <select
-              value={inputGenre}
-              onChange={(e) => setInputGenre(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 4,
-                border: "1px solid #ccc",
-                marginBottom: 12,
-                boxSizing: "border-box",
-              }}
-            >
-              <option value="">すべて</option>
-              {genreList.map((genre) => (
-                <option key={genre} value={genre}>
-                  {genre}
-                </option>
-              ))}
-            </select>
+            {genreList.length === 0 && <p>なし</p>}
+            {genreList.map((genre) => (
+              <div
+                key={genre}
+                style={{
+                  ...filterItemStyle,
+                  ...(genreFilter === genre ? selectedFilterStyle : {}),
+                }}
+                onClick={() => setGenreFilter(genreFilter === genre ? null : genre)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) =>
+                  e.key === "Enter" ? setGenreFilter(genreFilter === genre ? null : genre) : null
+                }
+              >
+                {genre}
+              </div>
+            ))}
           </div>
 
           <div>
@@ -507,6 +505,30 @@ export default function PracticeSharePage() {
           >
             検索
           </button>
+
+          <button
+            onClick={() => {
+              setGradeFilter(null);
+              setGenreFilter(null);
+              setUnitNameFilter(null);
+              setInputGrade("");
+              setInputGenre("");
+              setInputUnitName("");
+            }}
+            style={{
+              marginTop: 8,
+              width: "100%",
+              padding: "8px 0",
+              backgroundColor: "#f44336",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            絞り込み解除
+          </button>
         </aside>
 
         {/* メインコンテンツ */}
@@ -521,6 +543,7 @@ export default function PracticeSharePage() {
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
+                  {/* 常に授業案詳細を表示 */}
                   {plan && typeof plan.result === "object" && (
                     <section
                       style={{
