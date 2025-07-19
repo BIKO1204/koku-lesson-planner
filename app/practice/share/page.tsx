@@ -17,7 +17,12 @@ import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
 
 type BoardImage = { name: string; src: string };
-type Comment = { userId: string; comment: string; createdAt: string };
+type Comment = {
+  userId: string;       // ログインユーザーの識別子（emailなど）
+  displayName: string;  // 表示名（必須）
+  comment: string;
+  createdAt: string;
+};
 type PracticeRecord = {
   lessonId: string;
   lessonTitle: string;
@@ -25,12 +30,12 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   likes?: number;
-  likedUsers?: string[]; // いいね済みユーザーIDリスト
+  likedUsers?: string[];
   comments?: Comment[];
   grade?: string;
   genre?: string;
   unitName?: string;
-  author?: string; // 作成者名追加
+  author?: string;
 };
 type LessonPlan = {
   id: string;
@@ -45,37 +50,36 @@ export default function PracticeSharePage() {
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
-  const [inputAuthor, setInputAuthor] = useState<string>(""); // 作成者検索入力
+  const [inputAuthor, setInputAuthor] = useState<string>("");
 
   // 検索条件反映用フィルター
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
-  const [authorFilter, setAuthorFilter] = useState<string | null>(null); // 作成者フィルター
+  const [authorFilter, setAuthorFilter] = useState<string | null>(null);
 
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [newComments, setNewComments] = useState<Record<string, string>>({});
-  const [commentAuthors, setCommentAuthors] = useState<Record<string, string>>({}); // コメント投稿者名管理
+  const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
+  const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState<string>("");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // 画面幅によるレスポンシブ判定
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // FirestoreからpracticeRecordsを取得（practiceDate降順）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
         ...(doc.data() as PracticeRecord),
         lessonId: doc.id,
         likedUsers: (doc.data() as any).likedUsers || [],
-        author: (doc.data() as any).author || "", // 作成者名取得
+        author: (doc.data() as any).author || "",
       }));
       setRecords(recs);
     });
 
-    // ローカルストレージから授業案を取得
     const plans = localStorage.getItem("lessonPlans");
     if (plans) {
       try {
@@ -85,43 +89,37 @@ export default function PracticeSharePage() {
       }
     }
 
-    // 画面幅監視
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
-
     return () => {
       unsubscribe();
       window.removeEventListener("resize", handleResize);
     };
   }, []);
 
-  // 検索実行ボタン
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
     setUnitNameFilter(inputUnitName.trim() || null);
-    setAuthorFilter(inputAuthor.trim() || null); // 作成者検索反映
+    setAuthorFilter(inputAuthor.trim() || null);
   };
 
-  // フィルター適用
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
-    if (authorFilter && !r.author?.includes(authorFilter)) return false; // 作成者フィルター
+    if (authorFilter && !r.author?.includes(authorFilter)) return false;
     return true;
   });
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // いいね済みか判定
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
   };
 
-  // いいね処理：一度だけいいねできるようトランザクションで制御
   const handleLike = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -161,42 +159,130 @@ export default function PracticeSharePage() {
     }
   };
 
-  // コメント入力管理
   const handleCommentChange = (lessonId: string, value: string) => {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
 
-  // コメント投稿者名入力管理
   const handleCommentAuthorChange = (lessonId: string, value: string) => {
-    setCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
+    setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
   };
 
-  // コメント投稿
   const handleAddComment = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
       return;
     }
     const comment = newComments[lessonId]?.trim();
-    const commentAuthor = commentAuthors[lessonId]?.trim() || "名無し";
+    const commentAuthor = newCommentAuthors[lessonId]?.trim();
     if (!comment) {
       alert("コメントを入力してください");
+      return;
+    }
+    if (!commentAuthor) {
+      alert("コメント投稿者名を入力してください");
       return;
     }
     try {
       const docRef = doc(db, "practiceRecords", lessonId);
       await updateDoc(docRef, {
         comments: arrayUnion({
-          userId: commentAuthor, // コメント投稿者名として保存
+          userId: userId,
+          displayName: commentAuthor,
           comment,
           createdAt: new Date().toISOString(),
         }),
       });
       setNewComments((prev) => ({ ...prev, [lessonId]: "" }));
-      setCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
+      setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
     } catch (e) {
       console.error("コメント追加失敗", e);
       alert("コメントの投稿に失敗しました");
+    }
+  };
+
+  // コメント編集開始
+  const startEditComment = (recordId: string, index: number, currentText: string) => {
+    setEditingCommentId({ recordId, index });
+    setEditingCommentText(currentText);
+  };
+
+  // コメント編集キャンセル
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText("");
+  };
+
+  // コメント編集テキスト変更
+  const onEditCommentTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditingCommentText(e.target.value);
+  };
+
+  // コメント更新（Firestore）
+  const handleUpdateComment = async () => {
+    if (!editingCommentId) return;
+    const { recordId, index } = editingCommentId;
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    if (!editingCommentText.trim()) {
+      alert("コメントを入力してください");
+      return;
+    }
+
+    const record = records.find((r) => r.lessonId === recordId);
+    if (!record || !record.comments || !record.comments[index]) {
+      alert("対象のコメントが見つかりません");
+      return;
+    }
+    if (record.comments[index].userId !== userId) {
+      alert("自分のコメントのみ編集できます");
+      return;
+    }
+
+    const updatedComments = [...record.comments];
+    updatedComments[index] = {
+      ...updatedComments[index],
+      comment: editingCommentText,
+    };
+
+    try {
+      const docRef = doc(db, "practiceRecords", recordId);
+      await updateDoc(docRef, {
+        comments: updatedComments,
+      });
+      cancelEditComment();
+    } catch (e) {
+      console.error("コメント更新失敗", e);
+      alert("コメントの更新に失敗しました");
+    }
+  };
+
+  // コメント削除
+  const handleDeleteComment = async (recordId: string, index: number) => {
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    const record = records.find((r) => r.lessonId === recordId);
+    if (!record || !record.comments || !record.comments[index]) {
+      alert("対象のコメントが見つかりません");
+      return;
+    }
+    if (record.comments[index].userId !== userId) {
+      alert("自分のコメントのみ削除できます");
+      return;
+    }
+    const updatedComments = [...record.comments];
+    updatedComments.splice(index, 1);
+    try {
+      const docRef = doc(db, "practiceRecords", recordId);
+      await updateDoc(docRef, {
+        comments: updatedComments,
+      });
+    } catch (e) {
+      console.error("コメント削除失敗", e);
+      alert("コメントの削除に失敗しました");
     }
   };
 
@@ -370,7 +456,6 @@ export default function PracticeSharePage() {
     fontSize: "1.1rem",
   };
 
-  // --- JSX return ---
   return (
     <>
       {/* ナビバー */}
@@ -418,25 +503,13 @@ export default function PracticeSharePage() {
           <Link href="/plan" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/plan/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/practice/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/practice/share" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🌐 共有版実践記録
           </Link>
           <Link href="/models/create" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
@@ -445,11 +518,7 @@ export default function PracticeSharePage() {
           <Link href="/models" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            onClick={() => setMenuOpen(false)}
-            style={navLinkStyle}
-          >
+          <Link href="/models/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🕒 教育観履歴
           </Link>
         </div>
@@ -745,11 +814,56 @@ export default function PracticeSharePage() {
                     <strong>コメント</strong>
                     <div style={commentListStyle}>
                       {(r.comments || []).map((c, i) => (
-                        <div key={i}>
-                          <b>{c.userId}</b>{" "}
+                        <div key={i} style={{ marginBottom: 12 }}>
+                          <b>{c.displayName}</b>{" "}
                           <small>({new Date(c.createdAt).toLocaleString()})</small>
                           <br />
-                          {c.comment}
+                          {editingCommentId &&
+                          editingCommentId.recordId === r.lessonId &&
+                          editingCommentId.index === i ? (
+                            <>
+                              <textarea
+                                rows={3}
+                                value={editingCommentText}
+                                onChange={onEditCommentTextChange}
+                                style={commentInputStyle}
+                              />
+                              <button
+                                style={{ ...commentBtnStyle, marginRight: 8 }}
+                                onClick={handleUpdateComment}
+                              >
+                                更新
+                              </button>
+                              <button
+                                style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
+                                onClick={cancelEditComment}
+                              >
+                                キャンセル
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <p style={{ whiteSpace: "pre-wrap" }}>{c.comment}</p>
+                              {session && c.userId === userId && (
+                                <>
+                                  <button
+                                    style={{ ...commentBtnStyle, marginRight: 8, padding: "4px 8px", fontSize: 12 }}
+                                    onClick={() =>
+                                      startEditComment(r.lessonId, i, c.comment)
+                                    }
+                                  >
+                                    編集
+                                  </button>
+                                  <button
+                                    style={{ ...commentBtnStyle, backgroundColor: "#e53935", padding: "4px 8px", fontSize: 12 }}
+                                    onClick={() => handleDeleteComment(r.lessonId, i)}
+                                  >
+                                    削除
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          )}
                           <hr />
                         </div>
                       ))}
@@ -758,8 +872,8 @@ export default function PracticeSharePage() {
                     {/* コメント者名入力欄 */}
                     <input
                       type="text"
-                      placeholder="コメント者名"
-                      value={commentAuthors[r.lessonId] || ""}
+                      placeholder="コメント者名（必須）"
+                      value={newCommentAuthors[r.lessonId] || ""}
                       onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
                       style={commentAuthorInputStyle}
                       disabled={!session}
