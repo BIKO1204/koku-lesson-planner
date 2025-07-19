@@ -107,7 +107,8 @@ export default function PracticeSharePage() {
     }
   };
 
-  // スタイル群
+  // --- スタイル群 ---
+
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -192,6 +193,7 @@ export default function PracticeSharePage() {
     padding: 16,
     marginBottom: 24,
     backgroundColor: "#fdfdfd",
+    wordBreak: "break-word",
   };
   const boardImageContainerStyle: CSSProperties = {
     width: "100%",
@@ -202,6 +204,7 @@ export default function PracticeSharePage() {
     marginRight: 12,
     cursor: "pointer",
     color: "#1976d2",
+    fontSize: "1rem",
   };
   const commentListStyle: CSSProperties = {
     maxHeight: 150,
@@ -227,6 +230,17 @@ export default function PracticeSharePage() {
     border: "none",
     borderRadius: 4,
     cursor: "pointer",
+  };
+
+  const navLinkStyle: CSSProperties = {
+    display: "block",
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    textDecoration: "none",
+    marginBottom: "0.5rem",
   };
 
   return (
@@ -266,28 +280,40 @@ export default function PracticeSharePage() {
 
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
-          <Link href="/" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link href="/" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🏠 ホーム
           </Link>
-          <Link href="/plan" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link href="/plan" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link
+            href="/plan/history"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link
+            href="/practice/history"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link
+            href="/practice/share"
+            onClick={() => setMenuOpen(false)}
+            style={navLinkStyle}
+          >
             🌐 共有版実践記録
           </Link>
-          <Link href="/models/create" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link href="/models/create" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link href="/models" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" onClick={() => setMenuOpen(false)} style={{ ...navLinkStyle }}>
+          <Link href="/models/history" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🕒 教育観履歴
           </Link>
         </div>
@@ -461,7 +487,8 @@ export default function PracticeSharePage() {
                 <div style={commentListStyle}>
                   {(r.comments || []).map((c, i) => (
                     <div key={i}>
-                      <b>{c.userId}</b> <small>({new Date(c.createdAt).toLocaleString()})</small>
+                      <b>{c.userId}</b>{" "}
+                      <small>({new Date(c.createdAt).toLocaleString()})</small>
                       <br />
                       {c.comment}
                       <hr />
@@ -494,52 +521,3 @@ export default function PracticeSharePage() {
     </>
   );
 }
-
-// navLinkStyle は navBar用にここで定義（リンクの共通スタイル）
-const navLinkStyle: CSSProperties = {
-  display: "block",
-  padding: "0.5rem 1rem",
-  backgroundColor: "#1976d2",
-  color: "white",
-  fontWeight: "bold",
-  borderRadius: 6,
-  textDecoration: "none",
-  marginBottom: "0.5rem",
-};
-
-// 各スタイル変数をここにまとめておきます
-
-const likeBtnStyle: CSSProperties = {
-  marginRight: 12,
-  cursor: "pointer",
-  color: "#1976d2",
-  fontSize: "1rem",
-};
-
-const commentListStyle: CSSProperties = {
-  maxHeight: 150,
-  overflowY: "auto",
-  marginTop: 8,
-  border: "1px solid #ddd",
-  padding: 8,
-  borderRadius: 6,
-  backgroundColor: "#fff",
-};
-
-const commentInputStyle: CSSProperties = {
-  width: "100%",
-  padding: 8,
-  marginTop: 8,
-  borderRadius: 4,
-  border: "1px solid #ccc",
-};
-
-const commentBtnStyle: CSSProperties = {
-  marginTop: 8,
-  padding: "6px 12px",
-  backgroundColor: "#4caf50",
-  color: "white",
-  border: "none",
-  borderRadius: 4,
-  cursor: "pointer",
-};
