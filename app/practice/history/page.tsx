@@ -303,6 +303,13 @@ export default function PracticeHistoryPage() {
             style={navLinkStyle}
             onClick={() => setMenuOpen(false)}
           >
+            🌐 共有版実践記録
+          </Link>
+          <Link
+            href="/practice/share"
+            style={{ ...navLinkStyle, backgroundColor: "#9C27B0" }}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
           <Link
@@ -592,7 +599,7 @@ export default function PracticeHistoryPage() {
                       <button
                         style={{
                           ...buttonBaseStyle,
-                          backgroundColor: "#7e57c2", // 薄紫色,
+                          backgroundColor: "#2196F3",
                           marginLeft: 8,
                         }}
                       >
