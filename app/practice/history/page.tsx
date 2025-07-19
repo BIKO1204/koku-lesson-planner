@@ -130,7 +130,6 @@ export default function PracticeHistoryPage() {
     overflowY: "auto",
     flexGrow: 1,
   };
-  // ここを修正：position stickyを解除し余白を1remに統一
   const logoutButtonStyle: CSSProperties = {
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -326,6 +325,24 @@ export default function PracticeHistoryPage() {
       {/* メインコンテンツ */}
       <main style={mainContainerStyle}>
         <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
+
+        {/* 共有ページへのリンク追加 */}
+        <div style={{ marginBottom: 20 }}>
+          <Link
+            href="/practice/share"
+            style={{
+              display: "inline-block",
+              backgroundColor: "#2196F3",
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: 6,
+              textDecoration: "none",
+              cursor: "pointer",
+            }}
+          >
+            共有版実践記録を見る
+          </Link>
+        </div>
 
         <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
           並び替え：
@@ -569,6 +586,19 @@ export default function PracticeHistoryPage() {
                     >
                       🗑 削除
                     </button>
+
+                    {/* 共有ページへ飛ぶボタン追加 */}
+                    <Link href={`/practice/share/${r.lessonId}`}>
+                      <button
+                        style={{
+                          ...buttonBaseStyle,
+                          backgroundColor: "#2196F3",
+                          marginLeft: 8,
+                        }}
+                      >
+                        🔗 共有ページで見る
+                      </button>
+                    </Link>
                   </div>
                 </article>
               );
