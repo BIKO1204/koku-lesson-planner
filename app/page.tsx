@@ -30,9 +30,9 @@ function Dashboard() {
     bg: string;
   }[] = [
     { href: "/plan", emoji: "📝", label: "授業案を作成する", bg: "#42A5F5" },
-    { href: "/plan/history", emoji: "📖", label: "保存された授業案を見る", bg: "#5C6BC0" },
+    { href: "/plan/history", emoji: "📖", label: "保存された授業案を見る", bg: "#FB8C00" }, // オレンジ系
     { href: "/practice/history", emoji: "📷", label: "授業実践の記録を見る", bg: "#009688" },
-    { href: "/practice/share", emoji: "🌐", label: "共有版実践記録を見る", bg: "#29B6F6" },
+    { href: "/practice/share", emoji: "🌐", label: "共有版実践記録を見る", bg: "#9C27B0" }, // 紫系
     { href: "/models/create", emoji: "✏️", label: "新しい教育観モデルを登録する", bg: "#66BB6A" },
     { href: "/models", emoji: "🌱", label: "教育観モデルを一覧で見る", bg: "#AED581" },
     { href: "/models/history", emoji: "🕒", label: "教育観モデル履歴を見る", bg: "#FFA726" },
