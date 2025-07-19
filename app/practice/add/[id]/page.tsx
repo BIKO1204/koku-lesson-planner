@@ -18,7 +18,7 @@ type PracticeRecord = {
   grade?: string;      // 学年
   genre?: string;      // ジャンル
   unitName?: string;   // 単元名
-  author?: string;     // ← 追加 作成者名
+  author?: string;     // 作成者名
 };
 
 type LessonPlan = {
@@ -132,7 +132,7 @@ export default function PracticeAddPage() {
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [author, setAuthor] = useState("");  // ← 作成者名の状態を学年の前に移動
+  const [author, setAuthor] = useState("");  // 作成者名は学年の前に移動
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
@@ -264,7 +264,7 @@ export default function PracticeAddPage() {
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-        setAuthor(existing.author || "");  // ← ここも順序合わせて作成者を先に
+        setAuthor(existing.author || "");  // 作成者を学年より先にセット
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
@@ -312,7 +312,7 @@ export default function PracticeAddPage() {
       reflection,
       boardImages,
       lessonTitle,
-      author,  // ← 作成者を先に
+      author,  // 作成者を先に
       grade,
       genre,
       unitName,
@@ -333,7 +333,7 @@ export default function PracticeAddPage() {
       reflection: record.reflection,
       boardImages: record.compressedImages,
       lessonTitle: record.lessonTitle,
-      author: record.author || "",  // ← 作成者先に
+      author: record.author || "",  // 作成者を先に
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
@@ -523,7 +523,7 @@ export default function PracticeAddPage() {
             <label>
               振り返り：<br />
               <textarea
-                value={record?.reflection ?? reflection}
+                value={reflection}  // ここを修正：record?.reflection ではなく reflection を使用
                 required
                 onChange={(e) => setReflection(e.target.value)}
                 rows={6}
@@ -786,3 +786,4 @@ export default function PracticeAddPage() {
     </>
   );
 }
+
