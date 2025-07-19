@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, CSSProperties } from "react";
+import { useState, useEffect, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import {
   collection,
@@ -12,14 +12,15 @@ import {
   arrayUnion,
   increment,
   runTransaction,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
 
 type BoardImage = { name: string; src: string };
 type Comment = {
-  userId: string;       // ログインユーザーの識別子（emailなど）
-  displayName: string;  // 表示名（必須）
+  userId: string;
+  displayName: string;
   comment: string;
   createdAt: string;
 };
@@ -46,28 +47,36 @@ export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
 
-  // 検索条件用入力状態
+  // フィルター入力状態
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
   const [inputAuthor, setInputAuthor] = useState<string>("");
 
-  // 検索条件反映用フィルター
+  // フィルター反映用
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
   const [authorFilter, setAuthorFilter] = useState<string | null>(null);
 
+  // 実践記録・授業案
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
+
+  // コメント関連
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
-  const [menuOpen, setMenuOpen] = useState(false);
 
+  // 実践案編集状態
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [editingRecordData, setEditingRecordData] = useState<Partial<PracticeRecord>>({});
+
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
+  // 初期ロード・Firestore監視・画面幅判定
   useEffect(() => {
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -92,12 +101,14 @@ export default function PracticeSharePage() {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
+
     return () => {
       unsubscribe();
       window.removeEventListener("resize", handleResize);
     };
   }, []);
 
+  // フィルター検索実行
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
@@ -105,6 +116,7 @@ export default function PracticeSharePage() {
     setAuthorFilter(inputAuthor.trim() || null);
   };
 
+  // フィルター適用済み一覧
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
@@ -115,11 +127,13 @@ export default function PracticeSharePage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // いいね済み判定
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
   };
 
+  // いいね処理
   const handleLike = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -129,21 +143,14 @@ export default function PracticeSharePage() {
       alert("ユーザー情報が取得できません");
       return;
     }
-
     const docRef = doc(db, "practiceRecords", lessonId);
-
     try {
       await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) throw new Error("該当データがありません");
-
         const data = docSnap.data();
         const likedUsers: string[] = data.likedUsers || [];
-
-        if (likedUsers.includes(userId)) {
-          throw new Error("すでにいいね済みです");
-        }
-
+        if (likedUsers.includes(userId)) throw new Error("すでにいいね済みです");
         transaction.update(docRef, {
           likes: increment(1),
           likedUsers: arrayUnion(userId),
@@ -159,14 +166,15 @@ export default function PracticeSharePage() {
     }
   };
 
+  // コメント入力管理
   const handleCommentChange = (lessonId: string, value: string) => {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
-
   const handleCommentAuthorChange = (lessonId: string, value: string) => {
     setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
   };
 
+  // コメント投稿
   const handleAddComment = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -200,24 +208,18 @@ export default function PracticeSharePage() {
     }
   };
 
-  // コメント編集開始
+  // コメント編集関連
   const startEditComment = (recordId: string, index: number, currentText: string) => {
     setEditingCommentId({ recordId, index });
     setEditingCommentText(currentText);
   };
-
-  // コメント編集キャンセル
   const cancelEditComment = () => {
     setEditingCommentId(null);
     setEditingCommentText("");
   };
-
-  // コメント編集テキスト変更
   const onEditCommentTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditingCommentText(e.target.value);
   };
-
-  // コメント更新（Firestore）
   const handleUpdateComment = async () => {
     if (!editingCommentId) return;
     const { recordId, index } = editingCommentId;
@@ -229,7 +231,6 @@ export default function PracticeSharePage() {
       alert("コメントを入力してください");
       return;
     }
-
     const record = records.find((r) => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index]) {
       alert("対象のコメントが見つかりません");
@@ -239,18 +240,14 @@ export default function PracticeSharePage() {
       alert("自分のコメントのみ編集できます");
       return;
     }
-
     const updatedComments = [...record.comments];
     updatedComments[index] = {
       ...updatedComments[index],
       comment: editingCommentText,
     };
-
     try {
       const docRef = doc(db, "practiceRecords", recordId);
-      await updateDoc(docRef, {
-        comments: updatedComments,
-      });
+      await updateDoc(docRef, { comments: updatedComments });
       cancelEditComment();
     } catch (e) {
       console.error("コメント更新失敗", e);
@@ -277,12 +274,102 @@ export default function PracticeSharePage() {
     updatedComments.splice(index, 1);
     try {
       const docRef = doc(db, "practiceRecords", recordId);
-      await updateDoc(docRef, {
-        comments: updatedComments,
-      });
+      await updateDoc(docRef, { comments: updatedComments });
     } catch (e) {
       console.error("コメント削除失敗", e);
       alert("コメントの削除に失敗しました");
+    }
+  };
+
+  // --- ここから追加：実践案編集処理 ---
+
+  // 編集開始（編集フォーム表示）
+  const startEditRecord = (record: PracticeRecord) => {
+    if (record.author !== userId) {
+      alert("自分の実践案のみ編集できます");
+      return;
+    }
+    setEditingRecordId(record.lessonId);
+    setEditingRecordData({
+      lessonTitle: record.lessonTitle,
+      practiceDate: record.practiceDate,
+      reflection: record.reflection,
+      grade: record.grade,
+      genre: record.genre,
+      unitName: record.unitName,
+    });
+  };
+
+  // 編集フォームの入力変更
+  const onEditRecordChange = (field: keyof PracticeRecord, value: string) => {
+    setEditingRecordData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // 編集キャンセル
+  const cancelEditRecord = () => {
+    setEditingRecordId(null);
+    setEditingRecordData({});
+  };
+
+  // 編集内容保存
+  const handleSaveRecord = async () => {
+    if (!editingRecordId) return;
+
+    if (!editingRecordData.lessonTitle?.trim()) {
+      alert("タイトルは必須です");
+      return;
+    }
+    if (!editingRecordData.practiceDate?.trim()) {
+      alert("実施日は必須です");
+      return;
+    }
+    if (!editingRecordData.reflection?.trim()) {
+      alert("振り返りは必須です");
+      return;
+    }
+
+    try {
+      const docRef = doc(db, "practiceRecords", editingRecordId);
+      await updateDoc(docRef, {
+        lessonTitle: editingRecordData.lessonTitle,
+        practiceDate: editingRecordData.practiceDate,
+        reflection: editingRecordData.reflection,
+        grade: editingRecordData.grade || "",
+        genre: editingRecordData.genre || "",
+        unitName: editingRecordData.unitName || "",
+      });
+      alert("実践案を更新しました");
+      cancelEditRecord();
+    } catch (e) {
+      console.error("実践案更新失敗", e);
+      alert("実践案の更新に失敗しました");
+    }
+  };
+
+  // 実践案削除
+  const handleDeleteRecord = async (lessonId: string) => {
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    const record = records.find((r) => r.lessonId === lessonId);
+    if (!record) {
+      alert("対象の実践案が見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("自分の実践案のみ削除できます");
+      return;
+    }
+    if (!confirm("本当にこの実践案を削除しますか？")) return;
+
+    try {
+      const docRef = doc(db, "practiceRecords", lessonId);
+      await deleteDoc(docRef);
+      alert("実践案を削除しました");
+    } catch (e) {
+      console.error("実践案削除失敗", e);
+      alert("実践案の削除に失敗しました");
     }
   };
 
@@ -640,155 +727,269 @@ export default function PracticeSharePage() {
           ) : (
             filteredRecords.map((r) => {
               const plan = lessonPlans.find((p) => p.id === r.lessonId);
+              const isAuthor = r.author === userId;
 
               return (
                 <article key={r.lessonId} style={cardStyle}>
-                  <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
-
-                  {/* 作成者名表示 */}
-                  <p>
-                    <strong>作成者：</strong> {r.author || "不明"}
-                  </p>
-
-                  {/* 授業案詳細（スマホでもスクロールできるように調整） */}
-                  {plan && typeof plan.result === "object" && (
-                    <section
-                      style={{
-                        backgroundColor: "#fafafa",
-                        padding: 12,
-                        borderRadius: 6,
-                        marginBottom: 16,
-                        maxHeight: isMobile ? 400 : "auto",
-                        overflowY: isMobile ? "auto" : "visible",
-                      }}
-                    >
-                      <strong>授業案</strong>
-                      <p>
-                        <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
-                      </p>
-                      <p>
-                        <strong>単元名：</strong> {plan.result["単元名"] || "－"}
-                      </p>
-                      <p>
-                        <strong>授業時間数：</strong> {plan.result["授業時間数"] || "－"}時間
-                      </p>
-                      <p>
-                        <strong>単元の目標：</strong> {plan.result["単元の目標"] || "－"}
-                      </p>
-
-                      {plan.result["評価の観点"] && (
-                        <div>
-                          <strong>評価の観点：</strong>
-
-                          <strong>知識・技能</strong>
-                          <ul>
-                            {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-                              ? plan.result["評価の観点"]["知識・技能"]
-                              : plan.result["評価の観点"]?.["知識・技能"]
-                              ? [plan.result["評価の観点"]["知識・技能"]]
-                              : []
-                            ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
-                            ))}
-                          </ul>
-
-                          <strong>思考・判断・表現</strong>
-                          <ul>
-                            {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-                              ? plan.result["評価の観点"]["思考・判断・表現"]
-                              : plan.result["評価の観点"]?.["思考・判断・表現"]
-                              ? [plan.result["評価の観点"]["思考・判断・表現"]]
-                              : []
-                            ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
-                            ))}
-                          </ul>
-
-                          <strong>主体的に学習に取り組む態度</strong>
-                          <ul>
-                            {(Array.isArray(
-                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                            )
-                              ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                              : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-                              : plan.result["評価の観点"]?.["態度"]
-                              ? [plan.result["評価の観点"]["態度"]]
-                              : []
-                            ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <p>
-                        <strong>育てたい子どもの姿：</strong>{" "}
-                        {plan.result["育てたい子どもの姿"] || "－"}
-                      </p>
-                      <p>
-                        <strong>言語活動の工夫：</strong>{" "}
-                        {plan.result["言語活動の工夫"] || "－"}
-                      </p>
-
-                      {plan.result["授業の流れ"] && (
-                        <div>
-                          <strong>授業の流れ：</strong>
-                          <ul>
-                            {Object.entries(plan.result["授業の流れ"]).map(
-                              ([key, val]) => {
-                                const content =
-                                  typeof val === "string" ? val : JSON.stringify(val);
-                                return (
-                                  <li key={key}>
-                                    <strong>{key}:</strong> {content}
-                                  </li>
-                                );
-                              }
-                            )}
-                          </ul>
-                        </div>
-                      )}
-                    </section>
-                  )}
-
-                  <p>
-                    <strong>実施日：</strong> {r.practiceDate}
-                  </p>
-                  <p>
-                    <strong>振り返り：</strong>
-                    <br />
-                    {r.reflection}
-                  </p>
-
-                  {r.boardImages.length > 0 && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                        marginTop: 12,
-                      }}
-                    >
-                      {r.boardImages.map((img, i) => (
-                        <div key={i} style={boardImageContainerStyle}>
-                          <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-                            板書{i + 1}
-                          </div>
-                          <img
-                            src={img.src}
-                            alt={img.name}
-                            style={{
-                              width: "100%",
-                              height: "auto",
-                              borderRadius: 8,
-                              border: "1px solid #ccc",
-                              objectFit: "contain",
-                            }}
+                  {/* 編集中かどうかで切り替え */}
+                  {editingRecordId === r.lessonId ? (
+                    <>
+                      <h3>実践案編集</h3>
+                      <div>
+                        <label>
+                          タイトル：
+                          <input
+                            type="text"
+                            value={editingRecordData.lessonTitle || ""}
+                            onChange={(e) => onEditRecordChange("lessonTitle", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
                           />
+                        </label>
+                      </div>
+                      <div>
+                        <label>
+                          実施日：
+                          <input
+                            type="date"
+                            value={editingRecordData.practiceDate || ""}
+                            onChange={(e) => onEditRecordChange("practiceDate", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
+                          />
+                        </label>
+                      </div>
+                      <div>
+                        <label>
+                          振り返り：
+                          <textarea
+                            rows={4}
+                            value={editingRecordData.reflection || ""}
+                            onChange={(e) => onEditRecordChange("reflection", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
+                          />
+                        </label>
+                      </div>
+                      <div>
+                        <label>
+                          学年：
+                          <select
+                            value={editingRecordData.grade || ""}
+                            onChange={(e) => onEditRecordChange("grade", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
+                          >
+                            <option value="">選択なし</option>
+                            <option value="1年">1年</option>
+                            <option value="2年">2年</option>
+                            <option value="3年">3年</option>
+                            <option value="4年">4年</option>
+                            <option value="5年">5年</option>
+                            <option value="6年">6年</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div>
+                        <label>
+                          ジャンル：
+                          <select
+                            value={editingRecordData.genre || ""}
+                            onChange={(e) => onEditRecordChange("genre", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
+                          >
+                            <option value="">選択なし</option>
+                            <option value="物語文">物語文</option>
+                            <option value="説明文">説明文</option>
+                            <option value="詩">詩</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div>
+                        <label>
+                          単元名：
+                          <input
+                            type="text"
+                            value={editingRecordData.unitName || ""}
+                            onChange={(e) => onEditRecordChange("unitName", e.target.value)}
+                            style={{ width: "100%", marginBottom: 8 }}
+                          />
+                        </label>
+                      </div>
+                      <button onClick={handleSaveRecord} style={commentBtnStyle}>
+                        保存
+                      </button>
+                      <button
+                        onClick={cancelEditRecord}
+                        style={{ ...commentBtnStyle, backgroundColor: "#e53935", marginLeft: 8 }}
+                      >
+                        キャンセル
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
+
+                      {/* 作成者名表示 */}
+                      <p>
+                        <strong>作成者：</strong> {r.author || "不明"}
+                      </p>
+
+                      {/* 授業案詳細 */}
+                      {plan && typeof plan.result === "object" && (
+                        <section
+                          style={{
+                            backgroundColor: "#fafafa",
+                            padding: 12,
+                            borderRadius: 6,
+                            marginBottom: 16,
+                            maxHeight: isMobile ? 400 : "auto",
+                            overflowY: isMobile ? "auto" : "visible",
+                          }}
+                        >
+                          <strong>授業案</strong>
+                          <p>
+                            <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>単元名：</strong> {plan.result["単元名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>授業時間数：</strong> {plan.result["授業時間数"] || "－"}時間
+                          </p>
+                          <p>
+                            <strong>単元の目標：</strong> {plan.result["単元の目標"] || "－"}
+                          </p>
+
+                          {plan.result["評価の観点"] && (
+                            <div>
+                              <strong>評価の観点：</strong>
+
+                              <strong>知識・技能</strong>
+                              <ul>
+                                {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+                                  ? plan.result["評価の観点"]["知識・技能"]
+                                  : plan.result["評価の観点"]?.["知識・技能"]
+                                  ? [plan.result["評価の観点"]["知識・技能"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={i}>{v}</li>
+                                ))}
+                              </ul>
+
+                              <strong>思考・判断・表現</strong>
+                              <ul>
+                                {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+                                  ? plan.result["評価の観点"]["思考・判断・表現"]
+                                  : plan.result["評価の観点"]?.["思考・判断・表現"]
+                                  ? [plan.result["評価の観点"]["思考・判断・表現"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={i}>{v}</li>
+                                ))}
+                              </ul>
+
+                              <strong>主体的に学習に取り組む態度</strong>
+                              <ul>
+                                {(Array.isArray(
+                                  plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                                )
+                                  ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+                                  : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                                  ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+                                  : plan.result["評価の観点"]?.["態度"]
+                                  ? [plan.result["評価の観点"]["態度"]]
+                                  : []
+                                ).map((v: string, i: number) => (
+                                  <li key={i}>{v}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p>
+                            <strong>育てたい子どもの姿：</strong>{" "}
+                            {plan.result["育てたい子どもの姿"] || "－"}
+                          </p>
+                          <p>
+                            <strong>言語活動の工夫：</strong>{" "}
+                            {plan.result["言語活動の工夫"] || "－"}
+                          </p>
+
+                          {plan.result["授業の流れ"] && (
+                            <div>
+                              <strong>授業の流れ：</strong>
+                              <ul>
+                                {Object.entries(plan.result["授業の流れ"]).map(
+                                  ([key, val]) => {
+                                    const content =
+                                      typeof val === "string" ? val : JSON.stringify(val);
+                                    return (
+                                      <li key={key}>
+                                        <strong>{key}:</strong> {content}
+                                      </li>
+                                    );
+                                  }
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                        </section>
+                      )}
+
+                      <p>
+                        <strong>実施日：</strong> {r.practiceDate}
+                      </p>
+                      <p>
+                        <strong>振り返り：</strong>
+                        <br />
+                        {r.reflection}
+                      </p>
+
+                      {r.boardImages.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 12,
+                            marginTop: 12,
+                          }}
+                        >
+                          {r.boardImages.map((img, i) => (
+                            <div key={i} style={boardImageContainerStyle}>
+                              <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+                                板書{i + 1}
+                              </div>
+                              <img
+                                src={img.src}
+                                alt={img.name}
+                                style={{
+                                  width: "100%",
+                                  height: "auto",
+                                  borderRadius: 8,
+                                  border: "1px solid #ccc",
+                                  objectFit: "contain",
+                                }}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      )}
+
+                      {/* 実践案編集・削除ボタン（作成者のみ表示） */}
+                      {isAuthor && (
+                        <div style={{ marginTop: 12 }}>
+                          <button
+                            onClick={() => startEditRecord(r)}
+                            style={{ ...commentBtnStyle, marginRight: 8 }}
+                          >
+                            実践案編集
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRecord(r.lessonId)}
+                            style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
+                          >
+                            実践案削除
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* いいねボタン */}
@@ -847,15 +1048,23 @@ export default function PracticeSharePage() {
                               {session && c.userId === userId && (
                                 <>
                                   <button
-                                    style={{ ...commentBtnStyle, marginRight: 8, padding: "4px 8px", fontSize: 12 }}
-                                    onClick={() =>
-                                      startEditComment(r.lessonId, i, c.comment)
-                                    }
+                                    style={{
+                                      ...commentBtnStyle,
+                                      marginRight: 8,
+                                      padding: "4px 8px",
+                                      fontSize: 12,
+                                    }}
+                                    onClick={() => startEditComment(r.lessonId, i, c.comment)}
                                   >
                                     編集
                                   </button>
                                   <button
-                                    style={{ ...commentBtnStyle, backgroundColor: "#e53935", padding: "4px 8px", fontSize: 12 }}
+                                    style={{
+                                      ...commentBtnStyle,
+                                      backgroundColor: "#e53935",
+                                      padding: "4px 8px",
+                                      fontSize: 12,
+                                    }}
                                     onClick={() => handleDeleteComment(r.lessonId, i)}
                                   >
                                     削除
