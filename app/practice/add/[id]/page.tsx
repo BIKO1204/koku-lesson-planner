@@ -15,9 +15,9 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[]; // フルサイズ画像（ローカル保存用）
   lessonTitle: string;
-  grade?: string;      // 追加：学年
-  genre?: string;      // 追加：ジャンル（物語文など）
-  unitName?: string;   // 追加：単元名
+  grade?: string;      // 学年
+  genre?: string;      // ジャンル
+  unitName?: string;   // 単元名
 };
 
 type LessonPlan = {
@@ -128,12 +128,12 @@ export default function PracticeAddPage() {
   // 状態管理
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
-  const [boardImages, setBoardImages] = useState<BoardImage[]>([]); // フルサイズ（ローカル用）
-  const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]); // 圧縮版（Firestore用）
+  const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
+  const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [grade, setGrade] = useState("");      // 追加：学年
-  const [genre, setGenre] = useState("");      // 追加：ジャンル
-  const [unitName, setUnitName] = useState(""); // 追加：単元名
+  const [grade, setGrade] = useState("");
+  const [genre, setGenre] = useState("");
+  const [unitName, setUnitName] = useState("");
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
@@ -141,6 +141,94 @@ export default function PracticeAddPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
+
+  // --- ハンバーガーメニュー用スタイル ---
+  const navBarStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 56,
+    backgroundColor: "#1976d2",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 1rem",
+    zIndex: 1000,
+  };
+  const hamburgerStyle: React.CSSProperties = {
+    cursor: "pointer",
+    width: 30,
+    height: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  };
+  const barStyle: React.CSSProperties = {
+    height: 4,
+    backgroundColor: "white",
+    borderRadius: 2,
+  };
+  const menuWrapperStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: 250,
+    height: "calc(100vh - 56px)",
+    backgroundColor: "#f0f0f0",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+    transition: "transform 0.3s ease",
+    zIndex: 999,
+    display: "flex",
+    flexDirection: "column",
+  };
+  const logoutButtonStyle: React.CSSProperties = {
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+  };
+  const menuLinksWrapperStyle: React.CSSProperties = {
+    overflowY: "auto",
+    flexGrow: 1,
+    padding: "1rem",
+  };
+  const navBtnStyle: React.CSSProperties = {
+    marginBottom: 8,
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    display: "block",
+    width: "100%",
+    textAlign: "center",
+  };
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "calc(100vh - 56px)",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+  const containerStyle: React.CSSProperties = {
+    padding: 24,
+    maxWidth: 800,
+    margin: "auto",
+    fontFamily: "sans-serif",
+    paddingTop: 72,
+  };
 
   // ローカルストレージから授業計画を取得＆IndexedDBから実践記録を取得
   useEffect(() => {
@@ -168,14 +256,12 @@ export default function PracticeAddPage() {
       setLessonTitle("");
     }
 
-    // 既存レコードがあれば、フォームに初期値セット
     getRecord(id).then((existing) => {
       if (existing) {
         setPracticeDate(existing.practiceDate);
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-        // 追加した項目も初期化
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
@@ -183,7 +269,7 @@ export default function PracticeAddPage() {
     });
   }, [id]);
 
-  // 画像アップロード時、フルサイズと圧縮版のBase64を同時生成
+  // 画像アップロード時の処理
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -208,7 +294,7 @@ export default function PracticeAddPage() {
     e.target.value = "";
   };
 
-  // 画像削除（両方の配列から）
+  // 画像削除
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
@@ -229,13 +315,13 @@ export default function PracticeAddPage() {
     });
   };
 
-  // IndexedDBに保存（フルサイズ画像）
+  // IndexedDBに保存
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
-  // Firestoreに保存（圧縮画像）
+  // Firestoreに保存
   async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
     const docRef = doc(db, "practiceRecords", record.lessonId);
     await setDoc(docRef, {
@@ -250,7 +336,7 @@ export default function PracticeAddPage() {
     });
   }
 
-  // ローカルとFirestoreに一括保存
+  // 一括保存
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -270,15 +356,75 @@ export default function PracticeAddPage() {
     }
   };
 
-  // --- スタイル省略（元コードのまま） ---
-
-  // 以下、フォームに学年・ジャンル・単元名の入力欄を追加した部分の例
-
   return (
     <>
-      {/* ナビバーなど省略 */}
+      {/* ナビバー */}
+      <nav style={navBarStyle}>
+        <div
+          style={hamburgerStyle}
+          onClick={toggleMenu}
+          aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+        >
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+        </div>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
+      </nav>
 
-      <main style={{ padding: 24, maxWidth: 800, margin: "auto", paddingTop: 72, fontFamily: "sans-serif" }}>
+      {/* メニューオーバーレイ */}
+      <div
+        style={overlayStyle}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
+
+      {/* メニュー全体 */}
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+        {/* ログアウトボタン */}
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
+          🔓 ログアウト
+        </button>
+
+        {/* メニューリンク */}
+        <div style={menuLinksWrapperStyle}>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
+            🏠 ホーム
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
+            📋 授業作成
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
+            📖 計画履歴
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
+            📷 実践履歴
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
+            ✏️ 教育観作成
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
+            📚 教育観一覧
+          </button>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
+            🕒 教育観履歴
+          </button>
+        </div>
+      </div>
+
+      {/* メインコンテンツ */}
+      <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
         <form onSubmit={handlePreview}>
