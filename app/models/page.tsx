@@ -382,7 +382,16 @@ export default function EducationModelsPage() {
             style={navLinkStyle}
             onClick={() => {
               setMenuOpen(false);
-              router.push("/models/create");
+              router.push("/practice/create");
+            }}
+          >
+            🌐 共有版実践記録
+          </button>
+          <button
+            style={navLinkStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/share");
             }}
           >
             ✏️ 教育観作成
@@ -391,7 +400,7 @@ export default function EducationModelsPage() {
             style={navLinkStyle}
             onClick={() => {
               setMenuOpen(false);
-              router.push("/models");
+              router.push("/models/create");
             }}
           >
             📚 教育観一覧
