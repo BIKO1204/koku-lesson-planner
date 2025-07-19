@@ -11,6 +11,7 @@ import {
   updateDoc,
   arrayUnion,
   increment,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
@@ -24,10 +25,11 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   likes?: number;
+  likedUsers?: string[]; // いいね済みユーザーIDリスト
   comments?: Comment[];
-  grade?: string; // 学年
-  genre?: string; // ジャンル
-  unitName?: string; // 単元名
+  grade?: string;
+  genre?: string;
+  unitName?: string;
 };
 type LessonPlan = {
   id: string;
@@ -36,14 +38,14 @@ type LessonPlan = {
 
 export default function PracticeSharePage() {
   const { data: session } = useSession();
-  const userId = session?.user?.email || "guest";
+  const userId = session?.user?.email || "";
 
-  // 入力状態（検索実行前）
+  // 検索条件用入力状態
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
 
-  // フィルター状態（検索実行後）
+  // 検索条件反映用フィルター
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
@@ -53,38 +55,19 @@ export default function PracticeSharePage() {
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [gradeList, setGradeList] = useState<string[]>([]);
-  const [genreList, setGenreList] = useState<string[]>([]);
-  const [unitNameList, setUnitNameList] = useState<string[]>([]);
-
-  // レスポンシブ対応のための画面幅監視
+  // 画面幅によるレスポンシブ判定
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // Firestoreデータ取得
+    // FirestoreからpracticeRecordsを取得（practiceDate降順）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
         ...(doc.data() as PracticeRecord),
         lessonId: doc.id,
+        likedUsers: (doc.data() as any).likedUsers || [],
       }));
-
       setRecords(recs);
-
-      // フィルター一覧作成（"すべて"除外）
-      const grades = new Set<string>();
-      const genres = new Set<string>();
-      const units = new Set<string>();
-
-      recs.forEach((r) => {
-        if (r.grade && r.grade !== "すべて") grades.add(r.grade);
-        if (r.genre && r.genre !== "すべて") genres.add(r.genre);
-        if (r.unitName && r.unitName !== "すべて") units.add(r.unitName);
-      });
-
-      setGradeList(Array.from(grades).sort());
-      setGenreList(Array.from(genres).sort());
-      setUnitNameList(Array.from(units).sort((a, b) => a.localeCompare(b, "ja")));
     });
 
     // ローカルストレージから授業案を取得
@@ -97,7 +80,7 @@ export default function PracticeSharePage() {
       }
     }
 
-    // 画面幅監視の設定
+    // 画面幅監視
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -108,14 +91,14 @@ export default function PracticeSharePage() {
     };
   }, []);
 
-  // 検索ボタン押下時にフィルターを更新
+  // 検索実行ボタン
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
     setUnitNameFilter(inputUnitName.trim() || null);
   };
 
-  // フィルターに合う実践記録だけ抽出
+  // フィルター適用
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
@@ -125,25 +108,68 @@ export default function PracticeSharePage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // いいね済みか判定
+  const isLikedByUser = (record: PracticeRecord) => {
+    if (!userId) return false;
+    return record.likedUsers?.includes(userId) ?? false;
+  };
+
+  // いいね処理：一度だけいいねできるようトランザクションで制御
   const handleLike = async (lessonId: string) => {
-    if (!session) return alert("ログインしてください");
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    if (!userId) {
+      alert("ユーザー情報が取得できません");
+      return;
+    }
+
+    const docRef = doc(db, "practiceRecords", lessonId);
+
     try {
-      const docRef = doc(db, "practiceRecords", lessonId);
-      await updateDoc(docRef, { likes: increment(1) });
-    } catch (e) {
-      console.error("いいね失敗", e);
-      alert("いいねに失敗しました");
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        if (!docSnap.exists()) throw new Error("該当データがありません");
+
+        const data = docSnap.data();
+        const likedUsers: string[] = data.likedUsers || [];
+
+        if (likedUsers.includes(userId)) {
+          throw new Error("すでにいいね済みです");
+        }
+
+        transaction.update(docRef, {
+          likes: increment(1),
+          likedUsers: arrayUnion(userId),
+        });
+      });
+    } catch (error: any) {
+      if (error.message === "すでにいいね済みです") {
+        alert(error.message);
+      } else {
+        console.error("いいね処理中にエラー", error);
+        alert("いいねに失敗しました");
+      }
     }
   };
 
+  // コメント入力管理
   const handleCommentChange = (lessonId: string, value: string) => {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
 
+  // コメント投稿
   const handleAddComment = async (lessonId: string) => {
-    if (!session) return alert("ログインしてください");
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const comment = newComments[lessonId]?.trim();
-    if (!comment) return alert("コメントを入力してください");
+    if (!comment) {
+      alert("コメントを入力してください");
+      return;
+    }
     try {
       const docRef = doc(db, "practiceRecords", lessonId);
       await updateDoc(docRef, {
@@ -160,8 +186,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- スタイル ---
-
+  // --- スタイル定義 ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -232,8 +257,6 @@ export default function PracticeSharePage() {
     transition: "opacity 0.3s ease",
     zIndex: 998,
   };
-
-  // 画面全体の横並びレイアウト（レスポンシブ対応）
   const wrapperResponsiveStyle: CSSProperties = {
     display: "flex",
     maxWidth: 1200,
@@ -242,8 +265,6 @@ export default function PracticeSharePage() {
     gap: 24,
     flexDirection: isMobile ? "column" : "row",
   };
-
-  // 左の絞り込みサイドバー（レスポンシブ対応）
   const sidebarResponsiveStyle: CSSProperties = {
     width: isMobile ? "100%" : 280,
     padding: 16,
@@ -256,14 +277,11 @@ export default function PracticeSharePage() {
     top: isMobile ? "auto" : 72,
     marginBottom: isMobile ? 16 : 0,
   };
-
-  // メインコンテンツ（レスポンシブ対応）
   const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
     width: isMobile ? "100%" : "auto",
   };
-
   const cardStyle: CSSProperties = {
     border: "2px solid #ddd",
     borderRadius: 12,
@@ -282,6 +300,12 @@ export default function PracticeSharePage() {
     cursor: "pointer",
     color: "#1976d2",
     fontSize: "1rem",
+    opacity: 1,
+  };
+  const likeBtnDisabledStyle: CSSProperties = {
+    ...likeBtnStyle,
+    cursor: "default",
+    opacity: 0.6,
   };
   const commentListStyle: CSSProperties = {
     maxHeight: 150,
@@ -308,7 +332,6 @@ export default function PracticeSharePage() {
     borderRadius: 4,
     cursor: "pointer",
   };
-
   const navLinkStyle: CSSProperties = {
     display: "block",
     padding: "0.5rem 1rem",
@@ -319,7 +342,6 @@ export default function PracticeSharePage() {
     textDecoration: "none",
     marginBottom: "0.5rem",
   };
-
   const filterSectionTitleStyle: CSSProperties = {
     fontWeight: "bold",
     marginTop: 12,
@@ -327,20 +349,7 @@ export default function PracticeSharePage() {
     fontSize: "1.1rem",
   };
 
-  const filterItemStyle: CSSProperties = {
-    cursor: "pointer",
-    padding: "4px 8px",
-    borderRadius: 6,
-    marginBottom: 6,
-  };
-
-  // フィルター選択時のハイライト色
-  const selectedFilterStyle: CSSProperties = {
-    backgroundColor: "#1976d2",
-    color: "white",
-    fontWeight: "bold",
-  };
-
+  // --- JSX return ---
   return (
     <>
       {/* ナビバー */}
@@ -369,14 +378,18 @@ export default function PracticeSharePage() {
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー全体 */}
+      {/* メニュー */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
           🔓 ログアウト
         </button>
 
-        {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <Link href="/" onClick={() => setMenuOpen(false)} style={navLinkStyle}>
             🏠 ホーム
@@ -421,13 +434,13 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* 画面横並びの全体ラッパー */}
+      {/* レスポンシブ横並び */}
       <div style={wrapperResponsiveStyle}>
-        {/* 左サイドバー */}
+        {/* サイドバー */}
         <aside style={sidebarResponsiveStyle}>
           <h2 style={{ fontSize: "1.3rem", marginBottom: 16 }}>絞り込み</h2>
 
-          {/* 学年セレクトボックス */}
+          {/* 学年 */}
           <div>
             <div style={filterSectionTitleStyle}>学年</div>
             <select
@@ -452,7 +465,7 @@ export default function PracticeSharePage() {
             </select>
           </div>
 
-          {/* ジャンルセレクトボックス */}
+          {/* ジャンル */}
           <div>
             <div style={filterSectionTitleStyle}>ジャンル</div>
             <select
@@ -474,7 +487,7 @@ export default function PracticeSharePage() {
             </select>
           </div>
 
-          {/* 単元名テキスト入力 */}
+          {/* 単元名 */}
           <div>
             <div style={filterSectionTitleStyle}>単元名</div>
             <input
@@ -493,7 +506,6 @@ export default function PracticeSharePage() {
             />
           </div>
 
-          {/* 表示ボタン */}
           <button
             onClick={handleSearch}
             style={{
@@ -524,7 +536,7 @@ export default function PracticeSharePage() {
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
-                  {/* 常に授業案詳細を表示 */}
+                  {/* 授業案詳細（スマホでもスクロールできるように調整） */}
                   {plan && typeof plan.result === "object" && (
                     <section
                       style={{
@@ -532,6 +544,8 @@ export default function PracticeSharePage() {
                         padding: 12,
                         borderRadius: 6,
                         marginBottom: 16,
+                        maxHeight: isMobile ? 400 : "auto",
+                        overflowY: isMobile ? "auto" : "visible",
                       }}
                     >
                       <strong>授業案</strong>
@@ -663,18 +677,25 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* いいねとコメント */}
+                  {/* いいねボタン */}
                   <div style={{ marginTop: 12 }}>
                     <button
-                      style={likeBtnStyle}
-                      onClick={() => handleLike(r.lessonId)}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
+                      style={isLikedByUser(r) ? likeBtnDisabledStyle : likeBtnStyle}
+                      onClick={() => !isLikedByUser(r) && handleLike(r.lessonId)}
+                      disabled={!session || isLikedByUser(r)}
+                      title={
+                        !session
+                          ? "ログインしてください"
+                          : isLikedByUser(r)
+                          ? "すでにいいね済みです"
+                          : undefined
+                      }
                     >
                       👍 いいね {r.likes || 0}
                     </button>
                   </div>
 
+                  {/* コメントセクション */}
                   <div style={{ marginTop: 12 }}>
                     <strong>コメント</strong>
                     <div style={commentListStyle}>

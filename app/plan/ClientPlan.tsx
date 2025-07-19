@@ -640,6 +640,9 @@ ${languageActivities}
           <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+            🌐 共有版実践記録を見る
+          </Link>  
           <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
