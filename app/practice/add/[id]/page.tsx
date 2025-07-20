@@ -6,7 +6,6 @@ import { openDB } from "idb";
 import { signOut } from "next-auth/react";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-
 import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
 
 type BoardImage = { name: string; src: string };
@@ -15,7 +14,7 @@ type PracticeRecord = {
   lessonId: string;
   practiceDate: string;
   reflection: string;
-  boardImages: BoardImage[]; // ローカルはBase64、FirestoreはURLに置き換え
+  boardImages: BoardImage[]; // フルサイズ画像（ローカル保存用Base64）
   lessonTitle: string;
   grade?: string;
   genre?: string;
@@ -47,26 +46,12 @@ async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> 
   return db.get(STORE_NAME, lessonId);
 }
 
-async function saveRecordToIndexedDB(record: PracticeRecord) {
-  const dbLocal = await getDB();
-  await dbLocal.put(STORE_NAME, record);
+async function saveRecord(record: PracticeRecord) {
+  const db = await getDB();
+  await db.put(STORE_NAME, record);
 }
 
-async function saveRecordToFirestore(record: PracticeRecord) {
-  const docRef = doc(db, "practiceRecords", record.lessonId);
-  await setDoc(docRef, {
-    practiceDate: record.practiceDate,
-    reflection: record.reflection,
-    boardImages: record.boardImages, // Firestore用にはURLの配列を入れること
-    lessonTitle: record.lessonTitle,
-    author: record.author || "",
-    grade: record.grade || "",
-    genre: record.genre || "",
-    unitName: record.unitName || "",
-    createdAt: new Date(),
-  });
-}
-
+// ファイルをBase64に変換（フルサイズ用）
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -76,6 +61,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// 画像圧縮・リサイズ（Firestore用圧縮版Base64生成）
 function resizeAndCompressFile(
   file: File,
   maxWidth: number,
@@ -150,6 +136,7 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // スタイル定義
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -237,6 +224,7 @@ export default function PracticeAddPage() {
     paddingTop: 72,
   };
 
+  // ローカルストレージから授業計画を取得＆IndexedDBから実践記録を取得
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -320,19 +308,24 @@ export default function PracticeAddPage() {
     });
   };
 
-  // ローカルDBに保存
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
-  // Firestoreに保存
-  async function saveRecordToFirestore(record: PracticeRecord) {
+  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
+    const uploadedUrls: BoardImage[] = await Promise.all(
+      record.compressedImages.map(async (img) => {
+        const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+        return { name: img.name, src: url };
+      })
+    );
+
     const docRef = doc(db, "practiceRecords", record.lessonId);
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,
-      boardImages: record.boardImages,
+      boardImages: uploadedUrls,
       lessonTitle: record.lessonTitle,
       author: record.author || "",
       grade: record.grade || "",
@@ -342,26 +335,6 @@ export default function PracticeAddPage() {
     });
   }
 
-  // ローカルのみ保存
-  const handleSaveLocalOnly = async () => {
-    if (!record) {
-      alert("プレビューを作成してください");
-      return;
-    }
-    setUploading(true);
-    try {
-      await saveRecordToIndexedDB(record);
-      alert("ローカルに保存しました");
-      router.push("/practice/history");
-    } catch (e) {
-      alert("ローカル保存に失敗しました");
-      console.error(e);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // ローカル＋Firebaseに保存（ストレージアップロード+Firestore保存）
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -369,25 +342,8 @@ export default function PracticeAddPage() {
     }
     setUploading(true);
     try {
-      // 圧縮画像をストレージにアップロードしURLを取得
-      const uploadedUrls: BoardImage[] = await Promise.all(
-        compressedImages.map(async (img) => {
-          const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
-          return { name: img.name, src: url };
-        })
-      );
-
-      // FirestoreにURL版のboardImagesで保存
-      const firestoreRecord: PracticeRecord = {
-        ...record,
-        boardImages: uploadedUrls,
-      };
-
-      await saveRecordToFirestore(firestoreRecord);
-
-      // ローカルは元のBase64版を保存
       await saveRecordToIndexedDB(record);
-
+      await saveRecordToFirestore({ ...record, compressedImages });
       alert("ローカルとFirebaseに保存しました");
       router.push("/practice/history");
     } catch (e) {
@@ -434,6 +390,7 @@ export default function PracticeAddPage() {
         >
           🔓 ログアウト
         </button>
+
         <div style={menuLinksWrapperStyle}>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
@@ -649,23 +606,13 @@ export default function PracticeAddPage() {
               fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif",
             }}
           >
-            <h2>
-              {lessonPlan?.result && typeof lessonPlan.result === "object"
-                ? (lessonPlan.result as any)["単元名"] || lessonTitle
-                : lessonTitle}
-            </h2>
+            <h2>{lessonTitle}</h2>
 
             <section style={{ marginTop: 24 }}>
               <h3>実施記録</h3>
-              <p>
-                <strong>実施日：</strong> {record.practiceDate}
-              </p>
-              <p>
-                <strong>作成者：</strong> {record.author || "不明"}
-              </p>
-              <p>
-                <strong>振り返り：</strong>
-              </p>
+              <p><strong>実施日：</strong> {record.practiceDate}</p>
+              <p><strong>作成者：</strong> {record.author || "不明"}</p>
+              <p><strong>振り返り：</strong></p>
               <p>{record.reflection}</p>
 
               {record.boardImages.length > 0 && (
@@ -681,9 +628,7 @@ export default function PracticeAddPage() {
                   >
                     {record.boardImages.map((img, i) => (
                       <div key={img.name + i} style={{ width: "100%" }}>
-                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                          板書{i + 1}
-                        </div>
+                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                         <img
                           src={img.src}
                           alt={img.name}
@@ -706,23 +651,6 @@ export default function PracticeAddPage() {
         )}
 
         <button
-          onClick={handleSaveLocalOnly}
-          style={{
-            padding: 12,
-            backgroundColor: "#2196f3",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            width: "100%",
-            cursor: "pointer",
-            marginTop: 16,
-          }}
-          disabled={uploading}
-        >
-          {uploading ? "保存中..." : "ローカルのみに保存"}
-        </button>
-
-        <button
           onClick={handleSaveBoth}
           style={{
             padding: 12,
@@ -732,11 +660,11 @@ export default function PracticeAddPage() {
             borderRadius: 6,
             width: "100%",
             cursor: "pointer",
-            marginTop: 8,
+            marginTop: 16,
           }}
           disabled={uploading}
         >
-          {uploading ? "保存中..." : "ローカル＋Firebaseに保存（共有版投稿）"}
+          {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
         </button>
       </main>
     </>
