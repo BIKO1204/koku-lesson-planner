@@ -36,7 +36,7 @@ type Comment = {
 type PracticeRecord = {
   lessonId: string;
   lessonTitle: string;
-  practiceDate: string; // 期待するISO8601文字列
+  practiceDate: string;
   reflection: string;
   boardImages: BoardImage[];
   likes?: number;
@@ -48,7 +48,7 @@ type PracticeRecord = {
   author?: string;
   pdfUrl?: string;
   pdfName?: string;
-  createdAt?: string; // ISO8601日時文字列
+  createdAt?: string;  // 追加：作成日時
 };
 type LessonPlan = {
   id: string;
@@ -91,11 +91,10 @@ export default function PracticeSharePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
+  // Firebase Storage
   const storage = getStorage();
 
-  // 初期ロード・監視
   useEffect(() => {
-    // FirestoreからpracticeRecordsコレクションを取得（practiceDate降順）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
@@ -110,7 +109,6 @@ export default function PracticeSharePage() {
       setRecords(recs);
     });
 
-    // ローカルから授業案ロード
     const plans = localStorage.getItem("lessonPlans");
     if (plans) {
       try {
@@ -120,7 +118,6 @@ export default function PracticeSharePage() {
       }
     }
 
-    // レスポンシブ判定
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -131,7 +128,7 @@ export default function PracticeSharePage() {
     };
   }, []);
 
-  // フィルター検索ボタン押下時
+  // フィルター検索ボタン押下時にフィルター反映
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
@@ -148,6 +145,7 @@ export default function PracticeSharePage() {
     return true;
   });
 
+  // メニュー開閉
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   // いいね判定
@@ -415,8 +413,7 @@ export default function PracticeSharePage() {
 
   // 編集ページ遷移
   const handleEdit = (lessonId: string) => {
-    // 修正済み：実際の編集ページパスに修正
-    router.push(`/practice/add/${lessonId}`);
+    router.push(`/practice/edit/${lessonId}`);
   };
 
   // --- スタイル定義 ---
@@ -426,7 +423,7 @@ export default function PracticeSharePage() {
     left: 0,
     width: "100%",
     height: 56,
-    backgroundColor: "#6a1b9a", // 紫色に変更
+    backgroundColor: "#1976d2",
     display: "flex",
     alignItems: "center",
     padding: "0 1rem",
@@ -451,7 +448,7 @@ export default function PracticeSharePage() {
     left: 0,
     width: 250,
     height: "100vh",
-    backgroundColor: "#f0e6fa", // 薄い紫
+    backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
     transition: "transform 0.3s ease",
@@ -467,7 +464,7 @@ export default function PracticeSharePage() {
   };
   const logoutButtonStyle: CSSProperties = {
     padding: "0.75rem 1rem",
-    backgroundColor: "#9c27b0",
+    backgroundColor: "#e53935",
     color: "white",
     fontWeight: "bold",
     borderRadius: 6,
@@ -484,7 +481,7 @@ export default function PracticeSharePage() {
     left: 0,
     width: "100vw",
     height: "100vh",
-    backgroundColor: "rgba(106, 27, 154, 0.7)", // 紫透明
+    backgroundColor: "rgba(0,0,0,0.3)",
     opacity: menuOpen ? 1 : 0,
     visibility: menuOpen ? "visible" : "hidden",
     transition: "opacity 0.3s ease",
@@ -501,7 +498,7 @@ export default function PracticeSharePage() {
   const sidebarResponsiveStyle: CSSProperties = {
     width: isMobile ? "100%" : 280,
     padding: 16,
-    backgroundColor: "#f3e5f5",
+    backgroundColor: "#f9f9f9",
     borderRadius: 8,
     boxShadow: "0 0 6px rgba(0,0,0,0.1)",
     height: isMobile ? "auto" : "calc(100vh - 72px)",
@@ -516,11 +513,11 @@ export default function PracticeSharePage() {
     width: isMobile ? "100%" : "auto",
   };
   const cardStyle: CSSProperties = {
-    border: "2px solid #b39ddb",
+    border: "2px solid #ddd",
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
-    backgroundColor: "#ede7f6",
+    backgroundColor: "#fdfdfd",
     wordBreak: "break-word",
   };
   const boardImageContainerStyle: CSSProperties = {
@@ -531,7 +528,7 @@ export default function PracticeSharePage() {
   const likeBtnStyle: CSSProperties = {
     marginRight: 12,
     cursor: "pointer",
-    color: "#6a1b9a",
+    color: "#1976d2",
     fontSize: "1rem",
     opacity: 1,
   };
@@ -559,7 +556,7 @@ export default function PracticeSharePage() {
   const commentBtnStyle: CSSProperties = {
     marginTop: 8,
     padding: "6px 12px",
-    backgroundColor: "#6a1b9a",
+    backgroundColor: "#4caf50",
     color: "white",
     border: "none",
     borderRadius: 4,
@@ -575,7 +572,7 @@ export default function PracticeSharePage() {
   const navLinkStyle: CSSProperties = {
     display: "block",
     padding: "0.5rem 1rem",
-    backgroundColor: "#6a1b9a",
+    backgroundColor: "#1976d2",
     color: "white",
     fontWeight: "bold",
     borderRadius: 6,
@@ -606,7 +603,7 @@ export default function PracticeSharePage() {
           <span style={barStyle}></span>
         </div>
         <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
-          🌐 共有版 国語授業プランナー 実践記録
+          国語授業プランナー
         </h1>
       </nav>
 
@@ -754,7 +751,7 @@ export default function PracticeSharePage() {
               marginTop: 12,
               width: "100%",
               padding: "8px 0",
-              backgroundColor: "#6a1b9a",
+              backgroundColor: "#1976d2",
               color: "white",
               border: "none",
               borderRadius: 6,
@@ -775,15 +772,6 @@ export default function PracticeSharePage() {
               const plan = lessonPlans.find((p) => p.id === r.lessonId);
               const isAuthor = r.author === userId;
 
-              // 実施日のフォーマット安全化
-              let displayPracticeDate = "不明";
-              if (r.practiceDate) {
-                const d = new Date(r.practiceDate);
-                if (!isNaN(d.getTime())) {
-                  displayPracticeDate = d.toLocaleDateString();
-                }
-              }
-
               return (
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
@@ -799,11 +787,11 @@ export default function PracticeSharePage() {
                     </small>
                   </p>
 
-                  {/* 編集ボタン */}
+                  {/* 編集ボタン（すべてのユーザーに表示） */}
                   <button
                     onClick={() => handleEdit(r.lessonId)}
                     style={{
-                      backgroundColor: "#6a1b9a",
+                      backgroundColor: "#1976d2",
                       color: "white",
                       border: "none",
                       borderRadius: 6,
@@ -812,7 +800,7 @@ export default function PracticeSharePage() {
                       marginBottom: 12,
                     }}
                   >
-                    ✏️ 編集
+                    編集
                   </button>
 
                   {/* 授業案詳細 */}
@@ -918,7 +906,7 @@ export default function PracticeSharePage() {
                   )}
 
                   <p>
-                    <strong>実施日：</strong> {displayPracticeDate}
+                    <strong>実施日：</strong> {r.practiceDate}
                   </p>
                   <p>
                     <strong>振り返り：</strong>
@@ -926,7 +914,6 @@ export default function PracticeSharePage() {
                     {r.reflection}
                   </p>
 
-                  {/* 板書写真表示 */}
                   {r.boardImages.length > 0 && (
                     <div
                       style={{
@@ -939,7 +926,7 @@ export default function PracticeSharePage() {
                       {r.boardImages.map((img, i) => (
                         <div key={i} style={boardImageContainerStyle}>
                           <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-                            🖼️ 板書写真{i + 1}
+                            板書{i + 1}
                           </div>
                           <img
                             src={img.src}
@@ -957,7 +944,7 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* PDFアップロード・表示・削除 */}
+                  {/* PDFアップロード・表示・削除（ログインユーザー全員が可能） */}
                   <div style={{ marginTop: 12 }}>
                     {r.pdfUrl ? (
                       <>
@@ -965,7 +952,7 @@ export default function PracticeSharePage() {
                           href={r.pdfUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: "#6a1b9a", textDecoration: "underline" }}
+                          style={{ color: "#1976d2", textDecoration: "underline" }}
                         >
                           📄 {r.pdfName || "PDFを見る"}
                         </a>
@@ -974,53 +961,32 @@ export default function PracticeSharePage() {
                           disabled={uploadingPdfIds.includes(r.lessonId)}
                           style={{
                             marginLeft: 8,
-                            backgroundColor: "#9c27b0",
+                            backgroundColor: "#e53935",
                             color: "white",
                             borderRadius: 4,
                             cursor: "pointer",
                             border: "none",
                             padding: "4px 8px",
                           }}
-                          title="PDF削除"
                         >
-                          🗑️
+                          PDF削除
                         </button>
                       </>
                     ) : (
                       session && (
-                        <label
-                          htmlFor={`pdf-upload-${r.lessonId}`}
-                          style={{
-                            cursor: "pointer",
-                            display: "inline-block",
-                            marginTop: 8,
-                            padding: "6px 12px",
-                            backgroundColor: "#6a1b9a",
-                            color: "white",
-                            borderRadius: 6,
-                            fontWeight: "bold",
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          disabled={uploadingPdfIds.includes(r.lessonId)}
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handlePdfUpload(r.lessonId, e.target.files[0]);
+                              e.target.value = "";
+                            }
                           }}
-                          title={
-                            uploadingPdfIds.includes(r.lessonId)
-                              ? "アップロード中です"
-                              : "PDFをアップロード"
-                          }
-                        >
-                          📤 PDFアップロード
-                          <input
-                            id={`pdf-upload-${r.lessonId}`}
-                            type="file"
-                            accept="application/pdf"
-                            disabled={uploadingPdfIds.includes(r.lessonId)}
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                handlePdfUpload(r.lessonId, e.target.files[0]);
-                                e.target.value = "";
-                              }
-                            }}
-                            style={{ display: "none" }}
-                          />
-                        </label>
+                          style={{ marginTop: 8 }}
+                          title={uploadingPdfIds.includes(r.lessonId) ? "アップロード中です" : undefined}
+                        />
                       )
                     )}
                   </div>
@@ -1030,10 +996,10 @@ export default function PracticeSharePage() {
                     <div style={{ marginTop: 12 }}>
                       <button
                         onClick={() => handleDeleteRecord(r.lessonId)}
-                        style={{ ...commentBtnStyle, backgroundColor: "#9c27b0" }}
+                        style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
                       >
-                        🗑️ 実践案削除
+                        実践案削除
                       </button>
                     </div>
                   )}
