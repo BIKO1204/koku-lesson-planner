@@ -11,7 +11,6 @@ import {
   addDoc,
   updateDoc,
   doc,
-  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -189,8 +188,6 @@ export default function EducationModelsPage() {
     }
   };
 
-  // 削除機能は省略（ボタン非表示にするため削除）
-
   async function generatePdfFromModel(m: EducationModel) {
     const html2pdf = (await import("html2pdf.js")).default;
 
@@ -365,6 +362,14 @@ export default function EducationModelsPage() {
     borderRadius: 6,
     cursor: "pointer",
     fontWeight: "bold",
+  };
+
+  // 追加：編集モードの小見出しスタイル
+  const editSectionTitleStyle: React.CSSProperties = {
+    fontWeight: "bold",
+    fontSize: "1.1rem",
+    marginBottom: 6,
+    marginTop: 12,
   };
 
   return (
@@ -547,7 +552,6 @@ export default function EducationModelsPage() {
                 <button onClick={() => startEdit(m)} style={buttonPrimary}>
                   編集
                 </button>
-                {/* 削除ボタンは省略しました */}
                 <button
                   onClick={() => generatePdfFromModel(m)}
                   style={{ ...buttonPrimary, backgroundColor: "#FF9800" }}
@@ -559,18 +563,24 @@ export default function EducationModelsPage() {
               {editId === m.id && (
                 <section style={{ ...cardStyle, marginTop: 12 }}>
                   <h4>編集モード</h4>
+
+                  <label style={editSectionTitleStyle}>作成者名（必須）</label>
                   <input
                     placeholder="作成者名"
                     value={form.creatorName}
                     onChange={(e) => handleChange("creatorName", e.target.value)}
                     style={inputStyle}
                   />
+
+                  <label style={editSectionTitleStyle}>モデル名（必須）</label>
                   <input
                     placeholder="モデル名"
                     value={form.name}
                     onChange={(e) => handleChange("name", e.target.value)}
                     style={inputStyle}
                   />
+
+                  <label style={editSectionTitleStyle}>教育観（必須）</label>
                   <textarea
                     placeholder="教育観"
                     rows={2}
@@ -578,6 +588,8 @@ export default function EducationModelsPage() {
                     onChange={(e) => handleChange("philosophy", e.target.value)}
                     style={inputStyle}
                   />
+
+                  <label style={editSectionTitleStyle}>評価観点の重視点（必須）</label>
                   <textarea
                     placeholder="評価観点の重視点"
                     rows={2}
@@ -587,6 +599,8 @@ export default function EducationModelsPage() {
                     }
                     style={inputStyle}
                   />
+
+                  <label style={editSectionTitleStyle}>言語活動の重視点（必須）</label>
                   <textarea
                     placeholder="言語活動の重視点"
                     rows={2}
@@ -594,6 +608,8 @@ export default function EducationModelsPage() {
                     onChange={(e) => handleChange("languageFocus", e.target.value)}
                     style={inputStyle}
                   />
+
+                  <label style={editSectionTitleStyle}>育てたい子どもの姿（必須）</label>
                   <textarea
                     placeholder="育てたい子どもの姿"
                     rows={2}
@@ -601,6 +617,7 @@ export default function EducationModelsPage() {
                     onChange={(e) => handleChange("childFocus", e.target.value)}
                     style={inputStyle}
                   />
+
                   <div style={{ marginTop: 16 }}>
                     <button
                       onClick={async () => {
