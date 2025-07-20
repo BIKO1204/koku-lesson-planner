@@ -464,43 +464,17 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // canvasに画像を読み込んでbase64変換するヘルパー関数
-  const toBase64Image = (imageUrl: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous"; // CORS対応
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Canvas context is null"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0);
-        try {
-          const dataUrl = canvas.toDataURL("image/png");
-          resolve(dataUrl);
-        } catch (e) {
-          reject(e);
-        }
-      };
-      img.onerror = (e) => reject(new Error("Image load error"));
-      img.src = imageUrl;
-      // Safari対応でsrc再設定（空文字→元に戻す）
-      if (img.complete || img.complete === undefined) {
-        img.src = "";
-        img.src = imageUrl;
-      }
-    });
-  };
-
   // PDF生成関数（単元名_実践記録_日時.pdf）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
     try {
       const html2pdf = (await import("html2pdf.js")).default;
+      const tempDiv = document.createElement("div");
+      tempDiv.style.padding = "20px";
+      tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
+      tempDiv.style.backgroundColor = "#fff";
+      tempDiv.style.color = "#000";
+      tempDiv.style.lineHeight = "1.6";
 
       // ファイル名用単元名を安全化
       const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
@@ -509,11 +483,6 @@ export default function PracticeSharePage() {
 
       // 該当授業案取得
       const plan = lessonPlans.find(p => p.id === record.lessonId);
-
-      // 板書画像はbase64化して埋め込むためPromiseで待機
-      const base64Images = await Promise.all(
-        record.boardImages.map(img => toBase64Image(img.src).catch(() => ""))
-      );
 
       // 授業案HTML組み立て
       let lessonPlanHtml = "";
@@ -585,28 +554,19 @@ export default function PracticeSharePage() {
         }
       }
 
-      // 板書画像HTML組み立て(base64画像を使用)
+      // 板書画像HTML組み立て
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">板書画像</h2>`;
         record.boardImages.forEach((img, idx) => {
-          const base64Img = base64Images[idx] || "";
           boardImagesHtml += `
             <div style="page-break-inside: avoid; margin-bottom: 16px;">
               <p><strong>板書${idx + 1}</strong></p>
-              <img src="${base64Img}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
+              <img src="${img.src}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
             </div>
           `;
         });
       }
-
-      // PDF作成用の仮要素
-      const tempDiv = document.createElement("div");
-      tempDiv.style.padding = "20px";
-      tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
-      tempDiv.style.backgroundColor = "#fff";
-      tempDiv.style.color = "#000";
-      tempDiv.style.lineHeight = "1.6";
 
       tempDiv.innerHTML = `
         <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${record.lessonTitle || safeUnitName}</h1>
@@ -628,7 +588,7 @@ export default function PracticeSharePage() {
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { scale: 2 },
           pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
@@ -640,8 +600,203 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 以下略、元のUI・操作系コードはそのままです（コメントやいいねなど）  
-  // 省略したくない場合は言ってください。
+  // --- Styles ---
+  const navBarStyle: CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: 56,
+    backgroundColor: "#1976d2",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 1rem",
+    zIndex: 1000,
+  };
+  const hamburgerStyle: CSSProperties = {
+    cursor: "pointer",
+    width: 30,
+    height: 22,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  };
+  const barStyle: CSSProperties = {
+    height: 4,
+    backgroundColor: "white",
+    borderRadius: 2,
+  };
+  const menuWrapperStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: 250,
+    height: "100vh",
+    backgroundColor: "#f0f0f0",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+    transition: "transform 0.3s ease",
+    zIndex: 999,
+    display: "flex",
+    flexDirection: "column",
+  };
+  const menuScrollStyle: CSSProperties = {
+    padding: "1rem",
+    paddingBottom: 80,
+    overflowY: "auto",
+    flexGrow: 1,
+  };
+  const logoutButtonStyle: CSSProperties = {
+    padding: "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    border: "none",
+    cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+    position: "relative",
+    zIndex: 1000,
+  };
+  const overlayStyle: CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
+  };
+  const wrapperResponsiveStyle: CSSProperties = {
+    display: "flex",
+    maxWidth: 1200,
+    margin: "auto",
+    paddingTop: isMobile ? 16 : 72,
+    gap: isMobile ? 8 : 24,
+    flexDirection: isMobile ? "column" : "row",
+  };
+  const sidebarResponsiveStyle: CSSProperties = {
+    width: isMobile ? "100%" : 280,
+    maxWidth: "100%",
+    padding: 12,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    boxShadow: "0 0 6px rgba(0,0,0,0.1)",
+    height: isMobile ? "auto" : "calc(100vh - 72px)",
+    overflowY: "auto",
+    position: isMobile ? "relative" : "sticky",
+    top: isMobile ? "auto" : 72,
+    marginBottom: isMobile ? 12 : 0,
+    boxSizing: "border-box",
+  };
+  const mainContentResponsiveStyle: CSSProperties = {
+    flex: 1,
+    fontFamily: "sans-serif",
+    width: isMobile ? "100%" : "auto",
+    padding: isMobile ? "8px 12px" : "0",
+    overflowWrap: "break-word",
+    wordBreak: "break-word",
+    maxWidth: isMobile ? "100%" : undefined,
+  };
+  const cardStyle: CSSProperties = {
+    border: "2px solid #ddd",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    backgroundColor: "#fdfdfd",
+    wordBreak: "break-word",
+  };
+  const boardImageContainerStyle: CSSProperties = {
+    width: "100%",
+    marginBottom: 12,
+    pageBreakInside: "avoid",
+  };
+  const likeBtnStyle: CSSProperties = {
+    marginRight: 12,
+    cursor: "pointer",
+    color: "#1976d2",
+    fontSize: "1rem",
+    opacity: 1,
+  };
+  const likeBtnDisabledStyle: CSSProperties = {
+    ...likeBtnStyle,
+    cursor: "default",
+    opacity: 0.6,
+  };
+  const commentListStyle: CSSProperties = {
+    maxHeight: 150,
+    overflowY: "auto",
+    marginTop: 8,
+    border: "1px solid #ddd",
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: "#fff",
+  };
+  const commentInputStyle: CSSProperties = {
+    width: "100%",
+    padding: 8,
+    marginTop: 8,
+    borderRadius: 4,
+    border: "1px solid #ccc",
+  };
+  const commentBtnStyle: CSSProperties = {
+    marginTop: 8,
+    padding: "6px 12px",
+    backgroundColor: "#4caf50",
+    color: "white",
+    border: "none",
+    borderRadius: 4,
+    cursor: "pointer",
+  };
+  const commentAuthorInputStyle: CSSProperties = {
+    width: "100%",
+    padding: 6,
+    marginTop: 8,
+    borderRadius: 4,
+    border: "1px solid #aaa",
+  };
+  const navLinkStyle: CSSProperties = {
+    display: "block",
+    padding: "0.5rem 1rem",
+    backgroundColor: "#1976d2",
+    color: "white",
+    fontWeight: "bold",
+    borderRadius: 6,
+    textDecoration: "none",
+    marginBottom: "0.5rem",
+  };
+  const filterSectionTitleStyle: CSSProperties = {
+    fontWeight: "bold",
+    marginTop: 12,
+    marginBottom: 8,
+    fontSize: "1.1rem",
+  };
+  const lessonPlanSectionStyle: CSSProperties = {
+    backgroundColor: "#fafafa",
+    padding: isMobile ? 8 : 12,
+    borderRadius: 6,
+    marginBottom: isMobile ? 12 : 16,
+    wordBreak: "break-word",
+    fontSize: isMobile ? "0.85rem" : "1rem",
+    lineHeight: isMobile ? 1.2 : 1.5,
+  };
+  const practiceDateStyle: CSSProperties = {
+    fontSize: isMobile ? "0.8rem" : "0.9rem",
+    color: "#666",
+    fontStyle: "italic",
+    marginTop: 4,
+    marginBottom: 8,
+  };
+  const authorNameStyle: CSSProperties = {
+    fontSize: isMobile ? "0.85rem" : "0.95rem",
+    color: "#444",
+    fontWeight: "bold",
+    marginBottom: 12,
+  };
 
   return (
     <>
@@ -857,7 +1012,7 @@ export default function PracticeSharePage() {
                     編集
                   </button>
 
-                  {/* PDF化ボタン */}
+                  {/* PDF化ボタンを追加 */}
                   <button
                     onClick={() => generatePdfFromRecord(r)}
                     style={{
@@ -1187,201 +1342,3 @@ export default function PracticeSharePage() {
     </>
   );
 }
-
-// --- Styles ---
-const navBarStyle: CSSProperties = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "100%",
-  height: 56,
-  backgroundColor: "#1976d2",
-  display: "flex",
-  alignItems: "center",
-  padding: "0 1rem",
-  zIndex: 1000,
-};
-const hamburgerStyle: CSSProperties = {
-  cursor: "pointer",
-  width: 30,
-  height: 22,
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-};
-const barStyle: CSSProperties = {
-  height: 4,
-  backgroundColor: "white",
-  borderRadius: 2,
-};
-const menuWrapperStyle: CSSProperties = {
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: 250,
-  height: "100vh",
-  backgroundColor: "#f0f0f0",
-  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-  transform: "translateX(0)",
-  transition: "transform 0.3s ease",
-  zIndex: 999,
-  display: "flex",
-  flexDirection: "column",
-};
-const menuScrollStyle: CSSProperties = {
-  padding: "1rem",
-  paddingBottom: 80,
-  overflowY: "auto",
-  flexGrow: 1,
-};
-const logoutButtonStyle: CSSProperties = {
-  padding: "0.75rem 1rem",
-  backgroundColor: "#e53935",
-  color: "white",
-  fontWeight: "bold",
-  borderRadius: 6,
-  border: "none",
-  cursor: "pointer",
-  flexShrink: 0,
-  margin: "1rem",
-  position: "relative",
-  zIndex: 1000,
-};
-const overlayStyle: CSSProperties = {
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: "100vw",
-  height: "100vh",
-  backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: 1,
-  visibility: "visible",
-  transition: "opacity 0.3s ease",
-  zIndex: 998,
-};
-const wrapperResponsiveStyle: CSSProperties = {
-  display: "flex",
-  maxWidth: 1200,
-  margin: "auto",
-  paddingTop: 72,
-  gap: 24,
-  flexDirection: "row",
-};
-const sidebarResponsiveStyle: CSSProperties = {
-  width: 280,
-  maxWidth: "100%",
-  padding: 12,
-  backgroundColor: "#f9f9f9",
-  borderRadius: 8,
-  boxShadow: "0 0 6px rgba(0,0,0,0.1)",
-  height: "calc(100vh - 72px)",
-  overflowY: "auto",
-  position: "sticky",
-  top: 72,
-  marginBottom: 0,
-  boxSizing: "border-box",
-};
-const mainContentResponsiveStyle: CSSProperties = {
-  flex: 1,
-  fontFamily: "sans-serif",
-  width: "auto",
-  padding: 0,
-  overflowWrap: "break-word",
-  wordBreak: "break-word",
-  maxWidth: undefined,
-};
-const cardStyle: CSSProperties = {
-  border: "2px solid #ddd",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 24,
-  backgroundColor: "#fdfdfd",
-  wordBreak: "break-word",
-};
-const boardImageContainerStyle: CSSProperties = {
-  width: "100%",
-  marginBottom: 12,
-  pageBreakInside: "avoid",
-};
-const likeBtnStyle: CSSProperties = {
-  marginRight: 12,
-  cursor: "pointer",
-  color: "#1976d2",
-  fontSize: "1rem",
-  opacity: 1,
-};
-const likeBtnDisabledStyle: CSSProperties = {
-  ...likeBtnStyle,
-  cursor: "default",
-  opacity: 0.6,
-};
-const commentListStyle: CSSProperties = {
-  maxHeight: 150,
-  overflowY: "auto",
-  marginTop: 8,
-  border: "1px solid #ddd",
-  padding: 8,
-  borderRadius: 6,
-  backgroundColor: "#fff",
-};
-const commentInputStyle: CSSProperties = {
-  width: "100%",
-  padding: 8,
-  marginTop: 8,
-  borderRadius: 4,
-  border: "1px solid #ccc",
-};
-const commentBtnStyle: CSSProperties = {
-  marginTop: 8,
-  padding: "6px 12px",
-  backgroundColor: "#4caf50",
-  color: "white",
-  border: "none",
-  borderRadius: 4,
-  cursor: "pointer",
-};
-const commentAuthorInputStyle: CSSProperties = {
-  width: "100%",
-  padding: 6,
-  marginTop: 8,
-  borderRadius: 4,
-  border: "1px solid #aaa",
-};
-const navLinkStyle: CSSProperties = {
-  display: "block",
-  padding: "0.5rem 1rem",
-  backgroundColor: "#1976d2",
-  color: "white",
-  fontWeight: "bold",
-  borderRadius: 6,
-  textDecoration: "none",
-  marginBottom: "0.5rem",
-};
-const filterSectionTitleStyle: CSSProperties = {
-  fontWeight: "bold",
-  marginTop: 12,
-  marginBottom: 8,
-  fontSize: "1.1rem",
-};
-const lessonPlanSectionStyle: CSSProperties = {
-  backgroundColor: "#fafafa",
-  padding: 12,
-  borderRadius: 6,
-  marginBottom: 16,
-  wordBreak: "break-word",
-  fontSize: "1rem",
-  lineHeight: 1.5,
-};
-const practiceDateStyle: CSSProperties = {
-  fontSize: "0.9rem",
-  color: "#666",
-  fontStyle: "italic",
-  marginTop: 4,
-  marginBottom: 8,
-};
-const authorNameStyle: CSSProperties = {
-  fontSize: "0.95rem",
-  color: "#444",
-  fontWeight: "bold",
-  marginBottom: 12,
-};
