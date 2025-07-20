@@ -67,12 +67,15 @@ export default function EducationHistoryPage() {
       />
 
       {/* メニュー全体 */}
-      <div style={{ ...menuWrapperStyle, transform: menuOpen ? "translateX(0)" : "translateX(-100%)" }} aria-hidden={!menuOpen}>
+      <div
+        style={{
+          ...menuWrapperStyle,
+          transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+        }}
+        aria-hidden={!menuOpen}
+      >
         {/* ログアウトボタン */}
-        <button
-          onClick={() => signOut()}
-          style={logoutButtonStyle}
-        >
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
 

@@ -54,6 +54,24 @@ export default function EducationModelsPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // 履歴をローカルストレージに追加する関数
+  const addToHistory = (model: EducationModel) => {
+    const key = "educationStylesHistory";
+    const stored = localStorage.getItem(key);
+    let history: EducationModel[] = stored ? JSON.parse(stored) : [];
+
+    // 同じIDの履歴は除外して上書きにする
+    history = history.filter((item) => item.id !== model.id);
+
+    // 最新履歴を先頭に追加
+    history.unshift(model);
+
+    // 最新50件まで保持（必要に応じて調整）
+    if (history.length > 50) history = history.slice(0, 50);
+
+    localStorage.setItem(key, JSON.stringify(history));
+  };
+
   useEffect(() => {
     if (!userId) {
       setModels([]);
@@ -185,6 +203,9 @@ export default function EducationModelsPage() {
         };
       }
 
+      // Firestore保存成功後にローカル履歴にも保存
+      addToHistory(newModel);
+
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
@@ -270,6 +291,8 @@ export default function EducationModelsPage() {
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
+    padding: "0 1rem",
+    boxSizing: "border-box",
   };
   const logoutButtonStyle: React.CSSProperties = {
     padding: "0.75rem 1rem",
@@ -285,7 +308,8 @@ export default function EducationModelsPage() {
   const menuLinksWrapperStyle: React.CSSProperties = {
     overflowY: "auto",
     flexGrow: 1,
-    padding: "1rem",
+    paddingTop: "1rem",
+    paddingBottom: "20px",
   };
   const navBtnStyle: React.CSSProperties = {
     marginBottom: 8,
@@ -573,8 +597,7 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* 他の入力欄も同様に例文含めて続く */}
-
+          {/* モデル名（必須） */}
           <label
             style={{
               display: "block",
@@ -616,6 +639,7 @@ export default function EducationModelsPage() {
             />
           </label>
 
+          {/* 教育観（必須） */}
           <label
             style={{
               display: "block",
@@ -658,6 +682,7 @@ export default function EducationModelsPage() {
             />
           </label>
 
+          {/* 評価観点の重視点（必須） */}
           <label
             style={{
               display: "block",
@@ -700,6 +725,7 @@ export default function EducationModelsPage() {
             />
           </label>
 
+          {/* 言語活動の重視点（必須） */}
           <label
             style={{
               display: "block",
@@ -742,6 +768,7 @@ export default function EducationModelsPage() {
             />
           </label>
 
+          {/* 育てたい子どもの姿（必須） */}
           <label
             style={{
               display: "block",

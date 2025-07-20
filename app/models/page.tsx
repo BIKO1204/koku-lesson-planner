@@ -97,6 +97,15 @@ export default function EducationModelsPage() {
     setError("");
   };
 
+  // --- 履歴用にlocalStorageに追加する関数 ---
+  const addToHistory = (model: EducationModel) => {
+    const historyStr = localStorage.getItem("educationStylesHistory");
+    let history: EducationModel[] = historyStr ? JSON.parse(historyStr) : [];
+    // 先頭に追加（重複チェックは簡易的に省略）
+    history.unshift(model);
+    localStorage.setItem("educationStylesHistory", JSON.stringify(history));
+  };
+
   const saveModel = async () => {
     if (
       !form.name.trim() ||
@@ -159,6 +168,9 @@ export default function EducationModelsPage() {
         };
       }
 
+      // 履歴にも追加
+      addToHistory(newModel);
+
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
@@ -197,7 +209,7 @@ export default function EducationModelsPage() {
 
     const tempDiv = document.createElement("div");
     tempDiv.style.padding = "20px";
-    tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', sans-serif";
+    tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
     tempDiv.style.backgroundColor = "#fff";
     tempDiv.style.color = "#000";
     tempDiv.style.lineHeight = "1.6";
@@ -249,7 +261,8 @@ export default function EducationModelsPage() {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  // スタイル群
+  // --- Styles ---
+
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -657,4 +670,3 @@ export default function EducationModelsPage() {
     </>
   );
 }
-

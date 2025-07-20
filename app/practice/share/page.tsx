@@ -17,6 +17,14 @@ import {
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
 
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+
 type BoardImage = { name: string; src: string };
 type Comment = {
   userId: string;
@@ -37,6 +45,8 @@ type PracticeRecord = {
   genre?: string;
   unitName?: string;
   author?: string;
+  pdfUrl?: string;
+  pdfName?: string;
 };
 type LessonPlan = {
   id: string;
@@ -71,11 +81,16 @@ export default function PracticeSharePage() {
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
+  // PDFアップロード中の管理（lessonIdの配列）
+  const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
+
   // メニュー表示と画面幅判定
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // 初期読み込み：Firestore監視＋ローカルストレージから授業案ロード＋レスポンシブ判定
+  // Firebase Storage
+  const storage = getStorage();
+
   useEffect(() => {
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -84,6 +99,8 @@ export default function PracticeSharePage() {
         lessonId: doc.id,
         likedUsers: (doc.data() as any).likedUsers || [],
         author: (doc.data() as any).author || "",
+        pdfUrl: (doc.data() as any).pdfUrl || "",
+        pdfName: (doc.data() as any).pdfName || "",
       }));
       setRecords(recs);
     });
@@ -283,7 +300,84 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 実践案削除
+  // PDFアップロード処理
+  const handlePdfUpload = async (lessonId: string, file: File) => {
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    const record = records.find((r) => r.lessonId === lessonId);
+    if (!record) {
+      alert("対象の実践案が見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("自分の実践案のみPDFアップロードできます");
+      return;
+    }
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    try {
+      const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
+      await uploadBytes(pdfRef, file);
+      const url = await getDownloadURL(pdfRef);
+
+      const docRef = doc(db, "practiceRecords", lessonId);
+      await updateDoc(docRef, {
+        pdfUrl: url,
+        pdfName: file.name,
+      });
+
+      alert("PDFをアップロードしました");
+    } catch (error) {
+      console.error("PDFアップロード失敗", error);
+      alert("PDFアップロードに失敗しました");
+    } finally {
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+    }
+  };
+
+  // PDF削除処理
+  const handleDeletePdf = async (lessonId: string, pdfName?: string) => {
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    const record = records.find((r) => r.lessonId === lessonId);
+    if (!record) {
+      alert("対象の実践案が見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("自分の実践案のみPDF削除できます");
+      return;
+    }
+    if (!pdfName) {
+      alert("PDFファイル名がありません");
+      return;
+    }
+    if (!confirm("本当にPDFファイルを削除しますか？")) return;
+
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    try {
+      const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdfName}`);
+      await deleteObject(pdfRef);
+
+      const docRef = doc(db, "practiceRecords", lessonId);
+      await updateDoc(docRef, {
+        pdfUrl: "",
+        pdfName: "",
+      });
+
+      alert("PDFを削除しました");
+    } catch (error) {
+      console.error("PDF削除失敗", error);
+      alert("PDF削除に失敗しました");
+    } finally {
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+    }
+  };
+
+  // 実践案削除時にPDFも削除
   const handleDeleteRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -300,18 +394,28 @@ export default function PracticeSharePage() {
     }
     if (!confirm("本当にこの実践案を削除しますか？")) return;
 
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
+      // PDFファイルがあればStorageから削除
+      if (record.pdfName) {
+        const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${record.pdfName}`);
+        await deleteObject(pdfRef);
+      }
+
+      // Firestoreドキュメント削除
       const docRef = doc(db, "practiceRecords", lessonId);
       await deleteDoc(docRef);
+
       alert("実践案を削除しました");
-    } catch (e) {
-      console.error("実践案削除失敗", e);
+    } catch (error) {
+      console.error("実践案削除失敗", error);
       alert("実践案の削除に失敗しました");
+    } finally {
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
     }
   };
 
-  // --- スタイル ---
-
+  // --- スタイル定義 ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -817,12 +921,62 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
+                  {/* PDFアップロード・表示・削除 */}
+                  <div style={{ marginTop: 12 }}>
+                    {r.pdfUrl ? (
+                      <>
+                        <a
+                          href={r.pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "#1976d2", textDecoration: "underline" }}
+                        >
+                          📄 {r.pdfName || "PDFを見る"}
+                        </a>
+                        {isAuthor && (
+                          <button
+                            onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
+                            disabled={uploadingPdfIds.includes(r.lessonId)}
+                            style={{
+                              marginLeft: 8,
+                              backgroundColor: "#e53935",
+                              color: "white",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                              border: "none",
+                              padding: "4px 8px",
+                            }}
+                          >
+                            PDF削除
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      isAuthor && (
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          disabled={uploadingPdfIds.includes(r.lessonId)}
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handlePdfUpload(r.lessonId, e.target.files[0]);
+                              e.target.value = "";
+                            }
+                          }}
+                          style={{ marginTop: 8 }}
+                          title={uploadingPdfIds.includes(r.lessonId) ? "アップロード中です" : undefined}
+                        />
+                      )
+                    )}
+                  </div>
+
                   {/* 実践案削除ボタン（作成者のみ表示） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
                         onClick={() => handleDeleteRecord(r.lessonId)}
                         style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
+                        disabled={uploadingPdfIds.includes(r.lessonId)}
                       >
                         実践案削除
                       </button>
