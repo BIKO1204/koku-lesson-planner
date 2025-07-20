@@ -97,50 +97,6 @@ export default function PracticeSharePage() {
   // Firebase Storage
   const storage = getStorage();
 
-  // PDFファイル選択UI
-  const PdfFileInput = ({
-    lessonId,
-    uploading,
-    onUpload,
-  }: {
-    lessonId: string;
-    uploading: boolean;
-    onUpload: (lessonId: string, file: File) => void;
-  }) => {
-    return (
-      <label
-        htmlFor={`pdf-upload-${lessonId}`}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          cursor: uploading ? "not-allowed" : "pointer",
-          color: "#1976d2",
-          fontWeight: "bold",
-          border: "1px solid #1976d2",
-          padding: "6px 12px",
-          borderRadius: 6,
-          userSelect: "none",
-        }}
-      >
-        📄 PDFファイル（指導案などを追加）を選択
-        <input
-          id={`pdf-upload-${lessonId}`}
-          type="file"
-          accept="application/pdf"
-          disabled={uploading}
-          style={{ display: "none" }}
-          onChange={(e) => {
-            if (e.target.files && e.target.files[0]) {
-              onUpload(lessonId, e.target.files[0]);
-              e.target.value = "";
-            }
-          }}
-        />
-      </label>
-    );
-  };
-
   useEffect(() => {
     // 実践記録取得（Firestore）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
@@ -475,7 +431,7 @@ export default function PracticeSharePage() {
       let didTimeout = false;
       const timer = setTimeout(() => {
         didTimeout = true;
-        img.src = ""; // キャンセル
+        img.src = "";
         reject(new Error("画像変換タイムアウト"));
       }, timeout);
 
@@ -512,7 +468,6 @@ export default function PracticeSharePage() {
     const limitedImages = images.slice(0, maxCount);
 
     for (let i = 0; i < limitedImages.length; i++) {
-      // 少し待機してメインスレッドを開放
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       try {
@@ -526,7 +481,7 @@ export default function PracticeSharePage() {
     return result;
   };
 
-  // PDF生成関数（単元名_実践記録_日時.pdf）
+  // PDF生成関数（ここではUI未接続、必要に応じてボタンなどから呼び出し可能）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
 
@@ -874,6 +829,50 @@ export default function PracticeSharePage() {
     color: "#444",
     fontWeight: "bold",
     marginBottom: 12,
+  };
+
+  // PDFファイル選択UI
+  const PdfFileInput = ({
+    lessonId,
+    uploading,
+    onUpload,
+  }: {
+    lessonId: string;
+    uploading: boolean;
+    onUpload: (lessonId: string, file: File) => void;
+  }) => {
+    return (
+      <label
+        htmlFor={`pdf-upload-${lessonId}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: uploading ? "not-allowed" : "pointer",
+          color: "#1976d2",
+          fontWeight: "bold",
+          border: "1px solid #1976d2",
+          padding: "6px 12px",
+          borderRadius: 6,
+          userSelect: "none",
+        }}
+      >
+        📄 PDFファイル（指導案などを追加）を選択
+        <input
+          id={`pdf-upload-${lessonId}`}
+          type="file"
+          accept="application/pdf"
+          disabled={uploading}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files && e.target.files[0]) {
+              onUpload(lessonId, e.target.files[0]);
+              e.target.value = "";
+            }
+          }}
+        />
+      </label>
+    );
   };
 
   return (
