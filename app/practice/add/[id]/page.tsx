@@ -990,7 +990,7 @@ export default function PracticeAddPage() {
             )}
 
             <section style={{ marginTop: 24 }}>
-              <h3>実施記録</h3>
+              <h3>実践記録</h3>
               <p>
                 <strong>実施日：</strong> {record.practiceDate}
               </p>

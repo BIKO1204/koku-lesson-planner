@@ -120,7 +120,7 @@ export default function PracticeSharePage() {
           userSelect: "none",
         }}
       >
-        📄 PDFファイルを選択
+        📄 PDFファイル（指導案などを追加）を選択
         <input
           id={`pdf-upload-${lessonId}`}
           type="file"
@@ -464,7 +464,61 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // --- スタイル定義 ---
+  // PDF生成関数（単元名_実践記録_日時.pdf）
+  const generatePdfFromRecord = async (record: PracticeRecord) => {
+    if (!record) return;
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      const tempDiv = document.createElement("div");
+      tempDiv.style.padding = "20px";
+      tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
+      tempDiv.style.backgroundColor = "#fff";
+      tempDiv.style.color = "#000";
+      tempDiv.style.lineHeight = "1.6";
+
+      // 単元名のファイル名安全化（ファイル名に使えない文字を _ に置換）
+      const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
+      const timestamp = new Date().toISOString().replace(/T/, "_").replace(/:/g, "-").replace(/\..+/, "");
+      const filename = `${safeUnitName}_実践記録_${timestamp}.pdf`;
+
+      tempDiv.innerHTML = `
+        <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${record.lessonTitle || safeUnitName}</h1>
+        <p><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
+        <p><strong>作成者：</strong> ${record.author || "－"}</p>
+        <h2 style="color: #4CAF50; margin-top: 24px;">授業案情報</h2>
+        <p><strong>単元名：</strong> ${record.unitName || "－"}</p>
+        <p><strong>学年：</strong> ${record.grade || "－"}</p>
+        <p><strong>ジャンル：</strong> ${record.genre || "－"}</p>
+        <h2 style="color: #4CAF50; margin-top: 24px;">振り返り</h2>
+        <p style="white-space: pre-wrap;">${record.reflection || "－"}</p>
+        <h2 style="color: #4CAF50; margin-top: 24px;">コメント</h2>
+        ${
+          (record.comments && record.comments.length > 0)
+            ? record.comments.map(c => `<p><b>${c.displayName}</b>: ${c.comment}</p>`).join("")
+            : "<p>コメントはありません。</p>"
+        }
+      `;
+
+      document.body.appendChild(tempDiv);
+
+      await html2pdf()
+        .from(tempDiv)
+        .set({
+          margin: 10,
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          html2canvas: { scale: 2 },
+          pagebreak: { mode: ["avoid-all"] },
+        })
+        .save(filename);
+
+      document.body.removeChild(tempDiv);
+    } catch (e) {
+      alert("PDF生成に失敗しました");
+      console.error(e);
+    }
+  };
+
+  // --- Styles ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -540,12 +594,12 @@ export default function PracticeSharePage() {
     maxWidth: 1200,
     margin: "auto",
     paddingTop: isMobile ? 16 : 72,
-    gap: isMobile ? 8 : 24,  // スマホ時はgapを少し狭くする
+    gap: isMobile ? 8 : 24,
     flexDirection: isMobile ? "column" : "row",
   };
   const sidebarResponsiveStyle: CSSProperties = {
-    width: isMobile ? "100%" : 280,     // スマホは幅100%に
-    maxWidth: "100%",                   // maxWidthも100%にして余白防止
+    width: isMobile ? "100%" : 280,
+    maxWidth: "100%",
     padding: 12,
     backgroundColor: "#f9f9f9",
     borderRadius: 8,
@@ -555,7 +609,7 @@ export default function PracticeSharePage() {
     position: isMobile ? "relative" : "sticky",
     top: isMobile ? "auto" : 72,
     marginBottom: isMobile ? 12 : 0,
-    boxSizing: "border-box",  // ここ必須（パディング込みの幅指定にする）
+    boxSizing: "border-box",
   };
   const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
