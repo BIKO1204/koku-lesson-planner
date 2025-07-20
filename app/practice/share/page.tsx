@@ -91,6 +91,9 @@ export default function PracticeSharePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
+  // PDF生成中フラグ（重複クリック防止用）
+  const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
+
   // Firebase Storage
   const storage = getStorage();
 
@@ -464,10 +467,77 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
+  // 画像URLをbase64に変換（タイムアウト付き）
+  const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      let didTimeout = false;
+      const timer = setTimeout(() => {
+        didTimeout = true;
+        img.src = ""; // キャンセル
+        reject(new Error("画像変換タイムアウト"));
+      }, timeout);
+
+      img.onload = () => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("Canvasコンテキスト取得失敗");
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL("image/png");
+          resolve(dataUrl);
+        } catch (e) {
+          reject(e);
+        }
+      };
+
+      img.onerror = () => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        reject(new Error("画像読み込み失敗"));
+      };
+
+      img.src = url;
+    });
+  };
+
+  // 画像を逐次base64変換する関数（非同期で分割処理）
+  const convertImagesToBase64 = async (images: BoardImage[], maxCount = 5): Promise<string[]> => {
+    const result: string[] = [];
+    const limitedImages = images.slice(0, maxCount);
+
+    for (let i = 0; i < limitedImages.length; i++) {
+      // 少し待機してメインスレッドを開放
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      try {
+        const base64 = await toBase64ImageWithTimeout(limitedImages[i].src, 5000);
+        result.push(base64);
+      } catch {
+        result.push("");
+      }
+    }
+
+    return result;
+  };
+
   // PDF生成関数（単元名_実践記録_日時.pdf）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
+
+    if (pdfGeneratingId) {
+      alert("PDF生成処理が既に進行中です。しばらくお待ちください。");
+      return;
+    }
+
     try {
+      setPdfGeneratingId(record.lessonId);
+
       const html2pdf = (await import("html2pdf.js")).default;
       const tempDiv = document.createElement("div");
       tempDiv.style.padding = "20px";
@@ -554,17 +624,23 @@ export default function PracticeSharePage() {
         }
       }
 
-      // 板書画像HTML組み立て
+      // 板書画像はbase64変換し取得
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">板書画像</h2>`;
-        record.boardImages.forEach((img, idx) => {
-          boardImagesHtml += `
-            <div style="page-break-inside: avoid; margin-bottom: 16px;">
-              <p><strong>板書${idx + 1}</strong></p>
-              <img src="${img.src}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
-            </div>
-          `;
+
+        // 画像をbase64に変換（最大5枚まで）
+        const base64Images = await convertImagesToBase64(record.boardImages, 5);
+
+        base64Images.forEach((base64, idx) => {
+          if (base64) {
+            boardImagesHtml += `
+              <div style="page-break-inside: avoid; margin-bottom: 16px;">
+                <p><strong>板書${idx + 1}</strong></p>
+                <img src="${base64}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
+              </div>
+            `;
+          }
         });
       }
 
@@ -588,7 +664,7 @@ export default function PracticeSharePage() {
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: 2 },
+          html2canvas: { scale: 1 },
           pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
@@ -597,10 +673,12 @@ export default function PracticeSharePage() {
     } catch (e) {
       alert("PDF生成に失敗しました");
       console.error(e);
+    } finally {
+      setPdfGeneratingId(null);
     }
   };
 
-  // --- Styles ---
+  // --- Styles --- (省略：前のコードのまま使えます)
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -1012,7 +1090,7 @@ export default function PracticeSharePage() {
                     編集
                   </button>
 
-                  {/* PDF化ボタンを追加 */}
+                  {/* PDF化ボタン */}
                   <button
                     onClick={() => generatePdfFromRecord(r)}
                     style={{
@@ -1021,12 +1099,14 @@ export default function PracticeSharePage() {
                       border: "none",
                       borderRadius: 6,
                       padding: "6px 12px",
-                      cursor: "pointer",
+                      cursor: pdfGeneratingId === r.lessonId ? "not-allowed" : "pointer",
                       marginBottom: 12,
                       marginLeft: 8,
+                      opacity: pdfGeneratingId === r.lessonId ? 0.6 : 1,
                     }}
+                    disabled={pdfGeneratingId === r.lessonId}
                   >
-                    PDF化
+                    {pdfGeneratingId === r.lessonId ? "PDF生成中..." : "PDF化"}
                   </button>
 
                   {/* 授業案詳細 */}
@@ -1106,7 +1186,6 @@ export default function PracticeSharePage() {
                           <strong>授業の流れ：</strong>
                           <ul>
                             {Object.entries(plan.result["授業の流れ"])
-                              // ここで時間（数字）順にソート
                               .sort((a, b) => {
                                 const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
                                 const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
