@@ -423,7 +423,8 @@ ${languageActivities}
         },
         { merge: true }
       );
-    } catch {
+    } catch (error) {
+      console.error("Firestoreへの保存中にエラーが発生しました:", error);
       alert("Firestoreへの保存中にエラーが発生しました");
       return;
     }
