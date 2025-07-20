@@ -455,7 +455,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 編集ページ遷移（ここを修正しました）
+  // 編集ページ遷移
   const handleEdit = (lessonId: string) => {
     router.push(`/practice/add/${lessonId}`);
   };
@@ -557,9 +557,10 @@ export default function PracticeSharePage() {
     flex: 1,
     fontFamily: "sans-serif",
     width: isMobile ? "100%" : "auto",
-    padding: isMobile ? "0 8px" : "0",
+    padding: isMobile ? "8px 12px" : "0",
     overflowWrap: "break-word",
     wordBreak: "break-word",
+    maxWidth: isMobile ? "100%" : undefined,
   };
   const cardStyle: CSSProperties = {
     border: "2px solid #ddd",
@@ -633,6 +634,28 @@ export default function PracticeSharePage() {
     marginTop: 12,
     marginBottom: 8,
     fontSize: "1.1rem",
+  };
+  const lessonPlanSectionStyle: CSSProperties = {
+    backgroundColor: "#fafafa",
+    padding: isMobile ? 8 : 12,
+    borderRadius: 6,
+    marginBottom: isMobile ? 12 : 16,
+    wordBreak: "break-word",
+    fontSize: isMobile ? "0.85rem" : "1rem",
+    lineHeight: isMobile ? 1.2 : 1.5,
+  };
+  const practiceDateStyle: CSSProperties = {
+    fontSize: isMobile ? "0.8rem" : "0.9rem",
+    color: "#666",
+    fontStyle: "italic",
+    marginTop: 4,
+    marginBottom: 8,
+  };
+  const authorNameStyle: CSSProperties = {
+    fontSize: isMobile ? "0.85rem" : "0.95rem",
+    color: "#444",
+    fontWeight: "bold",
+    marginBottom: 12,
   };
 
   return (
@@ -825,6 +848,14 @@ export default function PracticeSharePage() {
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
+                  {/* 実施日と作成者名 */}
+                  <p style={practiceDateStyle}>
+                    実施日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
+                  </p>
+                  <p style={authorNameStyle}>
+                    作成者: {r.author || "－"}
+                  </p>
+
                   {/* 編集ボタン */}
                   <button
                     onClick={() => handleEdit(r.lessonId)}
@@ -843,16 +874,7 @@ export default function PracticeSharePage() {
 
                   {/* 授業案詳細 */}
                   {plan && typeof plan.result === "object" && (
-                    <section
-                      style={{
-                        backgroundColor: "#fafafa",
-                        padding: 12,
-                        borderRadius: 6,
-                        marginBottom: 16,
-                        wordBreak: "break-word",
-                        fontSize: isMobile ? "0.9rem" : "1rem",
-                      }}
-                    >
+                    <section style={lessonPlanSectionStyle}>
                       <strong>授業案</strong>
                       <p>
                         <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
@@ -943,14 +965,14 @@ export default function PracticeSharePage() {
                     </section>
                   )}
 
-                  {/* 実施日表示は削除済み */}
-
+                  {/* 振り返り */}
                   <p>
                     <strong>振り返り：</strong>
                     <br />
                     {r.reflection || "－"}
                   </p>
 
+                  {/* 板書画像 */}
                   {r.boardImages.length > 0 && (
                     <div
                       style={{
@@ -1058,7 +1080,7 @@ export default function PracticeSharePage() {
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
                           <b>{c.displayName}</b>{" "}
-                          <small>({new Date(c.createdAt).toLocaleDateString()})</small>
+                          <small>{c.createdAt ? `(${new Date(c.createdAt).toLocaleDateString()})` : ""}</small>
                           <br />
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&
