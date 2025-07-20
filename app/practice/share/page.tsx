@@ -76,11 +76,11 @@ export default function PracticeSharePage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
 
-  // コメント入力管理
+  // コメント入力管理（UI用、PDF生成には不使用）
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
-  // コメント編集管理
+  // コメント編集管理（PDFには無関係）
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
@@ -476,27 +476,109 @@ export default function PracticeSharePage() {
       tempDiv.style.color = "#000";
       tempDiv.style.lineHeight = "1.6";
 
-      // 単元名のファイル名安全化（ファイル名に使えない文字を _ に置換）
+      // ファイル名用単元名を安全化
       const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
       const timestamp = new Date().toISOString().replace(/T/, "_").replace(/:/g, "-").replace(/\..+/, "");
       const filename = `${safeUnitName}_実践記録_${timestamp}.pdf`;
+
+      // 該当授業案取得
+      const plan = lessonPlans.find(p => p.id === record.lessonId);
+
+      // 授業案HTML組み立て
+      let lessonPlanHtml = "";
+      if (plan && typeof plan.result === "object") {
+        lessonPlanHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">授業案</h2>`;
+        lessonPlanHtml += `<p><strong>教科書名：</strong> ${plan.result["教科書名"] || "－"}</p>`;
+        lessonPlanHtml += `<p><strong>単元名：</strong> ${plan.result["単元名"] || "－"}</p>`;
+        lessonPlanHtml += `<p><strong>授業時間数：</strong> ${plan.result["授業時間数"] || "－"}時間</p>`;
+        lessonPlanHtml += `<p><strong>単元の目標：</strong> ${plan.result["単元の目標"] || "－"}</p>`;
+
+        if (plan.result["評価の観点"]) {
+          lessonPlanHtml += `<strong>評価の観点：</strong>`;
+
+          // 知識・技能
+          const knowledge = Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+            ? plan.result["評価の観点"]["知識・技能"]
+            : plan.result["評価の観点"]?.["知識・技能"]
+            ? [plan.result["評価の観点"]["知識・技能"]]
+            : [];
+          lessonPlanHtml += `<p><strong>知識・技能</strong></p><ul>`;
+          knowledge.forEach((v: string) => {
+            lessonPlanHtml += `<li>${v}</li>`;
+          });
+          lessonPlanHtml += `</ul>`;
+
+          // 思考・判断・表現
+          const thinking = Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+            ? plan.result["評価の観点"]["思考・判断・表現"]
+            : plan.result["評価の観点"]?.["思考・判断・表現"]
+            ? [plan.result["評価の観点"]["思考・判断・表現"]]
+            : [];
+          lessonPlanHtml += `<p><strong>思考・判断・表現</strong></p><ul>`;
+          thinking.forEach((v: string) => {
+            lessonPlanHtml += `<li>${v}</li>`;
+          });
+          lessonPlanHtml += `</ul>`;
+
+          // 主体的に学習に取り組む態度
+          const attitude = Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
+            ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+            : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+            ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+            : plan.result["評価の観点"]?.["態度"]
+            ? [plan.result["評価の観点"]["態度"]]
+            : [];
+          lessonPlanHtml += `<p><strong>主体的に学習に取り組む態度</strong></p><ul>`;
+          attitude.forEach((v: string) => {
+            lessonPlanHtml += `<li>${v}</li>`;
+          });
+          lessonPlanHtml += `</ul>`;
+        }
+
+        lessonPlanHtml += `<p><strong>育てたい子どもの姿：</strong> ${plan.result["育てたい子どもの姿"] || "－"}</p>`;
+        lessonPlanHtml += `<p><strong>言語活動の工夫：</strong> ${plan.result["言語活動の工夫"] || "－"}</p>`;
+
+        if (plan.result["授業の流れ"]) {
+          lessonPlanHtml += `<p><strong>授業の流れ：</strong></p><ul>`;
+          Object.entries(plan.result["授業の流れ"])
+            .sort((a, b) => {
+              const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+              const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
+              return numA - numB;
+            })
+            .forEach(([key, val]) => {
+              const content = typeof val === "string" ? val : JSON.stringify(val);
+              lessonPlanHtml += `<li><strong>${key}:</strong> ${content}</li>`;
+            });
+          lessonPlanHtml += `</ul>`;
+        }
+      }
+
+      // 板書画像HTML組み立て
+      let boardImagesHtml = "";
+      if (record.boardImages.length > 0) {
+        boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">板書画像</h2>`;
+        record.boardImages.forEach((img, idx) => {
+          boardImagesHtml += `
+            <div style="page-break-inside: avoid; margin-bottom: 16px;">
+              <p><strong>板書${idx + 1}</strong></p>
+              <img src="${img.src}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
+            </div>
+          `;
+        });
+      }
 
       tempDiv.innerHTML = `
         <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${record.lessonTitle || safeUnitName}</h1>
         <p><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
         <p><strong>作成者：</strong> ${record.author || "－"}</p>
-        <h2 style="color: #4CAF50; margin-top: 24px;">授業案情報</h2>
-        <p><strong>単元名：</strong> ${record.unitName || "－"}</p>
-        <p><strong>学年：</strong> ${record.grade || "－"}</p>
-        <p><strong>ジャンル：</strong> ${record.genre || "－"}</p>
-        <h2 style="color: #4CAF50; margin-top: 24px;">振り返り</h2>
+
+        ${lessonPlanHtml}
+
+        <h2 style="color:#4CAF50; margin-top: 24px;">振り返り</h2>
         <p style="white-space: pre-wrap;">${record.reflection || "－"}</p>
-        <h2 style="color: #4CAF50; margin-top: 24px;">コメント</h2>
-        ${
-          (record.comments && record.comments.length > 0)
-            ? record.comments.map(c => `<p><b>${c.displayName}</b>: ${c.comment}</p>`).join("")
-            : "<p>コメントはありません。</p>"
-        }
+
+        ${boardImagesHtml}
       `;
 
       document.body.appendChild(tempDiv);
