@@ -15,7 +15,7 @@ type PracticeRecord = {
   lessonId: string;
   practiceDate: string;
   reflection: string;
-  boardImages: BoardImage[]; // ローカル用Base64画像
+  boardImages: BoardImage[]; // ローカルはBase64、FirestoreはURLに置き換え
   lessonTitle: string;
   grade?: string;
   genre?: string;
@@ -47,9 +47,24 @@ async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> 
   return db.get(STORE_NAME, lessonId);
 }
 
-async function saveRecord(record: PracticeRecord) {
-  const db = await getDB();
-  await db.put(STORE_NAME, record);
+async function saveRecordToIndexedDB(record: PracticeRecord) {
+  const dbLocal = await getDB();
+  await dbLocal.put(STORE_NAME, record);
+}
+
+async function saveRecordToFirestore(record: PracticeRecord) {
+  const docRef = doc(db, "practiceRecords", record.lessonId);
+  await setDoc(docRef, {
+    practiceDate: record.practiceDate,
+    reflection: record.reflection,
+    boardImages: record.boardImages, // Firestore用にはURLの配列を入れること
+    lessonTitle: record.lessonTitle,
+    author: record.author || "",
+    grade: record.grade || "",
+    genre: record.genre || "",
+    unitName: record.unitName || "",
+    createdAt: new Date(),
+  });
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -104,19 +119,6 @@ function resizeAndCompressFile(
 
     reader.readAsDataURL(file);
   });
-}
-
-function safeRender(value: any): string {
-  if (typeof value === "string") {
-    return value.replace(/(、\s*)+(?=（[1-5]）)/g, "");
-  }
-  if (typeof value === "number") return value.toString();
-  if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) {
-    return value.map(safeRender).join("、");
-  }
-  if (typeof value === "object") return JSON.stringify(value, null, 2);
-  return String(value);
 }
 
 const storage = getStorage();
@@ -318,17 +320,19 @@ export default function PracticeAddPage() {
     });
   };
 
+  // ローカルDBに保存
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
-  async function saveRecordToFirestore(record: PracticeRecord & { compressedImagesUrls: string[] }) {
+  // Firestoreに保存
+  async function saveRecordToFirestore(record: PracticeRecord) {
     const docRef = doc(db, "practiceRecords", record.lessonId);
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,
-      boardImages: record.compressedImagesUrls,
+      boardImages: record.boardImages,
       lessonTitle: record.lessonTitle,
       author: record.author || "",
       grade: record.grade || "",
@@ -357,7 +361,7 @@ export default function PracticeAddPage() {
     }
   };
 
-  // ローカル＋Firebase（共有版）に保存
+  // ローカル＋Firebaseに保存（ストレージアップロード+Firestore保存）
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -365,13 +369,23 @@ export default function PracticeAddPage() {
     }
     setUploading(true);
     try {
-      const uploadedUrls = await Promise.all(
+      // 圧縮画像をストレージにアップロードしURLを取得
+      const uploadedUrls: BoardImage[] = await Promise.all(
         compressedImages.map(async (img) => {
-          return await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+          const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+          return { name: img.name, src: url };
         })
       );
 
-      await saveRecordToFirestore({ ...record, compressedImagesUrls: uploadedUrls });
+      // FirestoreにURL版のboardImagesで保存
+      const firestoreRecord: PracticeRecord = {
+        ...record,
+        boardImages: uploadedUrls,
+      };
+
+      await saveRecordToFirestore(firestoreRecord);
+
+      // ローカルは元のBase64版を保存
       await saveRecordToIndexedDB(record);
 
       alert("ローカルとFirebaseに保存しました");
@@ -637,7 +651,7 @@ export default function PracticeAddPage() {
           >
             <h2>
               {lessonPlan?.result && typeof lessonPlan.result === "object"
-                ? safeRender((lessonPlan.result as any)["単元名"])
+                ? (lessonPlan.result as any)["単元名"] || lessonTitle
                 : lessonTitle}
             </h2>
 
