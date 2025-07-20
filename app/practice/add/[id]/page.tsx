@@ -27,6 +27,26 @@ type LessonPlan = {
   result?: string | object;
 };
 
+// ParsedResultの具体的型定義
+type ParsedResult = {
+  [key: string]: any;
+  "教科書名"?: string;
+  "学年"?: string;
+  "ジャンル"?: string;
+  "単元名"?: string;
+  "授業時間数"?: number;
+  "単元の目標"?: string;
+  "育てたい子どもの姿"?: string;
+  "言語活動の工夫"?: string;
+  "授業の流れ"?: Record<string, string>;
+  "評価の観点"?: {
+    "知識・技能"?: string[];
+    "思考・判断・表現"?: string[];
+    "主体的に学習に取り組む態度"?: string[];
+    "態度"?: string[];
+  };
+};
+
 const DB_NAME = "PracticeDB";
 const STORE_NAME = "practiceRecords";
 const DB_VERSION = 1;
@@ -51,7 +71,6 @@ async function saveRecord(record: PracticeRecord) {
   await db.put(STORE_NAME, record);
 }
 
-// ファイルをBase64に変換（フルサイズ用）
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -61,7 +80,6 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// 画像圧縮・リサイズ（Firestore用圧縮版Base64生成）
 function resizeAndCompressFile(
   file: File,
   maxWidth: number,
@@ -224,7 +242,6 @@ export default function PracticeAddPage() {
     paddingTop: 72,
   };
 
-  // ローカルストレージから授業計画を取得＆IndexedDBから実践記録を取得
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -241,7 +258,7 @@ export default function PracticeAddPage() {
         const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
         setLessonTitle(firstLine);
       } else if (typeof plan.result === "object") {
-        const unitNameFromPlan = (plan.result as any)["単元名"];
+        const unitNameFromPlan = (plan.result as ParsedResult)["単元名"];
         setLessonTitle(typeof unitNameFromPlan === "string" ? unitNameFromPlan : "");
       } else {
         setLessonTitle("");
@@ -500,6 +517,89 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* ここに授業案（授業計画）の詳細表示を追加 */}
+          {lessonPlan?.result && typeof lessonPlan.result === "object" && (
+            <section
+              style={{
+                border: "2px solid #2196F3",
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 16,
+                backgroundColor: "#e3f2fd",
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>実践記録：授業案詳細</h3>
+
+              <p><strong>教科書名：</strong>{(lessonPlan.result as ParsedResult)["教科書名"] || ""}</p>
+              <p><strong>学年：</strong>{(lessonPlan.result as ParsedResult)["学年"] || ""}</p>
+              <p><strong>ジャンル：</strong>{(lessonPlan.result as ParsedResult)["ジャンル"] || ""}</p>
+              <p><strong>単元名：</strong>{(lessonPlan.result as ParsedResult)["単元名"] || ""}</p>
+              <p><strong>授業時間数：</strong>{(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間</p>
+
+              <div style={{ marginTop: 8 }}>
+                <strong>単元の目標：</strong>
+                <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <strong>評価の観点：</strong>
+                <div>
+                  <strong>知識・技能</strong>
+                  <ul>
+                    {Array.isArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]) ?
+                      (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]!.map((v, i) => (
+                        <li key={`knowledge-${i}`}>{v}</li>
+                      ))
+                      : null
+                    }
+                  </ul>
+                </div>
+                <div>
+                  <strong>思考・判断・表現</strong>
+                  <ul>
+                    {Array.isArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]) ?
+                      (lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]!.map((v, i) => (
+                        <li key={`thinking-${i}`}>{v}</li>
+                      ))
+                      : null
+                    }
+                  </ul>
+                </div>
+                <div>
+                  <strong>主体的に学習に取り組む態度</strong>
+                  <ul>
+                    {Array.isArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["主体的に学習に取り組む態度"]) ?
+                      (lessonPlan.result as ParsedResult)["評価の観点"]?.["主体的に学習に取り組む態度"]!.map((v, i) => (
+                        <li key={`attitude-${i}`}>{v}</li>
+                      ))
+                      : Array.isArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]) ?
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]!.map((v, i) => (
+                          <li key={`attitude-alt-${i}`}>{v}</li>
+                        )) : null
+                    }
+                  </ul>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <strong>言語活動の工夫：</strong>
+                <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <strong>授業の流れ：</strong>
+                <ul>
+                  {typeof (lessonPlan.result as ParsedResult)["授業の流れ"] === "object" ?
+                    Object.entries((lessonPlan.result as ParsedResult)["授業の流れ"]!).map(([key, val], i) => (
+                      <li key={`flow-${i}`}><strong>{key}：</strong>{val}</li>
+                    ))
+                    : null
+                  }
+                </ul>
+              </div>
+            </section>
+          )}
+
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               振り返り：<br />
@@ -612,6 +712,9 @@ export default function PracticeAddPage() {
               <h3>実施記録</h3>
               <p><strong>実施日：</strong> {record.practiceDate}</p>
               <p><strong>作成者：</strong> {record.author || "不明"}</p>
+
+              {/* 授業案の詳細はここに表示済み */}
+
               <p><strong>振り返り：</strong></p>
               <p>{record.reflection}</p>
 
