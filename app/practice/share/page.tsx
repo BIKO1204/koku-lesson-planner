@@ -952,8 +952,14 @@ export default function PracticeSharePage() {
                         <div>
                           <strong>授業の流れ：</strong>
                           <ul>
-                            {Object.entries(plan.result["授業の流れ"]).map(
-                              ([key, val]) => {
+                            {Object.entries(plan.result["授業の流れ"])
+                              // ここで時間（数字）順にソート
+                              .sort((a, b) => {
+                                const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+                                const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
+                                return numA - numB;
+                              })
+                              .map(([key, val]) => {
                                 const content =
                                   typeof val === "string" ? val : JSON.stringify(val);
                                 return (
@@ -961,8 +967,7 @@ export default function PracticeSharePage() {
                                     <strong>{key}:</strong> {content}
                                   </li>
                                 );
-                              }
-                            )}
+                              })}
                           </ul>
                         </div>
                       )}
