@@ -48,7 +48,7 @@ type PracticeRecord = {
   author?: string;
   pdfUrl?: string;
   pdfName?: string;
-  createdAt?: string;  // 追加：作成日時
+  createdAt?: string;
 };
 type LessonPlan = {
   id: string;
@@ -811,8 +811,8 @@ export default function PracticeSharePage() {
                         padding: 12,
                         borderRadius: 6,
                         marginBottom: 16,
-                        maxHeight: isMobile ? 400 : "auto",
-                        overflowY: isMobile ? "auto" : "visible",
+                        maxHeight: "auto", // ここを修正しました
+                        overflowY: "visible", // ここも修正
                       }}
                     >
                       <strong>授業案</strong>
