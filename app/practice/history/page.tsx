@@ -637,31 +637,6 @@ export default function PracticeHistoryPage() {
                     >
                       🗑 削除
                     </button>
-
-                    {/* 共有版に投稿ボタン */}
-                    <button
-                      onClick={() => handlePostToShared(r.lessonId)}
-                      disabled={uploadingRecordId === r.lessonId}
-                      style={{
-                        ...postBtn,
-                        backgroundColor:
-                          uploadingRecordId === r.lessonId ? "#90caf9" : "#2196f3",
-                        cursor:
-                          uploadingRecordId === r.lessonId ? "default" : "pointer",
-                        minWidth: 140,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                      }}
-                      aria-label="共有版に投稿"
-                      title="共有版に投稿"
-                    >
-                      📤
-                      {uploadingRecordId === r.lessonId
-                        ? " 投稿中..."
-                        : " 共有版に投稿"}
-                    </button>
                   </div>
                 </article>
               );
