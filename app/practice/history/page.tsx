@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
 import { signOut } from "next-auth/react";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type BoardImage = { name: string; src: string };
@@ -52,7 +52,7 @@ async function uploadRecordToFirebase(record: PracticeRecord) {
     reflection: record.reflection,
     boardImages: record.boardImages,
     lessonTitle: record.lessonTitle,
-    createdAt: new Date(),
+    createdAt: serverTimestamp(),  // サーバー側のタイムスタンプ
   });
 }
 
@@ -107,16 +107,25 @@ export default function PracticeHistoryPage() {
       setUploadingRecordId(lessonId);
       const dbLocal = await getDB();
       const record = await dbLocal.get(STORE_NAME, lessonId);
+
+      console.log("投稿対象レコード:", record);  // デバッグ用
+
       if (!record) {
         alert("ローカルの実践記録が見つかりませんでした。");
         setUploadingRecordId(null);
         return;
       }
+
+      // タイトルが空なら仮設定
+      if (!record.lessonTitle) record.lessonTitle = "タイトルなし";
+
       await uploadRecordToFirebase(record);
+
       alert("共有版に投稿しました。");
-    } catch (e) {
-      console.error(e);
-      alert("投稿に失敗しました。");
+      router.push("/practice/share");  // 投稿後に共有ページへ遷移
+    } catch (e: any) {
+      console.error("投稿エラー:", e);
+      alert("投稿に失敗しました。\n" + (e.message || e.toString()));
     } finally {
       setUploadingRecordId(null);
     }
@@ -221,7 +230,7 @@ export default function PracticeHistoryPage() {
     fontSize: "0.9rem",
     borderRadius: 6,
     cursor: "pointer",
-    width: "120px",
+    width: "140px",
     height: "36px",
     boxSizing: "border-box",
     color: "white",
@@ -319,11 +328,7 @@ export default function PracticeHistoryPage() {
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
           </Link>
-          <Link
-            href="/plan"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
           <Link
@@ -354,11 +359,7 @@ export default function PracticeHistoryPage() {
           >
             ✏️ 教育観作成
           </Link>
-          <Link
-            href="/models"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
           <Link
@@ -393,6 +394,7 @@ export default function PracticeHistoryPage() {
           </Link>
         </div>
 
+        {/* 並び替えセレクト */}
         <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
           並び替え：
           <select
@@ -636,7 +638,7 @@ export default function PracticeHistoryPage() {
                       🗑 削除
                     </button>
 
-                    {/* ここに追加の共有版に投稿ボタン */}
+                    {/* 共有版に投稿ボタン */}
                     <button
                       onClick={() => handlePostToShared(r.lessonId)}
                       disabled={uploadingRecordId === r.lessonId}
@@ -646,12 +648,19 @@ export default function PracticeHistoryPage() {
                           uploadingRecordId === r.lessonId ? "#90caf9" : "#2196f3",
                         cursor:
                           uploadingRecordId === r.lessonId ? "default" : "pointer",
-                        minWidth: 120,
+                        minWidth: 140,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
                       }}
+                      aria-label="共有版に投稿"
+                      title="共有版に投稿"
                     >
+                      📤
                       {uploadingRecordId === r.lessonId
-                        ? "投稿中..."
-                        : "共有版に投稿"}
+                        ? " 投稿中..."
+                        : " 共有版に投稿"}
                     </button>
                   </div>
                 </article>
