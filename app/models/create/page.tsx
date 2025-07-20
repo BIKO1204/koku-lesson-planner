@@ -54,19 +54,13 @@ export default function EducationModelsPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 履歴をローカルストレージに追加する関数
   const addToHistory = (model: EducationModel) => {
     const key = "educationStylesHistory";
     const stored = localStorage.getItem(key);
     let history: EducationModel[] = stored ? JSON.parse(stored) : [];
 
-    // 同じIDの履歴は除外して上書きにする
     history = history.filter((item) => item.id !== model.id);
-
-    // 最新履歴を先頭に追加
     history.unshift(model);
-
-    // 最新50件まで保持（必要に応じて調整）
     if (history.length > 50) history = history.slice(0, 50);
 
     localStorage.setItem(key, JSON.stringify(history));
@@ -203,7 +197,6 @@ export default function EducationModelsPage() {
         };
       }
 
-      // Firestore保存成功後にローカル履歴にも保存
       addToHistory(newModel);
 
       const updatedLocalModels = editId
@@ -242,17 +235,7 @@ export default function EducationModelsPage() {
     }
   };
 
-  const sortedModels = () => {
-    const copy = [...models];
-    if (sortOrder === "newest") {
-      return copy.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-    }
-    return copy.sort((a, b) => a.name.localeCompare(b.name));
-  };
-
-  // Styles including button active effect
+  // Styles
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -344,42 +327,22 @@ export default function EducationModelsPage() {
     borderRadius: 10,
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
   };
+
+  // タイトル見やすく
+  const titleStyle: React.CSSProperties = {
+    fontSize: "2.5rem",
+    fontWeight: "bold",
+    color: "#1976d2",
+    marginBottom: "1.5rem",
+    textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
+    textAlign: "center",
+  };
+
   const guideTextStyle: React.CSSProperties = {
     fontSize: "0.9rem",
     color: "#666",
     marginTop: 4,
     marginBottom: 6,
-  };
-  const navLinkStyle: React.CSSProperties = {
-    display: "block",
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    borderRadius: 6,
-    textDecoration: "none",
-    fontWeight: "bold",
-    whiteSpace: "nowrap",
-    marginBottom: 8,
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
-  };
-  const cardStyle: React.CSSProperties = {
-    border: "1px solid #ccc",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    backgroundColor: "white",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-  };
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: 8,
-    marginBottom: 12,
-    fontSize: "1rem",
-    borderRadius: 6,
-    border: "1px solid #ccc",
-    boxSizing: "border-box",
   };
 
   const buttonPrimary: React.CSSProperties = {
@@ -393,11 +356,6 @@ export default function EducationModelsPage() {
     transition: "background-color 0.3s ease",
   };
 
-  const buttonPrimaryActive: React.CSSProperties = {
-    backgroundColor: "#388e3c",
-  };
-
-  // State to track button pressed (for visual feedback)
   const [btnPressed, setBtnPressed] = useState(false);
 
   return (
@@ -517,7 +475,9 @@ export default function EducationModelsPage() {
 
       {/* メインコンテンツ */}
       <main style={mainContainerStyle}>
-        <h1>{editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}</h1>
+        <h1 style={titleStyle}>
+          {editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}
+        </h1>
 
         {error && (
           <p
@@ -574,7 +534,7 @@ export default function EducationModelsPage() {
                 marginBottom: 6,
               }}
             >
-              例）山田太郎
+              例）作成者名
             </div>
             <input
               type="text"
@@ -597,7 +557,6 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* モデル名（必須） */}
           <label
             style={{
               display: "block",
@@ -639,7 +598,6 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* 教育観（必須） */}
           <label
             style={{
               display: "block",
@@ -682,7 +640,6 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* 評価観点の重視点（必須） */}
           <label
             style={{
               display: "block",
@@ -725,7 +682,6 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* 言語活動の重視点（必須） */}
           <label
             style={{
               display: "block",
@@ -768,7 +724,6 @@ export default function EducationModelsPage() {
             />
           </label>
 
-          {/* 育てたい子どもの姿（必須） */}
           <label
             style={{
               display: "block",
@@ -833,56 +788,6 @@ export default function EducationModelsPage() {
             {editId ? "更新して保存" : "作成して保存"}
           </button>
         </section>
-
-        {/* モデル一覧表示 */}
-        {models.length === 0 ? (
-          <p>モデルがまだありません。</p>
-        ) : (
-          <section>
-            <h2>作成済みモデル一覧</h2>
-            {sortedModels().map((m) => (
-              <div
-                key={m.id}
-                style={{
-                  border: "1px solid #ccc",
-                  borderRadius: 8,
-                  padding: 16,
-                  marginBottom: 16,
-                }}
-              >
-                <h3>{m.name}</h3>
-                <p>
-                  <strong>作成者：</strong>
-                  {m.creatorName}
-                </p>
-                <p>
-                  <strong>更新日時：</strong>
-                  {new Date(m.updatedAt).toLocaleString()}
-                </p>
-                <p>
-                  <strong>教育観：</strong>
-                  {m.philosophy}
-                </p>
-                <p>
-                  <strong>評価観点の重視点：</strong>
-                  {m.evaluationFocus}
-                </p>
-                <p>
-                  <strong>言語活動の重視点：</strong>
-                  {m.languageFocus}
-                </p>
-                <p>
-                  <strong>育てたい子どもの姿：</strong>
-                  {m.childFocus}
-                </p>
-                <button onClick={() => startEdit(m)} style={{ marginRight: 8 }}>
-                  編集
-                </button>
-                <button onClick={() => handleDelete(m.id)}>削除</button>
-              </div>
-            ))}
-          </section>
-        )}
       </main>
     </>
   );

@@ -7,18 +7,20 @@ import { signOut } from "next-auth/react";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
+import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+
 type BoardImage = { name: string; src: string };
 
 type PracticeRecord = {
   lessonId: string;
   practiceDate: string;
   reflection: string;
-  boardImages: BoardImage[]; // フルサイズ画像（ローカル保存用）
+  boardImages: BoardImage[]; // ローカル用Base64画像
   lessonTitle: string;
-  grade?: string;      // 学年
-  genre?: string;      // ジャンル
-  unitName?: string;   // 単元名
-  author?: string;     // 作成者名
+  grade?: string;
+  genre?: string;
+  unitName?: string;
+  author?: string;
 };
 
 type LessonPlan = {
@@ -30,7 +32,6 @@ const DB_NAME = "PracticeDB";
 const STORE_NAME = "practiceRecords";
 const DB_VERSION = 1;
 
-// IndexedDB初期化・取得
 async function getDB() {
   return openDB(DB_NAME, DB_VERSION, {
     upgrade(db) {
@@ -41,19 +42,16 @@ async function getDB() {
   });
 }
 
-// IndexedDBからレコード取得
 async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> {
   const db = await getDB();
   return db.get(STORE_NAME, lessonId);
 }
 
-// IndexedDBにレコード保存
 async function saveRecord(record: PracticeRecord) {
   const db = await getDB();
   await db.put(STORE_NAME, record);
 }
 
-// ファイルをBase64に変換（フルサイズ用）
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -63,7 +61,6 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-// 画像圧縮・リサイズ（Firestore用圧縮版Base64生成）
 function resizeAndCompressFile(
   file: File,
   maxWidth: number,
@@ -109,7 +106,6 @@ function resizeAndCompressFile(
   });
 }
 
-// 表示用に安全に変換
 function safeRender(value: any): string {
   if (typeof value === "string") {
     return value.replace(/(、\s*)+(?=（[1-5]）)/g, "");
@@ -123,17 +119,24 @@ function safeRender(value: any): string {
   return String(value);
 }
 
+const storage = getStorage();
+
+async function uploadImageToStorage(base64: string, fileName: string): Promise<string> {
+  const storageRef = ref(storage, `practiceImages/${fileName}`);
+  await uploadString(storageRef, base64, "data_url");
+  return getDownloadURL(storageRef);
+}
+
 export default function PracticeAddPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
 
-  // 状態管理
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [author, setAuthor] = useState("");  // 作成者名は学年の前に移動
+  const [author, setAuthor] = useState("");
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
@@ -145,7 +148,6 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // --- ハンバーガーメニュー用スタイル ---
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -233,7 +235,6 @@ export default function PracticeAddPage() {
     paddingTop: 72,
   };
 
-  // ローカルストレージから授業計画を取得＆IndexedDBから実践記録を取得
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -265,7 +266,7 @@ export default function PracticeAddPage() {
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-        setAuthor(existing.author || "");  // 作成者を学年より先にセット
+        setAuthor(existing.author || "");
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
@@ -273,7 +274,6 @@ export default function PracticeAddPage() {
     });
   }, [id]);
 
-  // 画像アップロード時の処理
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -298,13 +298,11 @@ export default function PracticeAddPage() {
     e.target.value = "";
   };
 
-  // 画像削除
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  // プレビュー作成
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
     setRecord({
@@ -313,27 +311,24 @@ export default function PracticeAddPage() {
       reflection,
       boardImages,
       lessonTitle,
-      author,  // 作成者を先に
+      author,
       grade,
       genre,
       unitName,
     });
   };
 
-  // IndexedDBに保存
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
-  // Firestoreに保存
-  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
+  async function saveRecordToFirestore(record: PracticeRecord & { compressedImagesUrls: string[] }) {
     const docRef = doc(db, "practiceRecords", record.lessonId);
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,
-      // Firestoreには圧縮版Base64画像のsrc配列だけを保存
-      boardImages: record.compressedImages.map((img) => img.src),
+      boardImages: record.compressedImagesUrls,
       lessonTitle: record.lessonTitle,
       author: record.author || "",
       grade: record.grade || "",
@@ -343,8 +338,8 @@ export default function PracticeAddPage() {
     });
   }
 
-  // 一括保存
-  const handleSaveBoth = async () => {
+  // ローカルのみ保存
+  const handleSaveLocalOnly = async () => {
     if (!record) {
       alert("プレビューを作成してください");
       return;
@@ -352,7 +347,33 @@ export default function PracticeAddPage() {
     setUploading(true);
     try {
       await saveRecordToIndexedDB(record);
-      await saveRecordToFirestore({ ...record, compressedImages });
+      alert("ローカルに保存しました");
+      router.push("/practice/history");
+    } catch (e) {
+      alert("ローカル保存に失敗しました");
+      console.error(e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ローカル＋Firebase（共有版）に保存
+  const handleSaveBoth = async () => {
+    if (!record) {
+      alert("プレビューを作成してください");
+      return;
+    }
+    setUploading(true);
+    try {
+      const uploadedUrls = await Promise.all(
+        compressedImages.map(async (img) => {
+          return await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+        })
+      );
+
+      await saveRecordToFirestore({ ...record, compressedImagesUrls: uploadedUrls });
+      await saveRecordToIndexedDB(record);
+
       alert("ローカルとFirebaseに保存しました");
       router.push("/practice/history");
     } catch (e) {
@@ -365,7 +386,6 @@ export default function PracticeAddPage() {
 
   return (
     <>
-      {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -384,16 +404,13 @@ export default function PracticeAddPage() {
         </h1>
       </nav>
 
-      {/* メニューオーバーレイ */}
       <div
         style={overlayStyle}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
         <button
           onClick={() => {
             signOut();
@@ -403,8 +420,6 @@ export default function PracticeAddPage() {
         >
           🔓 ログアウト
         </button>
-
-        {/* メニューリンク */}
         <div style={menuLinksWrapperStyle}>
           <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
@@ -433,12 +448,10 @@ export default function PracticeAddPage() {
         </div>
       </div>
 
-      {/* メインコンテンツ */}
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
         <form onSubmit={handlePreview}>
-          {/* 実施日 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               実施日：<br />
@@ -452,7 +465,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 作成者名 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               作成者名：
@@ -467,7 +479,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 学年 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               学年：
@@ -488,7 +499,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* ジャンル */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               ジャンル：
@@ -506,7 +516,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 単元名 */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               単元名：
@@ -520,7 +529,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 振り返り */}
           <div style={{ border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 }}>
             <label>
               振り返り：<br />
@@ -534,7 +542,6 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 板書写真アップロード */}
           <label
             style={{
               display: "block",
@@ -558,7 +565,6 @@ export default function PracticeAddPage() {
             />
           </label>
 
-          {/* 画像プレビュー */}
           <div style={{ marginTop: 12 }}>
             {boardImages.map((img, i) => (
               <div key={img.name + i} style={{ width: "100%", marginBottom: 12 }}>
@@ -597,7 +603,6 @@ export default function PracticeAddPage() {
             ))}
           </div>
 
-          {/* プレビュー生成ボタン */}
           <button
             type="submit"
             style={{
@@ -616,7 +621,6 @@ export default function PracticeAddPage() {
           </button>
         </form>
 
-        {/* プレビュー表示 */}
         {record && (
           <section
             id="practice-preview"
@@ -636,86 +640,6 @@ export default function PracticeAddPage() {
                 ? safeRender((lessonPlan.result as any)["単元名"])
                 : lessonTitle}
             </h2>
-
-            {lessonPlan?.result && typeof lessonPlan.result === "object" && (
-              <>
-                <section style={{ marginBottom: 16 }}>
-                  <h3>授業の概要</h3>
-                  <p>
-                    <strong>教科書名：</strong>
-                    {safeRender((lessonPlan.result as any)["教科書名"])}
-                  </p>
-                  <p>
-                    <strong>学年：</strong>
-                    {safeRender((lessonPlan.result as any)["学年"])}
-                  </p>
-                  <p>
-                    <strong>ジャンル：</strong>
-                    {safeRender((lessonPlan.result as any)["ジャンル"])}
-                  </p>
-                  <p>
-                    <strong>授業時間数：</strong>
-                    {safeRender((lessonPlan.result as any)["授業時間数"])}時間
-                  </p>
-                  <p>
-                    <strong>育てたい子どもの姿：</strong>
-                    {safeRender((lessonPlan.result as any)["育てたい子どもの姿"])}
-                  </p>
-                </section>
-
-                <section style={{ marginBottom: 16 }}>
-                  <h3>単元の目標</h3>
-                  <p>{safeRender((lessonPlan.result as any)["単元の目標"])}</p>
-                </section>
-
-                {(lessonPlan.result as any)["評価の観点"] && (
-                  <section style={{ marginBottom: 16 }}>
-                    <h3>評価の観点</h3>
-                    {Object.entries((lessonPlan.result as any)["評価の観点"]).map(
-                      ([category, items]) => {
-                        const numberedItems = Array.isArray(items)
-                          ? items.map((item, i) => `（${i + 1}）${item}`)
-                          : [String(items)];
-
-                        return (
-                          <div key={category} style={{ marginBottom: 8 }}>
-                            <strong>{category}</strong>
-                            <ul style={{ paddingLeft: 20, marginTop: 4 }}>
-                              {numberedItems.map((text, index) => (
-                                <li key={index}>{safeRender(text)}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        );
-                      }
-                    )}
-                  </section>
-                )}
-
-                {(lessonPlan.result as any)["言語活動の工夫"] && (
-                  <section style={{ marginBottom: 16 }}>
-                    <h3>言語活動の工夫</h3>
-                    <p>{safeRender((lessonPlan.result as any)["言語活動の工夫"])}</p>
-                  </section>
-                )}
-
-                {(lessonPlan.result as any)["授業の流れ"] && (
-                  <section style={{ marginBottom: 16 }}>
-                    <h3>授業の流れ</h3>
-                    <ul>
-                      {Object.entries((lessonPlan.result as any)["授業の流れ"]).map(
-                        ([key, value]) => (
-                          <li key={key}>
-                            <strong>{key}：</strong>
-                            {typeof value === "string" ? value : safeRender(value)}
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </section>
-                )}
-              </>
-            )}
 
             <section style={{ marginTop: 24 }}>
               <h3>実施記録</h3>
@@ -767,7 +691,23 @@ export default function PracticeAddPage() {
           </section>
         )}
 
-        {/* 一括保存ボタン */}
+        <button
+          onClick={handleSaveLocalOnly}
+          style={{
+            padding: 12,
+            backgroundColor: "#2196f3",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            width: "100%",
+            cursor: "pointer",
+            marginTop: 16,
+          }}
+          disabled={uploading}
+        >
+          {uploading ? "保存中..." : "ローカルのみに保存"}
+        </button>
+
         <button
           onClick={handleSaveBoth}
           style={{
@@ -778,11 +718,11 @@ export default function PracticeAddPage() {
             borderRadius: 6,
             width: "100%",
             cursor: "pointer",
-            marginTop: 16,
+            marginTop: 8,
           }}
           disabled={uploading}
         >
-          {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
+          {uploading ? "保存中..." : "ローカル＋Firebaseに保存（共有版投稿）"}
         </button>
       </main>
     </>

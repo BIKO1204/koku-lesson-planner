@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
 import { signOut } from "next-auth/react";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type BoardImage = { name: string; src: string };
 type PracticeRecord = {
@@ -43,6 +45,17 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
+async function uploadRecordToFirebase(record: PracticeRecord) {
+  const docRef = doc(db, "practiceRecords", record.lessonId);
+  await setDoc(docRef, {
+    practiceDate: record.practiceDate,
+    reflection: record.reflection,
+    boardImages: record.boardImages,
+    lessonTitle: record.lessonTitle,
+    createdAt: new Date(),
+  });
+}
+
 export default function PracticeHistoryPage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
@@ -50,6 +63,8 @@ export default function PracticeHistoryPage() {
     "practiceDate"
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
+
   const router = useRouter();
 
   useEffect(() => {
@@ -82,6 +97,28 @@ export default function PracticeHistoryPage() {
       setRecords(records.filter((r) => r.lessonId !== lessonId));
     } catch {
       alert("IndexedDB上の削除に失敗しました。");
+    }
+  };
+
+  const handlePostToShared = async (lessonId: string) => {
+    if (!confirm("この実践記録を共有版に投稿しますか？")) return;
+
+    try {
+      setUploadingRecordId(lessonId);
+      const dbLocal = await getDB();
+      const record = await dbLocal.get(STORE_NAME, lessonId);
+      if (!record) {
+        alert("ローカルの実践記録が見つかりませんでした。");
+        setUploadingRecordId(null);
+        return;
+      }
+      await uploadRecordToFirebase(record);
+      alert("共有版に投稿しました。");
+    } catch (e) {
+      console.error(e);
+      alert("投稿に失敗しました。");
+    } finally {
+      setUploadingRecordId(null);
     }
   };
 
@@ -211,6 +248,10 @@ export default function PracticeHistoryPage() {
     ...buttonBaseStyle,
     backgroundColor: "#f44336",
   };
+  const postBtn: CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#2196f3",
+  };
 
   const planBlockStyle: CSSProperties = {
     backgroundColor: "#fafafa",
@@ -268,7 +309,7 @@ export default function PracticeHistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン（上に少し余白） */}
+        {/* ログアウトボタン */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
@@ -595,12 +636,22 @@ export default function PracticeHistoryPage() {
                       🗑 削除
                     </button>
 
-                    {/* 共有ページへ飛ぶボタン（router.pushに変更） */}
+                    {/* ここに追加の共有版に投稿ボタン */}
                     <button
-                      style={{ ...buttonBaseStyle, backgroundColor: "#9C27B0", marginLeft: 8 }}
-                      onClick={() => router.push(`/practice/share/${r.lessonId}`)}
+                      onClick={() => handlePostToShared(r.lessonId)}
+                      disabled={uploadingRecordId === r.lessonId}
+                      style={{
+                        ...postBtn,
+                        backgroundColor:
+                          uploadingRecordId === r.lessonId ? "#90caf9" : "#2196f3",
+                        cursor:
+                          uploadingRecordId === r.lessonId ? "default" : "pointer",
+                        minWidth: 120,
+                      }}
                     >
-                      🔗 共有ページ
+                      {uploadingRecordId === r.lessonId
+                        ? "投稿中..."
+                        : "共有版に投稿"}
                     </button>
                   </div>
                 </article>

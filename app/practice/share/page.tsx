@@ -2,6 +2,7 @@
 
 import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   collection,
   query,
@@ -47,6 +48,7 @@ type PracticeRecord = {
   author?: string;
   pdfUrl?: string;
   pdfName?: string;
+  createdAt?: string;  // 追加：作成日時
 };
 type LessonPlan = {
   id: string;
@@ -56,6 +58,7 @@ type LessonPlan = {
 export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
+  const router = useRouter();
 
   // フィルター入力状態
   const [inputGrade, setInputGrade] = useState<string>("");
@@ -101,6 +104,7 @@ export default function PracticeSharePage() {
         author: (doc.data() as any).author || "",
         pdfUrl: (doc.data() as any).pdfUrl || "",
         pdfName: (doc.data() as any).pdfName || "",
+        createdAt: (doc.data() as any).createdAt || "",
       }));
       setRecords(recs);
     });
@@ -300,7 +304,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDFアップロード処理
+  // PDFアップロード処理（ログインユーザー全員が可能）
   const handlePdfUpload = async (lessonId: string, file: File) => {
     if (!session) {
       alert("ログインしてください");
@@ -309,10 +313,6 @@ export default function PracticeSharePage() {
     const record = records.find((r) => r.lessonId === lessonId);
     if (!record) {
       alert("対象の実践案が見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("自分の実践案のみPDFアップロードできます");
       return;
     }
     setUploadingPdfIds((prev) => [...prev, lessonId]);
@@ -336,7 +336,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDF削除処理
+  // PDF削除処理（ログインユーザー全員が可能）
   const handleDeletePdf = async (lessonId: string, pdfName?: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -345,10 +345,6 @@ export default function PracticeSharePage() {
     const record = records.find((r) => r.lessonId === lessonId);
     if (!record) {
       alert("対象の実践案が見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("自分の実践案のみPDF削除できます");
       return;
     }
     if (!pdfName) {
@@ -377,7 +373,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 実践案削除時にPDFも削除
+  // 実践案削除時にPDFも削除（作成者のみ許可）
   const handleDeleteRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -413,6 +409,11 @@ export default function PracticeSharePage() {
     } finally {
       setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
     }
+  };
+
+  // 編集ページ遷移
+  const handleEdit = (lessonId: string) => {
+    router.push(`/practice/edit/${lessonId}`);
   };
 
   // --- スタイル定義 ---
@@ -775,10 +776,32 @@ export default function PracticeSharePage() {
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
-                  {/* 作成者名表示 */}
+                  {/* 作成者名と作成日時表示 */}
                   <p>
                     <strong>作成者：</strong> {r.author || "不明"}
+                    <br />
+                    <small>
+                      {r.createdAt
+                        ? new Date(r.createdAt).toLocaleString()
+                        : "作成日時不明"}
+                    </small>
                   </p>
+
+                  {/* 編集ボタン（すべてのユーザーに表示） */}
+                  <button
+                    onClick={() => handleEdit(r.lessonId)}
+                    style={{
+                      backgroundColor: "#1976d2",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "6px 12px",
+                      cursor: "pointer",
+                      marginBottom: 12,
+                    }}
+                  >
+                    編集
+                  </button>
 
                   {/* 授業案詳細 */}
                   {plan && typeof plan.result === "object" && (
@@ -921,7 +944,7 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* PDFアップロード・表示・削除 */}
+                  {/* PDFアップロード・表示・削除（ログインユーザー全員が可能） */}
                   <div style={{ marginTop: 12 }}>
                     {r.pdfUrl ? (
                       <>
@@ -933,26 +956,24 @@ export default function PracticeSharePage() {
                         >
                           📄 {r.pdfName || "PDFを見る"}
                         </a>
-                        {isAuthor && (
-                          <button
-                            onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
-                            disabled={uploadingPdfIds.includes(r.lessonId)}
-                            style={{
-                              marginLeft: 8,
-                              backgroundColor: "#e53935",
-                              color: "white",
-                              borderRadius: 4,
-                              cursor: "pointer",
-                              border: "none",
-                              padding: "4px 8px",
-                            }}
-                          >
-                            PDF削除
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
+                          disabled={uploadingPdfIds.includes(r.lessonId)}
+                          style={{
+                            marginLeft: 8,
+                            backgroundColor: "#e53935",
+                            color: "white",
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            border: "none",
+                            padding: "4px 8px",
+                          }}
+                        >
+                          PDF削除
+                        </button>
                       </>
                     ) : (
-                      isAuthor && (
+                      session && (
                         <input
                           type="file"
                           accept="application/pdf"
