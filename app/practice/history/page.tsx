@@ -418,7 +418,7 @@ export default function PracticeHistoryPage() {
             onChange={(e) => setSortKey(e.target.value as any)}
             style={{ marginLeft: 8, padding: 6, fontSize: "1rem" }}
           >
-            <option value="practiceDate">新着順（実施日）</option>
+            <option value="practiceDate">新着順</option>
             <option value="grade">学年順</option>
             <option value="lessonTitle">教材名順</option>
           </select>

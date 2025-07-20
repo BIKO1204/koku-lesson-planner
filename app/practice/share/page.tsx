@@ -94,13 +94,6 @@ export default function PracticeSharePage() {
   // Firebase Storage
   const storage = getStorage();
 
-  // 日付フォーマット（Invalid Date対策）
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "未設定";
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? "未設定" : d.toLocaleString();
-  };
-
   // PDFファイル選択UI
   const PdfFileInput = ({
     lessonId,
@@ -548,7 +541,8 @@ export default function PracticeSharePage() {
   };
   const sidebarResponsiveStyle: CSSProperties = {
     width: isMobile ? "100%" : 280,
-    padding: 16,
+    maxWidth: isMobile ? 320 : 280,
+    padding: 12,
     backgroundColor: "#f9f9f9",
     borderRadius: 8,
     boxShadow: "0 0 6px rgba(0,0,0,0.1)",
@@ -556,12 +550,16 @@ export default function PracticeSharePage() {
     overflowY: "auto",
     position: isMobile ? "relative" : "sticky",
     top: isMobile ? "auto" : 72,
-    marginBottom: isMobile ? 16 : 0,
+    marginBottom: isMobile ? 12 : 0,
+    boxSizing: "border-box",
   };
   const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
     fontFamily: "sans-serif",
     width: isMobile ? "100%" : "auto",
+    padding: isMobile ? "0 8px" : "0",
+    overflowWrap: "break-word",
+    wordBreak: "break-word",
   };
   const cardStyle: CSSProperties = {
     border: "2px solid #ddd",
@@ -827,13 +825,6 @@ export default function PracticeSharePage() {
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
 
-                  {/* 作成者名と作成日時表示 */}
-                  <p>
-                    <strong>作成者：</strong> {r.author || "不明"}
-                    <br />
-                    <small>{formatDate(r.createdAt)}</small>
-                  </p>
-
                   {/* 編集ボタン */}
                   <button
                     onClick={() => handleEdit(r.lessonId)}
@@ -859,6 +850,7 @@ export default function PracticeSharePage() {
                         borderRadius: 6,
                         marginBottom: 16,
                         wordBreak: "break-word",
+                        fontSize: isMobile ? "0.9rem" : "1rem",
                       }}
                     >
                       <strong>授業案</strong>
@@ -951,9 +943,8 @@ export default function PracticeSharePage() {
                     </section>
                   )}
 
-                  <p>
-                    <strong>実施日：</strong> {formatDate(r.practiceDate)}
-                  </p>
+                  {/* 実施日表示は削除済み */}
+
                   <p>
                     <strong>振り返り：</strong>
                     <br />
@@ -1067,7 +1058,7 @@ export default function PracticeSharePage() {
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
                           <b>{c.displayName}</b>{" "}
-                          <small>({formatDate(c.createdAt)})</small>
+                          <small>({new Date(c.createdAt).toLocaleDateString()})</small>
                           <br />
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&

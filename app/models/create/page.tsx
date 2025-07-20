@@ -51,6 +51,7 @@ export default function EducationModelsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [btnPressed, setBtnPressed] = useState(false);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
@@ -77,7 +78,10 @@ export default function EducationModelsPage() {
         const q = query(
           colRef,
           where("creatorId", "==", userId),
-          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+          orderBy(
+            sortOrder === "newest" ? "updatedAt" : "name",
+            sortOrder === "newest" ? "desc" : "asc"
+          )
         );
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map((doc) => ({
@@ -209,7 +213,13 @@ export default function EducationModelsPage() {
       cancelEdit();
       setError("");
       setSuccessMessage("保存しました！");
-      setTimeout(() => setSuccessMessage(""), 3000);
+
+      // 2秒後にメッセージ消して一覧ページに遷移
+      setTimeout(() => {
+        setSuccessMessage("");
+        router.push("/models"); // 遷移先URLを一覧ページに合わせてください
+      }, 2000);
+
       setMenuOpen(false);
       return true;
     } catch (e) {
@@ -355,8 +365,6 @@ export default function EducationModelsPage() {
     fontWeight: "bold",
     transition: "background-color 0.3s ease",
   };
-
-  const [btnPressed, setBtnPressed] = useState(false);
 
   return (
     <>
@@ -784,6 +792,7 @@ export default function EducationModelsPage() {
               boxShadow: "0 5px 14px #4caf50bb",
               transition: "background-color 0.35s ease",
             }}
+            disabled={btnPressed}
           >
             {editId ? "更新して保存" : "作成して保存"}
           </button>
