@@ -15,6 +15,7 @@ type PracticeRecord = {
   practiceDate: string;
   reflection: string;
   boardImages: BoardImage[];
+  grade?: string; // 追加：学年も持つ前提
 };
 type LessonPlan = {
   id: string;
@@ -52,14 +53,16 @@ async function uploadRecordToFirebase(record: PracticeRecord) {
     reflection: record.reflection,
     boardImages: record.boardImages,
     lessonTitle: record.lessonTitle,
-    createdAt: serverTimestamp(),  // サーバー側のタイムスタンプ
+    grade: record.grade || "", // gradeも保存
+    createdAt: serverTimestamp(),
   });
 }
 
 export default function PracticeHistoryPage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle">(
+  // 並び替えキーにgradeを追加
+  const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">(
     "practiceDate"
   );
   const [menuOpen, setMenuOpen] = useState(false);
@@ -84,10 +87,26 @@ export default function PracticeHistoryPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // 学年の正しい順序を定義
+  const gradeOrder = ["1年", "2年", "3年", "4年", "5年", "6年"];
+
   const sorted = [...records].sort((a, b) => {
-    if (sortKey === "lessonTitle")
+    if (sortKey === "practiceDate") {
+      // 新着順なので降順
+      return b.practiceDate.localeCompare(a.practiceDate);
+    } else if (sortKey === "grade") {
+      // 学年順。gradeOrderのインデックスで比較。無い場合は後ろに
+      const aIndex = gradeOrder.indexOf(a.grade || "");
+      const bIndex = gradeOrder.indexOf(b.grade || "");
+      if (aIndex === -1 && bIndex === -1) return 0;
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    } else if (sortKey === "lessonTitle") {
+      // 教材名順（昇順）
       return a.lessonTitle.localeCompare(b.lessonTitle);
-    return a.practiceDate.localeCompare(b.practiceDate);
+    }
+    return 0;
   });
 
   const handleDelete = async (lessonId: string) => {
@@ -108,21 +127,18 @@ export default function PracticeHistoryPage() {
       const dbLocal = await getDB();
       const record = await dbLocal.get(STORE_NAME, lessonId);
 
-      console.log("投稿対象レコード:", record);  // デバッグ用
-
       if (!record) {
         alert("ローカルの実践記録が見つかりませんでした。");
         setUploadingRecordId(null);
         return;
       }
 
-      // タイトルが空なら仮設定
       if (!record.lessonTitle) record.lessonTitle = "タイトルなし";
 
       await uploadRecordToFirebase(record);
 
       alert("共有版に投稿しました。");
-      router.push("/practice/share");  // 投稿後に共有ページへ遷移
+      router.push("/practice/share");
     } catch (e: any) {
       console.error("投稿エラー:", e);
       alert("投稿に失敗しました。\n" + (e.message || e.toString()));
@@ -402,8 +418,9 @@ export default function PracticeHistoryPage() {
             onChange={(e) => setSortKey(e.target.value as any)}
             style={{ marginLeft: 8, padding: 6, fontSize: "1rem" }}
           >
-            <option value="practiceDate">実施日順</option>
-            <option value="lessonTitle">タイトル順</option>
+            <option value="practiceDate">新着順（実施日）</option>
+            <option value="grade">学年順</option>
+            <option value="lessonTitle">教材名順</option>
           </select>
         </label>
 

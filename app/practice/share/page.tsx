@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, CSSProperties } from "react";
+import React, { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -93,6 +93,57 @@ export default function PracticeSharePage() {
 
   // Firebase Storage
   const storage = getStorage();
+
+  // 日付フォーマット（Invalid Date対策）
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "未設定";
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? "未設定" : d.toLocaleString();
+  };
+
+  // PDFファイル選択UI
+  const PdfFileInput = ({
+    lessonId,
+    uploading,
+    onUpload,
+  }: {
+    lessonId: string;
+    uploading: boolean;
+    onUpload: (lessonId: string, file: File) => void;
+  }) => {
+    return (
+      <label
+        htmlFor={`pdf-upload-${lessonId}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: uploading ? "not-allowed" : "pointer",
+          color: "#1976d2",
+          fontWeight: "bold",
+          border: "1px solid #1976d2",
+          padding: "6px 12px",
+          borderRadius: 6,
+          userSelect: "none",
+        }}
+      >
+        📄 PDFファイルを選択
+        <input
+          id={`pdf-upload-${lessonId}`}
+          type="file"
+          accept="application/pdf"
+          disabled={uploading}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files && e.target.files[0]) {
+              onUpload(lessonId, e.target.files[0]);
+              e.target.value = "";
+            }
+          }}
+        />
+      </label>
+    );
+  };
 
   useEffect(() => {
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
@@ -411,9 +462,9 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 編集ページ遷移
+  // 編集ページ遷移（ここを修正しました）
   const handleEdit = (lessonId: string) => {
-    router.push(`/practice/edit/${lessonId}`);
+    router.push(`/practice/add/${lessonId}`);
   };
 
   // --- スタイル定義 ---
@@ -780,14 +831,10 @@ export default function PracticeSharePage() {
                   <p>
                     <strong>作成者：</strong> {r.author || "不明"}
                     <br />
-                    <small>
-                      {r.createdAt
-                        ? new Date(r.createdAt).toLocaleString()
-                        : "作成日時不明"}
-                    </small>
+                    <small>{formatDate(r.createdAt)}</small>
                   </p>
 
-                  {/* 編集ボタン（すべてのユーザーに表示） */}
+                  {/* 編集ボタン */}
                   <button
                     onClick={() => handleEdit(r.lessonId)}
                     style={{
@@ -811,8 +858,7 @@ export default function PracticeSharePage() {
                         padding: 12,
                         borderRadius: 6,
                         marginBottom: 16,
-                        maxHeight: "auto", // ここを修正しました
-                        overflowY: "visible", // ここも修正
+                        wordBreak: "break-word",
                       }}
                     >
                       <strong>授業案</strong>
@@ -830,35 +876,35 @@ export default function PracticeSharePage() {
                       </p>
 
                       {plan.result["評価の観点"] && (
-                        <div>
+                        <div style={{ marginTop: 8 }}>
                           <strong>評価の観点：</strong>
 
                           <strong>知識・技能</strong>
-                          <ul>
+                          <ul style={{ marginTop: 4, paddingLeft: 16 }}>
                             {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
                               ? plan.result["評価の観点"]["知識・技能"]
                               : plan.result["評価の観点"]?.["知識・技能"]
                               ? [plan.result["評価の観点"]["知識・技能"]]
                               : []
                             ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
+                              <li key={`知識技能-${i}`}>{v}</li>
                             ))}
                           </ul>
 
                           <strong>思考・判断・表現</strong>
-                          <ul>
+                          <ul style={{ marginTop: 4, paddingLeft: 16 }}>
                             {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
                               ? plan.result["評価の観点"]["思考・判断・表現"]
                               : plan.result["評価の観点"]?.["思考・判断・表現"]
                               ? [plan.result["評価の観点"]["思考・判断・表現"]]
                               : []
                             ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
+                              <li key={`思考判断-${i}`}>{v}</li>
                             ))}
                           </ul>
 
                           <strong>主体的に学習に取り組む態度</strong>
-                          <ul>
+                          <ul style={{ marginTop: 4, paddingLeft: 16 }}>
                             {(Array.isArray(
                               plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
                             )
@@ -869,7 +915,7 @@ export default function PracticeSharePage() {
                               ? [plan.result["評価の観点"]["態度"]]
                               : []
                             ).map((v: string, i: number) => (
-                              <li key={i}>{v}</li>
+                              <li key={`主体的-${i}`}>{v}</li>
                             ))}
                           </ul>
                         </div>
@@ -906,12 +952,12 @@ export default function PracticeSharePage() {
                   )}
 
                   <p>
-                    <strong>実施日：</strong> {r.practiceDate}
+                    <strong>実施日：</strong> {formatDate(r.practiceDate)}
                   </p>
                   <p>
                     <strong>振り返り：</strong>
                     <br />
-                    {r.reflection}
+                    {r.reflection || "－"}
                   </p>
 
                   {r.boardImages.length > 0 && (
@@ -944,7 +990,7 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* PDFアップロード・表示・削除（ログインユーザー全員が可能） */}
+                  {/* PDFアップロード・表示・削除 */}
                   <div style={{ marginTop: 12 }}>
                     {r.pdfUrl ? (
                       <>
@@ -974,18 +1020,10 @@ export default function PracticeSharePage() {
                       </>
                     ) : (
                       session && (
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          disabled={uploadingPdfIds.includes(r.lessonId)}
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handlePdfUpload(r.lessonId, e.target.files[0]);
-                              e.target.value = "";
-                            }
-                          }}
-                          style={{ marginTop: 8 }}
-                          title={uploadingPdfIds.includes(r.lessonId) ? "アップロード中です" : undefined}
+                        <PdfFileInput
+                          lessonId={r.lessonId}
+                          uploading={uploadingPdfIds.includes(r.lessonId)}
+                          onUpload={handlePdfUpload}
                         />
                       )
                     )}
@@ -1029,7 +1067,7 @@ export default function PracticeSharePage() {
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
                           <b>{c.displayName}</b>{" "}
-                          <small>({new Date(c.createdAt).toLocaleString()})</small>
+                          <small>({formatDate(c.createdAt)})</small>
                           <br />
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&

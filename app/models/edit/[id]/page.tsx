@@ -153,7 +153,7 @@ export default function StyleDetailPage() {
 
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
-          {[
+          {[ 
             ["/", "🏠 ホーム"],
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
@@ -388,11 +388,13 @@ const logoutButtonStyle: React.CSSProperties = {
 };
 
 const mainStyle: React.CSSProperties = {
-  padding: "2rem",
-  maxWidth: "90vw",
+  padding: "2rem 1rem",
+  maxWidth: 720,
   margin: "0 auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
+  boxSizing: "border-box",
+  width: "100%",
 };
 
 const infoSectionStyle: React.CSSProperties = {
