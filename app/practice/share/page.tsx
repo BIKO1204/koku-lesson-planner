@@ -924,10 +924,27 @@ export default function PracticeSharePage() {
                       borderRadius: 6,
                       padding: "6px 12px",
                       cursor: "pointer",
-                      marginBottom: 12,
+                      marginBottom: 8,
                     }}
                   >
                     編集
+                  </button>
+
+                  {/* PDF化ボタンを追加 */}
+                  <button
+                    onClick={() => generatePdfFromRecord(r)}
+                    style={{
+                      backgroundColor: "#FF9800",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "6px 12px",
+                      cursor: "pointer",
+                      marginBottom: 12,
+                      marginLeft: 8,
+                    }}
+                  >
+                    PDF化
                   </button>
 
                   {/* 授業案詳細 */}
