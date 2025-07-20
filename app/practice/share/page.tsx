@@ -536,12 +536,12 @@ export default function PracticeSharePage() {
     maxWidth: 1200,
     margin: "auto",
     paddingTop: isMobile ? 16 : 72,
-    gap: 24,
+    gap: isMobile ? 8 : 24,  // スマホ時はgapを少し狭くする
     flexDirection: isMobile ? "column" : "row",
   };
   const sidebarResponsiveStyle: CSSProperties = {
-    width: isMobile ? "100%" : 280,
-    maxWidth: isMobile ? 320 : 280,
+    width: isMobile ? "100%" : 280,     // スマホは幅100%に
+    maxWidth: "100%",                   // maxWidthも100%にして余白防止
     padding: 12,
     backgroundColor: "#f9f9f9",
     borderRadius: 8,
@@ -551,7 +551,7 @@ export default function PracticeSharePage() {
     position: isMobile ? "relative" : "sticky",
     top: isMobile ? "auto" : 72,
     marginBottom: isMobile ? 12 : 0,
-    boxSizing: "border-box",
+    boxSizing: "border-box",  // ここ必須（パディング込みの幅指定にする）
   };
   const mainContentResponsiveStyle: CSSProperties = {
     flex: 1,
