@@ -139,6 +139,7 @@ export default function PracticeSharePage() {
   };
 
   useEffect(() => {
+    // 実践記録取得（Firestore）
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
@@ -153,21 +154,24 @@ export default function PracticeSharePage() {
       setRecords(recs);
     });
 
-    const plans = localStorage.getItem("lessonPlans");
-    if (plans) {
-      try {
-        setLessonPlans(JSON.parse(plans));
-      } catch {
-        setLessonPlans([]);
-      }
-    }
+    // 授業案もFirestoreから取得
+    const lessonPlansCollection = collection(db, "lesson_plans");
+    const unsubscribePlans = onSnapshot(lessonPlansCollection, (snapshot) => {
+      const plansData: LessonPlan[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        result: doc.data().result,
+      }));
+      setLessonPlans(plansData);
+    });
 
+    // 画面幅判定
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     handleResize();
     window.addEventListener("resize", handleResize);
 
     return () => {
       unsubscribe();
+      unsubscribePlans();
       window.removeEventListener("resize", handleResize);
     };
   }, []);
