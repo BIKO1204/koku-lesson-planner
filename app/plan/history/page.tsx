@@ -147,6 +147,7 @@ export default function HistoryPage() {
     borderRadius: 6,
     textDecoration: "none",
     marginBottom: "0.5rem",
+    textAlign: "left",   // ← 左揃えに変更
   };
 
   return (

@@ -189,20 +189,7 @@ export default function EducationModelsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("このモデルを削除しますか？")) return;
-    try {
-      await deleteDoc(doc(db, "educationModels", id));
-      const filtered = models.filter((m) => m.id !== id);
-      setModels(filtered);
-      localStorage.setItem("styleModels", JSON.stringify(filtered));
-      if (editId === id) cancelEdit();
-      setMenuOpen(false);
-    } catch (e) {
-      alert("削除に失敗しました。");
-      console.error(e);
-    }
-  };
+  // 削除機能は省略（ボタン非表示にするため削除）
 
   async function generatePdfFromModel(m: EducationModel) {
     const html2pdf = (await import("html2pdf.js")).default;
@@ -309,7 +296,6 @@ export default function EducationModelsPage() {
     backgroundColor: "#e53935",
     color: "white",
     fontWeight: "bold",
-    borderRadius: 6,
     border: "none",
     cursor: "pointer",
     flexShrink: 0,
@@ -331,7 +317,7 @@ export default function EducationModelsPage() {
     cursor: "pointer",
     display: "block",
     width: "100%",
-    textAlign: "center",
+    textAlign: "left", // 左揃えに修正しました
   };
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
@@ -353,26 +339,6 @@ export default function EducationModelsPage() {
     backgroundColor: "#fff",
     borderRadius: 10,
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
-  };
-  const guideTextStyle: React.CSSProperties = {
-    fontSize: "0.9rem",
-    color: "#666",
-    marginTop: 4,
-    marginBottom: 6,
-  };
-  const navLinkStyle: React.CSSProperties = {
-    display: "block",
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    borderRadius: 6,
-    textDecoration: "none",
-    fontWeight: "bold",
-    whiteSpace: "nowrap",
-    marginBottom: 8,
-    cursor: "pointer",
-    width: "100%",
-    boxSizing: "border-box",
   };
   const cardStyle: React.CSSProperties = {
     border: "1px solid #ccc",
@@ -581,12 +547,7 @@ export default function EducationModelsPage() {
                 <button onClick={() => startEdit(m)} style={buttonPrimary}>
                   編集
                 </button>
-                <button
-                  onClick={() => handleDelete(m.id)}
-                  style={{ ...buttonPrimary, backgroundColor: "#f44336" }}
-                >
-                  削除
-                </button>
+                {/* 削除ボタンは省略しました */}
                 <button
                   onClick={() => generatePdfFromModel(m)}
                   style={{ ...buttonPrimary, backgroundColor: "#FF9800" }}

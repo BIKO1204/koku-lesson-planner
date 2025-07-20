@@ -640,6 +640,12 @@ export default function PracticeAddPage() {
                 {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
               </p>
 
+              {/* ←ここに「育てたい子どもの姿」を追加 */}
+              <p>
+                <strong>育てたい子どもの姿：</strong>
+                {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
+              </p>
+
               <div style={{ marginTop: 8 }}>
                 <strong>単元の目標：</strong>
                 <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
@@ -883,6 +889,12 @@ export default function PracticeAddPage() {
                 <p>
                   <strong>授業時間数：</strong>
                   {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
+                </p>
+
+                {/* ←ここに「育てたい子どもの姿」を追加 */}
+                <p>
+                  <strong>育てたい子どもの姿：</strong>
+                  {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
                 </p>
 
                 <div style={{ marginTop: 8 }}>

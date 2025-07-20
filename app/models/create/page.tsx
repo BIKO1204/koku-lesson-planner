@@ -314,7 +314,7 @@ export default function EducationModelsPage() {
     cursor: "pointer",
     display: "block",
     width: "100%",
-    textAlign: "center",
+    textAlign: "left", // ← ここを「左揃え」に変更しました
   };
   const overlayStyle: React.CSSProperties = {
     position: "fixed",

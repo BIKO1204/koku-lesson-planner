@@ -153,7 +153,7 @@ export default function StyleDetailPage() {
 
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
-          {[ 
+          {[
             ["/", "🏠 ホーム"],
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
@@ -368,7 +368,7 @@ const navLinkStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   marginBottom: 8,
   cursor: "pointer",
-  textAlign: "center",
+  textAlign: "left",  // ← 左揃えに変更
   width: "100%",
   boxSizing: "border-box",
 };
@@ -389,7 +389,7 @@ const logoutButtonStyle: React.CSSProperties = {
 
 const mainStyle: React.CSSProperties = {
   padding: "2rem 1rem",
-  maxWidth: 720,
+  maxWidth: 900,  // ← 幅を720→900に拡大
   margin: "0 auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
