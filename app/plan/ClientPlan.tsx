@@ -532,10 +532,10 @@ ${languageActivities}
   };
   const menuWrapperStyle: CSSProperties = {
     position: "fixed",
-    top: 0,
+    top: 56,
     left: 0,
     width: 250,
-    height: "100vh",
+    height: "calc(100vh - 56px)",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
     transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
@@ -566,7 +566,7 @@ ${languageActivities}
 
   const overlayStyle: CSSProperties = {
     position: "fixed",
-    top: 0,
+    top: 56,
     left: 0,
     width: "100vw",
     height: "100vh",
@@ -713,28 +713,6 @@ ${languageActivities}
             </select>
           </label>
 
-          {/* 授業時間数の下に育てたい子どもの姿を配置 */}
-          <label>
-            授業時間数：<br />
-            <input
-              type="number"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              style={inputStyle}
-              min={0}
-            />
-          </label>
-
-          <label>
-            ■ 育てたい子どもの姿：<br />
-            <textarea
-              value={childVision}
-              onChange={(e) => setChildVision(e.target.value)}
-              rows={2}
-              style={inputStyle}
-            />
-          </label>
-
           <label>
             ジャンル：<br />
             <select value={genre} onChange={(e) => setGenre(e.target.value)} style={inputStyle}>
@@ -751,6 +729,17 @@ ${languageActivities}
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
               style={inputStyle}
+            />
+          </label>
+
+          <label>
+            授業時間数：<br />
+            <input
+              type="number"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              style={inputStyle}
+              min={0}
             />
           </label>
 
@@ -797,6 +786,16 @@ ${languageActivities}
               </button>
             </div>
           ))}
+
+          <label>
+            ■ 育てたい子どもの姿：<br />
+            <textarea
+              value={childVision}
+              onChange={(e) => setChildVision(e.target.value)}
+              rows={2}
+              style={inputStyle}
+            />
+          </label>
 
           <label>
             ■ 言語活動の工夫：<br />
@@ -884,13 +883,10 @@ ${languageActivities}
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
-
-              {/* ここに育てたい子どもの姿を授業時間数の直前に表示 */}
-              <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
-              <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
-
               <p>ジャンル：{parsedResult["ジャンル"]}</p>
               <p>単元名：{parsedResult["単元名"]}</p>
+              <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
+              <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
 
               <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>単元の目標</div>

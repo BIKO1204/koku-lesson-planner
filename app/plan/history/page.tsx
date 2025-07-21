@@ -147,7 +147,7 @@ export default function HistoryPage() {
     borderRadius: 6,
     textDecoration: "none",
     marginBottom: "0.5rem",
-    textAlign: "left",   // ← 左揃えに変更
+    textAlign: "left", // ← 左揃えに変更
   };
 
   return (
@@ -201,10 +201,7 @@ export default function HistoryPage() {
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         {/* ログアウトボタン */}
-        <button
-          onClick={() => signOut()}
-          style={logoutButtonStyle}
-        >
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
 
@@ -216,22 +213,46 @@ export default function HistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/share"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🌐 共有版実践記録
           </Link>
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🕒 教育観履歴
           </Link>
         </div>
@@ -319,7 +340,6 @@ export default function HistoryPage() {
                         <p>ジャンル：{plan.result["ジャンル"]}</p>
                         <p>単元名：{plan.result["単元名"]}</p>
                         <p>授業時間数：{plan.result["授業時間数"]}時間</p>
-                        <p>育てたい子どもの姿：{plan.result["育てたい子どもの姿"] || ""}</p>
                       </div>
 
                       <div
@@ -389,6 +409,22 @@ export default function HistoryPage() {
                         </ul>
                       </div>
 
+                      {/* 育てたい子どもの姿を評価の観点の下、言語活動の工夫の上に移動 */}
+                      <div
+                        style={{
+                          backgroundColor: "#fafafa",
+                          border: "1px solid #ddd",
+                          borderRadius: 8,
+                          padding: 12,
+                          marginTop: 12,
+                        }}
+                      >
+                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                          育てたい子どもの姿
+                        </div>
+                        <p>{plan.result["育てたい子どもの姿"] || ""}</p>
+                      </div>
+
                       <div
                         style={{
                           backgroundColor: "#fafafa",
@@ -430,7 +466,6 @@ export default function HistoryPage() {
                       </div>
                     </>
                   )}
-
                 </div>
 
                 <div
