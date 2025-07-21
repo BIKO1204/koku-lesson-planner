@@ -22,7 +22,7 @@ type EducationModel = {
   languageFocus: string;
   childFocus: string;
   updatedAt: string;
-  creatorName?: string;
+  creatorName?: string; // 作成者名（optional）
 };
 
 export default function EducationModelsPage() {
@@ -99,6 +99,7 @@ export default function EducationModelsPage() {
   const addToHistory = (model: EducationModel) => {
     const historyStr = localStorage.getItem("educationStylesHistory");
     let history: EducationModel[] = historyStr ? JSON.parse(historyStr) : [];
+    // 先頭に追加（重複チェックは簡易的に省略）
     history.unshift(model);
     localStorage.setItem("educationStylesHistory", JSON.stringify(history));
   };
@@ -242,7 +243,7 @@ export default function EducationModelsPage() {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  // Styles
+  // --- Styles ---
 
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
@@ -311,7 +312,7 @@ export default function EducationModelsPage() {
     cursor: "pointer",
     display: "block",
     width: "100%",
-    textAlign: "left",
+    textAlign: "left", // 左揃えに修正しました
   };
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
@@ -329,18 +330,18 @@ export default function EducationModelsPage() {
     padding: "72px 24px 24px",
     maxWidth: 900,
     margin: "auto",
-    fontFamily: "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'",
+    fontFamily: "sans-serif",
     backgroundColor: "#fff",
-    borderRadius: 12,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    borderRadius: 10,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
   };
   const cardStyle: React.CSSProperties = {
-    border: "1px solid #ddd",
-    borderRadius: 8,
+    border: "1px solid #ccc",
+    borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     backgroundColor: "white",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
   };
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -360,6 +361,7 @@ export default function EducationModelsPage() {
     cursor: "pointer",
     fontWeight: "bold",
   };
+
   const editSectionTitleStyle: React.CSSProperties = {
     fontWeight: "bold",
     fontSize: "1.1rem",

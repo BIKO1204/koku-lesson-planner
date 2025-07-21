@@ -389,12 +389,12 @@ const logoutButtonStyle: React.CSSProperties = {
 
 const mainStyle: React.CSSProperties = {
   padding: "2rem 1rem",
-  maxWidth: 900,  // ← 幅を720→900に拡大
+  maxWidth: 700,  // ← 最大幅を700pxに変更し狭く中央寄せ
   margin: "0 auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
   boxSizing: "border-box",
-  width: "100%",
+  width: "100%", // 幅は画面に応じて可変
 };
 
 const infoSectionStyle: React.CSSProperties = {
@@ -411,6 +411,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
+  maxWidth: 600, // 入力欄の最大幅600pxで狭く調整
   width: "100%",
   padding: 8,
   fontSize: "1rem",
