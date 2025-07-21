@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, ChangeEvent, FormEvent } from "react";
+import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { openDB } from "idb";
 import { signOut } from "next-auth/react";
@@ -640,17 +640,6 @@ export default function PracticeAddPage() {
                 {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
               </p>
 
-              {/* ←ここに「育てたい子どもの姿」を追加 */}
-              <p>
-                <strong>育てたい子どもの姿：</strong>
-                {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
-              </p>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>単元の目標：</strong>
-                <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
-              </div>
-
               <div style={{ marginTop: 8 }}>
                 <strong>評価の観点：</strong>
                 <div>
@@ -713,9 +702,21 @@ export default function PracticeAddPage() {
                 </div>
               </div>
 
+              {/* ★ここに「育てたい子どもの姿」を追加 */}
+              <p style={{ marginTop: 12 }}>
+                <strong>育てたい子どもの姿：</strong>
+                {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
+              </p>
+
+              {/* ★その直後に「言語活動の工夫」 */}
               <div style={{ marginTop: 8 }}>
                 <strong>言語活動の工夫：</strong>
                 <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <strong>単元の目標：</strong>
+                <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
               </div>
 
               <div style={{ marginTop: 8 }}>
@@ -891,17 +892,6 @@ export default function PracticeAddPage() {
                   {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
                 </p>
 
-                {/* ←ここに「育てたい子どもの姿」を追加 */}
-                <p>
-                  <strong>育てたい子どもの姿：</strong>
-                  {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
-                </p>
-
-                <div style={{ marginTop: 8 }}>
-                  <strong>単元の目標：</strong>
-                  <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
-                </div>
-
                 <div style={{ marginTop: 8 }}>
                   <strong>評価の観点：</strong>
                   <div>
@@ -964,9 +954,21 @@ export default function PracticeAddPage() {
                   </div>
                 </div>
 
+                {/* ★ここに「育てたい子どもの姿」を追加 */}
+                <p style={{ marginTop: 12 }}>
+                  <strong>育てたい子どもの姿：</strong>
+                  {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
+                </p>
+
+                {/* ★その直後に「言語活動の工夫」 */}
                 <div style={{ marginTop: 8 }}>
                   <strong>言語活動の工夫：</strong>
                   <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>単元の目標：</strong>
+                  <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
                 </div>
 
                 <div style={{ marginTop: 8 }}>
