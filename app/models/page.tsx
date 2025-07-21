@@ -96,7 +96,6 @@ export default function EducationModelsPage() {
     setError("");
   };
 
-  // --- 履歴用にlocalStorageに追加する関数 ---
   const addToHistory = (model: EducationModel) => {
     const historyStr = localStorage.getItem("educationStylesHistory");
     let history: EducationModel[] = historyStr ? JSON.parse(historyStr) : [];
@@ -167,7 +166,6 @@ export default function EducationModelsPage() {
         };
       }
 
-      // 履歴にも追加
       addToHistory(newModel);
 
       const updatedLocalModels = editId
@@ -364,7 +362,6 @@ export default function EducationModelsPage() {
     fontWeight: "bold",
   };
 
-  // 追加：編集モードの小見出しスタイル
   const editSectionTitleStyle: React.CSSProperties = {
     fontWeight: "bold",
     fontSize: "1.1rem",
