@@ -1,12 +1,26 @@
 "use client";
 
-import { useState, useEffect, CSSProperties, FormEvent } from "react";
+import React, { useState, useEffect, useRef, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { db } from "../firebaseConfig";
 import { doc, setDoc } from "firebase/firestore";
 import { useSession } from "next-auth/react";
+
+// ------------- 型エラー回避のためグローバル宣言 -------------
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+
+  interface SpeechRecognitionEvent extends Event {
+    readonly resultIndex: number;
+    readonly results: SpeechRecognitionResultList;
+  }
+}
+// ------------------------------------------------------------
 
 const EDIT_KEY = "editLessonPlan";
 
@@ -85,6 +99,10 @@ export default function ClientPlan() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // 音声入力関連
+  const [recordingTarget, setRecordingTarget] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
   useEffect(() => {
     const storedEdit = localStorage.getItem(EDIT_KEY);
     if (storedEdit) {
@@ -158,6 +176,92 @@ export default function ClientPlan() {
       })
       .catch(() => {});
   }, [grade, genre]);
+
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("このブラウザは音声認識に対応していません");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ja-JP";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const speechResult = event.results[0][0].transcript;
+      setRecordingTarget((target) => {
+        if (!target) return null;
+
+        if (target === "unitGoal") {
+          setUnitGoal((prev) => prev + speechResult);
+        } else if (target.startsWith("knowledge-")) {
+          const idx = Number(target.split("-")[1]);
+          setEvaluationPoints((prev) => {
+            const arr = [...prev.knowledge];
+            arr[idx] = (arr[idx] || "") + speechResult;
+            return { ...prev, knowledge: arr };
+          });
+        } else if (target.startsWith("thinking-")) {
+          const idx = Number(target.split("-")[1]);
+          setEvaluationPoints((prev) => {
+            const arr = [...prev.thinking];
+            arr[idx] = (arr[idx] || "") + speechResult;
+            return { ...prev, thinking: arr };
+          });
+        } else if (target.startsWith("attitude-")) {
+          const idx = Number(target.split("-")[1]);
+          setEvaluationPoints((prev) => {
+            const arr = [...prev.attitude];
+            arr[idx] = (arr[idx] || "") + speechResult;
+            return { ...prev, attitude: arr };
+          });
+        } else if (target === "childVision") {
+          setChildVision((prev) => prev + speechResult);
+        } else if (target === "languageActivities") {
+          setLanguageActivities((prev) => prev + speechResult);
+        } else if (target.startsWith("lessonPlan-")) {
+          const idx = Number(target.split("-")[1]);
+          setLessonPlanList((prev) => {
+            const arr = [...prev];
+            arr[idx] = (arr[idx] || "") + speechResult;
+            return arr;
+          });
+        } else if (target === "unit") {
+          setUnit((prev) => prev + speechResult);
+        } else if (target === "hours") {
+          const digits = speechResult.replace(/\D/g, "");
+          if (digits) setHours(digits);
+        }
+
+        return target;
+      });
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("音声認識エラー:", event.error);
+      setRecordingTarget(null);
+    };
+
+    recognition.onend = () => {
+      setRecordingTarget(null);
+    };
+
+    recognitionRef.current = recognition;
+  }, []);
+
+  const toggleRecording = (target: string) => {
+    if (!recognitionRef.current) return;
+
+    if (recordingTarget === target) {
+      recognitionRef.current.stop();
+      setRecordingTarget(null);
+    } else {
+      setRecordingTarget(target);
+      recognitionRef.current.start();
+    }
+  };
 
   const handleStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedStyleId(e.target.value);
@@ -320,6 +424,7 @@ ${languageActivities}
     }
   };
 
+  // Firestore保存 + GoogleDriveアップロード一括保存処理
   const uploadPdfToGoogleDrive = async (pdfBlob: Blob, fileName: string, accessToken: string) => {
     const metadata = {
       name: fileName,
@@ -462,6 +567,7 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
+  // PDFダウンロードのみ
   const handlePdfDownloadOnly = async () => {
     if (!parsedResult) {
       alert("まず授業案を生成してください");
@@ -504,104 +610,39 @@ ${languageActivities}
     marginBottom: "1rem",
   };
 
-  // ナビバー＆メニュー関連スタイル
-  const navBarStyle: CSSProperties = {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: 56,
-    backgroundColor: "#1976d2",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 1rem",
-    zIndex: 1000,
-  };
-  const hamburgerStyle: CSSProperties = {
-    cursor: "pointer",
-    width: 30,
-    height: 22,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  };
-  const barStyle: CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
-  const menuWrapperStyle: CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "calc(100vh - 56px)",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-  };
-  const menuScrollStyle: CSSProperties = {
-    flex: 1,
-    overflowY: "auto",
-    padding: "1rem",
-    paddingBottom: 0,
-  };
-  const logoutButtonStyle: CSSProperties = {
-    padding: "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-    position: "relative",
-    zIndex: 1000,
-  };
-
-  const overlayStyle: CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const navLinkStyle: CSSProperties = {
-    display: "block",
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    textDecoration: "none",
-    marginBottom: "0.5rem",
-  };
-
   return (
     <>
       {/* ナビバー */}
-      <nav style={navBarStyle}>
+      <nav style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: 56,
+        backgroundColor: "#1976d2",
+        display: "flex",
+        alignItems: "center",
+        padding: "0 1rem",
+        zIndex: 1000,
+      }}>
         <div
-          style={hamburgerStyle}
+          style={{
+            cursor: "pointer",
+            width: 30,
+            height: 22,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
           onClick={toggleMenu}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
         >
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
+          <span style={{ height: 4, backgroundColor: "white", borderRadius: 2 }}></span>
+          <span style={{ height: 4, backgroundColor: "white", borderRadius: 2 }}></span>
+          <span style={{ height: 4, backgroundColor: "white", borderRadius: 2 }}></span>
         </div>
         <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
           国語授業プランナー
@@ -610,54 +651,172 @@ ${languageActivities}
 
       {/* メニューオーバーレイ */}
       <div
-        style={overlayStyle}
+        style={{
+          position: "fixed",
+          top: 56,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(0,0,0,0.3)",
+          opacity: menuOpen ? 1 : 0,
+          visibility: menuOpen ? "visible" : "hidden",
+          transition: "opacity 0.3s ease",
+          zIndex: 998,
+        }}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
 
       {/* メニュー全体 */}
-      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+      <div
+        style={{
+          position: "fixed",
+          top: 56,
+          left: 0,
+          width: 250,
+          height: "calc(100vh - 56px)",
+          backgroundColor: "#f0f0f0",
+          boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+          transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.3s ease",
+          zIndex: 999,
+          display: "flex",
+          flexDirection: "column",
+        }}
+        aria-hidden={!menuOpen}
+      >
         {/* 固定表示のログアウトボタン */}
         <button
           onClick={() => {
             import("next-auth/react").then(({ signOut }) => signOut());
           }}
-          style={logoutButtonStyle}
+          style={{
+            padding: "0.75rem 1rem",
+            backgroundColor: "#e53935",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+            flexShrink: 0,
+            margin: "1rem",
+            position: "relative",
+            zIndex: 1000,
+          }}
         >
           🔓 ログアウト
         </button>
 
         {/* スクロール可能なリンク部分 */}
-        <div style={menuScrollStyle}>
-          <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "1rem",
+            paddingBottom: 0,
+          }}
+        >
+          <Link href="/" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
           </Link>
-          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/plan" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/plan/history" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/practice/history" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/practice/share" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
-          </Link>  
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          </Link>
+          <Link href="/models/create" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/models" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link href="/models/history" style={{
+            display: "block",
+            padding: "0.5rem 1rem",
+            backgroundColor: "#1976d2",
+            color: "white",
+            fontWeight: "bold",
+            borderRadius: 6,
+            textDecoration: "none",
+            marginBottom: "0.5rem",
+          }} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
       {/* メインコンテンツ */}
-      <main style={{ ...containerStyle, paddingTop: 56 }}>
+      <main style={{ maxWidth: 800, margin: "auto", padding: "1rem", paddingTop: 56 }}>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "1rem" }}>
             <label style={{ marginRight: "1rem" }}>
@@ -730,6 +889,13 @@ ${languageActivities}
               onChange={(e) => setUnit(e.target.value)}
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => toggleRecording("unit")}
+              style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >
+              {recordingTarget === "unit" ? "録音停止" : "音声入力"}
+            </button>
           </label>
 
           <label>
@@ -741,6 +907,13 @@ ${languageActivities}
               style={inputStyle}
               min={0}
             />
+            <button
+              type="button"
+              onClick={() => toggleRecording("hours")}
+              style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >
+              {recordingTarget === "hours" ? "録音停止" : "音声入力"}
+            </button>
           </label>
 
           <label>
@@ -751,6 +924,13 @@ ${languageActivities}
               rows={2}
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => toggleRecording("unitGoal")}
+              style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >
+              {recordingTarget === "unitGoal" ? "録音停止" : "音声入力"}
+            </button>
           </label>
 
           {(["knowledge", "thinking", "attitude"] as const).map((f) => (
@@ -772,7 +952,18 @@ ${languageActivities}
                     onChange={(e) => handleChangePoint(f, i, e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   />
-                  <button type="button" onClick={() => handleRemovePoint(f, i)}>
+                  <button
+                    type="button"
+                    onClick={() => toggleRecording(`${f}-${i}`)}
+                    style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+                  >
+                    {recordingTarget === `${f}-${i}` ? "録音停止" : "音声入力"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePoint(f, i)}
+                    style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+                  >
                     🗑
                   </button>
                 </div>
@@ -780,7 +971,14 @@ ${languageActivities}
               <button
                 type="button"
                 onClick={() => handleAddPoint(f)}
-                style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}
+                style={{
+                  backgroundColor: "#9C27B0",
+                  color: "white",
+                  padding: "0.5rem 1rem",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
               >
                 ＋ 追加
               </button>
@@ -795,6 +993,13 @@ ${languageActivities}
               rows={2}
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => toggleRecording("childVision")}
+              style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >
+              {recordingTarget === "childVision" ? "録音停止" : "音声入力"}
+            </button>
           </label>
 
           <label>
@@ -805,6 +1010,13 @@ ${languageActivities}
               rows={2}
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => toggleRecording("languageActivities")}
+              style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+            >
+              {recordingTarget === "languageActivities" ? "録音停止" : "音声入力"}
+            </button>
           </label>
 
           {hours && (
@@ -823,6 +1035,13 @@ ${languageActivities}
                     onChange={(e) => handleLessonChange(i, e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => toggleRecording(`lessonPlan-${i}`)}
+                    style={{ marginTop: 4, padding: "0.3rem 0.6rem", cursor: "pointer" }}
+                  >
+                    {recordingTarget === `lessonPlan-${i}` ? "録音停止" : "音声入力"}
+                  </button>
                 </div>
               ))}
             </div>
