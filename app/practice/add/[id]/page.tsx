@@ -526,7 +526,6 @@ export default function PracticeAddPage() {
                 onChange={(e) => setAuthor(e.target.value)}
                 required
                 style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
-                placeholder="例:作成者名"
               />
             </label>
           </div>
