@@ -542,7 +542,7 @@ export default function EducationModelsPage() {
                 marginBottom: 6,
               }}
             >
-              例）作成者名
+              例）〇〇　〇〇
             </div>
             <input
               type="text"
