@@ -481,7 +481,7 @@ export default function PracticeSharePage() {
     return result;
   };
 
-  // PDF生成関数（ここではUI未接続、必要に応じてボタンなどから呼び出し可能）
+  // PDF生成関数（ここで修正：ファイル名は単元名_実践記録_作成者名.pdf）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
 
@@ -501,10 +501,10 @@ export default function PracticeSharePage() {
       tempDiv.style.color = "#000";
       tempDiv.style.lineHeight = "1.6";
 
-      // ファイル名用単元名を安全化
+      // ファイル名用単元名・作成者名を安全化してファイル名生成
       const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
-      const timestamp = new Date().toISOString().replace(/T/, "_").replace(/:/g, "-").replace(/\..+/, "");
-      const filename = `${safeUnitName}_実践記録_${timestamp}.pdf`;
+      const safeAuthor = record.author ? record.author.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
+      const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
       // 該当授業案取得
       const plan = lessonPlans.find(p => p.id === record.lessonId);
