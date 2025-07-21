@@ -239,7 +239,7 @@ export default function HistoryPage() {
 
       {/* メインコンテンツ */}
       <main style={{ padding: "72px 24px 24px 24px", maxWidth: 960, margin: "auto" }}>
-        <h2>保存された授業案一覧</h2>
+        <h2 style={{ fontSize: "2rem", marginBottom: 16 }}>保存された授業案一覧</h2>
 
         <label style={{ display: "block", marginBottom: 16, textAlign: "right" }}>
           並び替え：
