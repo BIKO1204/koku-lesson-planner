@@ -368,13 +368,13 @@ const navLinkStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   marginBottom: 8,
   cursor: "pointer",
-  textAlign: "left",  // ← 左揃えに変更
+  textAlign: "left",
   width: "100%",
   boxSizing: "border-box",
 };
 
 const logoutButtonStyle: React.CSSProperties = {
-  margin: "1rem 0 1rem 0", // 上に余白追加
+  margin: "1rem 0 1rem 0",
   padding: "0.75rem 1rem",
   backgroundColor: "#e53935",
   color: "white",
@@ -389,12 +389,12 @@ const logoutButtonStyle: React.CSSProperties = {
 
 const mainStyle: React.CSSProperties = {
   padding: "2rem 1rem",
-  maxWidth: 700,  // ← 最大幅を700pxに変更し狭く中央寄せ
+  maxWidth: 800, // ここを800pxに設定
   margin: "0 auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
   boxSizing: "border-box",
-  width: "100%", // 幅は画面に応じて可変
+  width: "100%",
 };
 
 const infoSectionStyle: React.CSSProperties = {
@@ -411,7 +411,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  maxWidth: 600, // 入力欄の最大幅600pxで狭く調整
+  maxWidth: 800, // 入力欄も800pxに統一
   width: "100%",
   padding: 8,
   fontSize: "1rem",
