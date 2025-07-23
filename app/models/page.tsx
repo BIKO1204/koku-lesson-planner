@@ -243,6 +243,7 @@ export default function EducationModelsPage() {
     element.style.position = "static";
     element.style.left = "auto";
     element.style.width = "210mm";
+    element.style.maxWidth = "100%";
     element.style.padding = "20mm 15mm";
     element.style.backgroundColor = "white";
     element.style.color = "#222";
@@ -250,6 +251,8 @@ export default function EducationModelsPage() {
     element.style.fontSize = "14px";
     element.style.lineHeight = "1.7";
     element.style.boxSizing = "border-box";
+    element.style.wordBreak = "break-word";
+    element.style.whiteSpace = "pre-wrap";
 
     const sanitizeFileName = (name: string) =>
       name.replace(/[\\/:"*?<>|]+/g, "_");
@@ -262,7 +265,7 @@ export default function EducationModelsPage() {
       await html2pdf()
         .from(element)
         .set({
-          margin: 10,
+          margin: 15,
           filename,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         })
@@ -582,6 +585,7 @@ export default function EducationModelsPage() {
                   position: "absolute",
                   left: "-9999px",
                   width: "210mm",
+                  maxWidth: "100%",
                   padding: "20mm 15mm",
                   backgroundColor: "white",
                   color: "#222",
@@ -590,6 +594,8 @@ export default function EducationModelsPage() {
                   fontSize: 14,
                   lineHeight: 1.7,
                   boxSizing: "border-box",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
                 }}
               >
                 <h1

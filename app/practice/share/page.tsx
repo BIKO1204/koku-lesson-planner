@@ -1112,7 +1112,7 @@ export default function PracticeSharePage() {
                     }}
                     disabled={pdfGeneratingId === r.lessonId}
                   >
-                    {pdfGeneratingId === r.lessonId ? "PDF生成中..." : "PDF化"}
+                    {pdfGeneratingId === r.lessonId ? "PDF生成中..." : "PDF保存"}
                   </button>
 
                   {/* 授業案詳細 */}

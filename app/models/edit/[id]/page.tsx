@@ -42,7 +42,8 @@ export default function StyleDetailPage() {
   // --- データロード ---
   useEffect(() => {
     if (!id) return;
-    const styleModels = JSON.parse(localStorage.getItem("styleModels") || "[]");
+    // キーを "educationModels" に統一
+    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]");
     const foundStyle = styleModels.find((s: EducationModel) => s.id === id);
     if (foundStyle) {
       setStyle(foundStyle);
@@ -54,11 +55,13 @@ export default function StyleDetailPage() {
         childFocus: foundStyle.childFocus,
       });
     }
+    // 関連授業案は lessonPlans から
     const plans = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     const matchedPlans = plans.filter((p: any) => p.usedStyleName === foundStyle?.name);
     setRelatedPlans(matchedPlans);
 
-    const hist = JSON.parse(localStorage.getItem("educationStylesHistory") || "[]") as EducationHistory[];
+    // 履歴キーは "educationModelsHistory" に統一
+    const hist = JSON.parse(localStorage.getItem("educationModelsHistory") || "[]") as EducationHistory[];
     const filteredHist = hist.filter(h => h.id === id);
     setHistory(filteredHist);
   }, [id]);
@@ -95,15 +98,15 @@ export default function StyleDetailPage() {
       updatedAt: now,
     };
 
-    const styleModels = JSON.parse(localStorage.getItem("styleModels") || "[]");
+    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]");
     const updatedModels = styleModels.map((s: EducationModel) => (s.id === id ? updatedModel : s));
-    localStorage.setItem("styleModels", JSON.stringify(updatedModels));
+    localStorage.setItem("educationModels", JSON.stringify(updatedModels));
     setStyle(updatedModel);
 
     const newHistoryEntry: EducationHistory = { ...updatedModel, note: note.trim() || "（更新時にメモなし）" };
-    const prevHistory = JSON.parse(localStorage.getItem("educationStylesHistory") || "[]") as EducationHistory[];
+    const prevHistory = JSON.parse(localStorage.getItem("educationModelsHistory") || "[]") as EducationHistory[];
     const updatedHistory = [newHistoryEntry, ...prevHistory];
-    localStorage.setItem("educationStylesHistory", JSON.stringify(updatedHistory));
+    localStorage.setItem("educationModelsHistory", JSON.stringify(updatedHistory));
     setHistory(updatedHistory);
     setNote("");
 
