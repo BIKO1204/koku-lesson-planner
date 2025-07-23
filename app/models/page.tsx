@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useSession } from "next-auth/react";
@@ -15,6 +15,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import html2pdf from "html2pdf.js";
 
 type EducationModel = {
   id: string;
@@ -48,6 +49,9 @@ export default function EducationModelsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
 
+  // PDF用 refs をモデルごとに保持するため、Mapで管理
+  const pdfRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   useEffect(() => {
@@ -56,7 +60,10 @@ export default function EducationModelsPage() {
         const colRef = collection(db, "educationModels");
         const q = query(
           colRef,
-          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+          orderBy(
+            sortOrder === "newest" ? "updatedAt" : "name",
+            sortOrder === "newest" ? "desc" : "asc"
+          )
         );
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map((doc) => ({
@@ -217,7 +224,24 @@ export default function EducationModelsPage() {
     }
   };
 
-  // スタイルは必要に応じて調整してください
+  // PDF保存処理
+  const handlePdfSave = (id: string) => {
+    const element = pdfRefs.current.get(id);
+    if (!element) {
+      alert("PDF生成対象が見つかりません。");
+      return;
+    }
+    html2pdf()
+      .from(element)
+      .set({
+        margin: 10,
+        filename: `教育観モデル_${id}.pdf`,
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .save();
+  };
+
+  // --- Styles ---
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -315,6 +339,7 @@ export default function EducationModelsPage() {
     marginBottom: 24,
     backgroundColor: "white",
     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+    position: "relative",
   };
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -510,30 +535,71 @@ export default function EducationModelsPage() {
                 更新日時: {new Date(m.updatedAt).toLocaleString()}
               </p>
 
-              {/* 編集・削除ボタンは作成者本人のみ表示 */}
-              {m.creatorId === userId && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    marginTop: 16,
-                    flexWrap: "wrap",
-                  }}
+              {/* PDF保存用の非表示DOM */}
+              <div
+                ref={(el) => {
+                  if (el) {
+                    pdfRefs.current.set(m.id, el);
+                  } else {
+                    pdfRefs.current.delete(m.id);
+                  }
+                }}
+                style={{
+                  position: "absolute",
+                  left: "-9999px",
+                  width: "210mm",
+                  padding: "10mm",
+                  backgroundColor: "white",
+                  color: "black",
+                }}
+              >
+                <h1>{m.name}</h1>
+                <p><strong>作成者：</strong> {m.creatorName}</p>
+                <h2>教育観</h2>
+                <p>{m.philosophy}</p>
+                <h2>評価観点の重視点</h2>
+                <p>{m.evaluationFocus}</p>
+                <h2>言語活動の重視点</h2>
+                <p>{m.languageFocus}</p>
+                <h2>育てたい子どもの姿</h2>
+                <p>{m.childFocus}</p>
+              </div>
+
+              {/* ボタン群 */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 16,
+                  flexWrap: "wrap",
+                }}
+              >
+                {m.creatorId === userId && (
+                  <>
+                    <button onClick={() => startEdit(m)} style={buttonPrimary}>
+                      編集
+                    </button>
+                    <button
+                      onClick={() => handleDelete(m.id)}
+                      style={{ ...buttonPrimary, backgroundColor: "#e53935" }}
+                    >
+                      削除
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => handlePdfSave(m.id)}
+                  style={{ ...buttonPrimary, backgroundColor: "#ff9800" }}
                 >
-                  <button
-                    onClick={() => startEdit(m)}
-                    style={buttonPrimary}
-                  >
-                    編集
-                  </button>
-                  <button
-                    onClick={() => handleDelete(m.id)}
-                    style={{ ...buttonPrimary, backgroundColor: "#e53935" }}
-                  >
-                    削除
-                  </button>
-                </div>
-              )}
+                  PDF保存
+                </button>
+                <button
+                  onClick={() => router.push(`/plan?styleId=${m.id}`)}
+                  style={{ ...buttonPrimary, backgroundColor: "#2196f3" }}
+                >
+                  このモデルで授業案を作成
+                </button>
+              </div>
 
               {/* 編集フォーム */}
               {editId === m.id && (
