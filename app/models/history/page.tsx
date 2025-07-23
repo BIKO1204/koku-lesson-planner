@@ -3,9 +3,9 @@
 import React, { useState, useEffect, CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
-import { collection, query, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type EducationHistory = {
@@ -18,6 +18,7 @@ type EducationHistory = {
   languageFocus: string;
   childFocus: string;
   note?: string;
+  creatorId: string; // 追加：作成者ID
 };
 
 type GroupedHistory = {
@@ -27,6 +28,8 @@ type GroupedHistory = {
 };
 
 export default function GroupedHistoryPage() {
+  const { data: session } = useSession();
+  const userId = session?.user?.email || "";
   const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
@@ -34,9 +37,17 @@ export default function GroupedHistoryPage() {
 
   useEffect(() => {
     async function fetchAndGroup() {
+      if (!userId) {
+        setGroupedHistories([]);
+        return;
+      }
       try {
         const colRef = collection(db, "educationModelsHistory");
-        const q = query(colRef, orderBy("updatedAt", "desc"));
+        const q = query(
+          colRef,
+          where("creatorId", "==", userId),
+          orderBy("updatedAt", "desc")
+        );
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -63,7 +74,7 @@ export default function GroupedHistoryPage() {
       }
     }
     fetchAndGroup();
-  }, []);
+  }, [userId]);
 
   const toggleExpand = (modelId: string) => {
     setExpandedIds((prev) => {
@@ -77,7 +88,6 @@ export default function GroupedHistoryPage() {
     });
   };
 
-  // 日付フォーマット関数
   function formatDateTime(dateString: string): string {
     const d = new Date(dateString);
     const yyyy = d.getFullYear();
@@ -88,7 +98,6 @@ export default function GroupedHistoryPage() {
     return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
   }
 
-  // 差分チェック（簡易：前回と違ったらtrue）
   function isChanged(current: string, prev: string | undefined): boolean {
     return prev === undefined || current.trim() !== prev.trim();
   }
@@ -165,13 +174,12 @@ export default function GroupedHistoryPage() {
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴</h1>
+        <h1 style={titleStyle}>🕒 教育観モデル履歴（本人のみ表示）</h1>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
-            // historiesは新着順。差分比較用に逆順にして前履歴を取得しやすく
             const historiesAsc = [...histories].reverse();
 
             return (
