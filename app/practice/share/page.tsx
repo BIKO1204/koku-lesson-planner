@@ -77,11 +77,11 @@ export default function PracticeSharePage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
 
-  // コメント入力管理（UI用、PDF生成には不使用）
+  // コメント入力管理（UI用）
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
-  // コメント編集管理（PDFには無関係）
+  // コメント編集管理
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
@@ -107,7 +107,7 @@ export default function PracticeSharePage() {
         lessonId: doc.id,
         likedUsers: (doc.data() as any).likedUsers || [],
         author: (doc.data() as any).author || "",
-        authorName: (doc.data() as any).authorName || "", // 追加
+        authorName: (doc.data() as any).authorName || "",
         pdfUrl: (doc.data() as any).pdfUrl || "",
         pdfName: (doc.data() as any).pdfName || "",
         createdAt: (doc.data() as any).createdAt || "",
@@ -150,7 +150,7 @@ export default function PracticeSharePage() {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
-    if (authorFilter && !r.authorName?.includes(authorFilter)) return false; // author → authorName に変更
+    if (authorFilter && !r.authorName?.includes(authorFilter)) return false;
     return true;
   });
 
@@ -324,12 +324,10 @@ export default function PracticeSharePage() {
       alert("対象の実践案が見つかりません");
       return;
     }
-
-    if (record.author !== session.user.email) {
-      alert("PDFのアップロードは投稿者のみ許可されています");
+    if (record.author !== userId) {
+      alert("PDFのアップロードは投稿者のみ可能です");
       return;
     }
-
     setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
@@ -362,12 +360,10 @@ export default function PracticeSharePage() {
       alert("対象の実践案が見つかりません");
       return;
     }
-
-    if (record.author !== session.user.email) {
-      alert("PDFの削除は投稿者のみ許可されています");
+    if (record.author !== userId) {
+      alert("PDFの削除は投稿者のみ可能です");
       return;
     }
-
     if (!pdfName) {
       alert("PDFファイル名がありません");
       return;
@@ -394,7 +390,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 実践案削除時にPDFも削除（作成者のみ許可）
+  // 実践案削除時にPDFも削除（投稿者のみ許可）
   const handleDeleteRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -413,13 +409,10 @@ export default function PracticeSharePage() {
 
     setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
-      // PDFファイルがあればStorageから削除
       if (record.pdfName) {
         const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${record.pdfName}`);
         await deleteObject(pdfRef);
       }
-
-      // Firestoreドキュメント削除
       const docRef = doc(db, "practiceRecords", lessonId);
       await deleteDoc(docRef);
 
@@ -1257,7 +1250,7 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* PDFアップロード・表示・削除 */}
+                  {/* PDFアップロード・表示・削除（投稿者のみ許可） */}
                   <div style={{ marginTop: 12 }}>
                     {r.pdfUrl ? (
                       <>
@@ -1298,7 +1291,7 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 実践案削除ボタン（作成者のみ表示） */}
+                  {/* 実践案削除ボタン（投稿者のみ表示） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
