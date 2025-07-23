@@ -313,7 +313,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDFアップロード処理（ログインユーザー全員が可能）
+  // PDFアップロード処理（投稿者のみ許可）
   const handlePdfUpload = async (lessonId: string, file: File) => {
     if (!session) {
       alert("ログインしてください");
@@ -324,6 +324,12 @@ export default function PracticeSharePage() {
       alert("対象の実践案が見つかりません");
       return;
     }
+
+    if (record.author !== session.user.email) {
+      alert("PDFのアップロードは投稿者のみ許可されています");
+      return;
+    }
+
     setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
@@ -345,7 +351,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDF削除処理（ログインユーザー全員が可能）
+  // PDF削除処理（投稿者のみ許可）
   const handleDeletePdf = async (lessonId: string, pdfName?: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -356,6 +362,12 @@ export default function PracticeSharePage() {
       alert("対象の実践案が見つかりません");
       return;
     }
+
+    if (record.author !== session.user.email) {
+      alert("PDFの削除は投稿者のみ許可されています");
+      return;
+    }
+
     if (!pdfName) {
       alert("PDFファイル名がありません");
       return;
@@ -1257,24 +1269,26 @@ export default function PracticeSharePage() {
                         >
                           📄 {r.pdfName || "PDFを見る"}
                         </a>
-                        <button
-                          onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
-                          disabled={uploadingPdfIds.includes(r.lessonId)}
-                          style={{
-                            marginLeft: 8,
-                            backgroundColor: "#e53935",
-                            color: "white",
-                            borderRadius: 4,
-                            cursor: "pointer",
-                            border: "none",
-                            padding: "4px 8px",
-                          }}
-                        >
-                          PDF削除
-                        </button>
+                        {isAuthor && (
+                          <button
+                            onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
+                            disabled={uploadingPdfIds.includes(r.lessonId)}
+                            style={{
+                              marginLeft: 8,
+                              backgroundColor: "#e53935",
+                              color: "white",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                              border: "none",
+                              padding: "4px 8px",
+                            }}
+                          >
+                            PDF削除
+                          </button>
+                        )}
                       </>
                     ) : (
-                      session && (
+                      isAuthor && (
                         <PdfFileInput
                           lessonId={r.lessonId}
                           uploading={uploadingPdfIds.includes(r.lessonId)}
