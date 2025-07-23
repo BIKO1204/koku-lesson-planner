@@ -37,7 +37,6 @@ export default function EducationModelsPage() {
   const userId = session?.user?.email || "";
   const userName = session?.user?.name || "名無し";
 
-  // モデル一覧は表示しないのでstateだけ残し、fetchは続行（履歴などで使う想定）
   const [models, setModels] = useState<EducationModel[]>([]);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -46,7 +45,7 @@ export default function EducationModelsPage() {
     evaluationFocus: "",
     languageFocus: "",
     childFocus: "",
-    creatorName: userName, // 初期値はログインユーザー名
+    creatorName: userName,
   });
   const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -54,14 +53,12 @@ export default function EducationModelsPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [btnPressed, setBtnPressed] = useState(false);
 
-  // userNameが変わったりeditIdがnull（新規作成）になったらフォームの作成者名にuserNameをセット
   useEffect(() => {
     if (!editId) {
       setForm((prev) => ({ ...prev, creatorName: userName }));
     }
   }, [userName, editId]);
 
-  // Firestoreから自分の作成モデルだけ取得（モデル一覧表示はしないがローカル保存のためにfetch継続）
   useEffect(() => {
     if (!userId) {
       setModels([]);
@@ -73,7 +70,10 @@ export default function EducationModelsPage() {
         const q = query(
           colRef,
           where("creatorId", "==", userId),
-          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+          orderBy(
+            sortOrder === "newest" ? "updatedAt" : "name",
+            sortOrder === "newest" ? "desc" : "asc"
+          )
         );
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map((doc) => ({
@@ -81,7 +81,6 @@ export default function EducationModelsPage() {
           ...(doc.data() as Omit<EducationModel, "id">),
         }));
         setModels(data);
-        // 履歴ページと同じキー名でローカル保存
         localStorage.setItem("educationStylesHistory", JSON.stringify(data));
       } catch (e) {
         console.error("Firestore読み込みエラー:", e);
@@ -150,6 +149,7 @@ export default function EducationModelsPage() {
       let newModel: EducationModel;
 
       if (editId) {
+        // 既存モデルの更新
         const docRef = doc(db, "educationModels", editId);
         await updateDoc(docRef, {
           name: form.name.trim(),
@@ -161,6 +161,21 @@ export default function EducationModelsPage() {
           creatorId: userId,
           updatedAt: now,
         });
+
+        // 履歴コレクションに編集履歴を追加
+        await addDoc(collection(db, "educationModelsHistory"), {
+          modelId: editId,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
+          creatorId: userId,
+          updatedAt: now,
+          note: "編集",
+        });
+
         newModel = {
           id: editId,
           name: form.name.trim(),
@@ -173,6 +188,7 @@ export default function EducationModelsPage() {
           updatedAt: now,
         };
       } else {
+        // 新規モデル作成
         const colRef = collection(db, "educationModels");
         const docRef = await addDoc(colRef, {
           name: form.name.trim(),
@@ -184,6 +200,21 @@ export default function EducationModelsPage() {
           creatorId: userId,
           updatedAt: now,
         });
+
+        // 履歴コレクションに新規作成履歴を追加
+        await addDoc(collection(db, "educationModelsHistory"), {
+          modelId: docRef.id,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
+          creatorId: userId,
+          updatedAt: now,
+          note: "新規作成",
+        });
+
         newModel = {
           id: docRef.id,
           name: form.name.trim(),
@@ -201,8 +232,10 @@ export default function EducationModelsPage() {
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
 
-      // ここもキーを履歴ページと合わせて保存
-      localStorage.setItem("educationStylesHistory", JSON.stringify(updatedLocalModels));
+      localStorage.setItem(
+        "educationStylesHistory",
+        JSON.stringify(updatedLocalModels)
+      );
       setModels(updatedLocalModels);
 
       cancelEdit();
