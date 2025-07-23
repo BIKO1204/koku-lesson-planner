@@ -3,7 +3,7 @@
 import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { openDB } from "idb";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
@@ -135,6 +135,7 @@ async function uploadImageToStorage(base64: string, fileName: string): Promise<s
 export default function PracticeAddPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
+  const { data: session } = useSession();
 
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
@@ -153,7 +154,7 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // ナビバーとメニューのスタイル
+  // --- スタイル ---
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -209,8 +210,6 @@ export default function PracticeAddPage() {
     flexGrow: 1,
     padding: "1rem",
   };
-
-  // メニュー内ボタンのスタイル（文字左揃え）
   const navBtnStyle: React.CSSProperties = {
     marginBottom: 8,
     padding: "0.5rem 1rem",
@@ -221,9 +220,8 @@ export default function PracticeAddPage() {
     cursor: "pointer",
     display: "block",
     width: "100%",
-    textAlign: "left", // ← 左揃え
+    textAlign: "left",
   };
-
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
     top: 56,
@@ -244,6 +242,7 @@ export default function PracticeAddPage() {
     paddingTop: 72,
   };
 
+  // --- 初期処理 ---
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -283,6 +282,7 @@ export default function PracticeAddPage() {
     });
   }, [id]);
 
+  // --- 画像アップロード処理 ---
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -307,11 +307,13 @@ export default function PracticeAddPage() {
     e.target.value = "";
   };
 
+  // --- 画像削除 ---
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
   };
 
+  // --- プレビュー作成 ---
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
     setRecord({
@@ -327,12 +329,19 @@ export default function PracticeAddPage() {
     });
   };
 
+  // --- IndexedDBに保存 ---
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
+  // --- Firestoreに保存 ---
   async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
+    if (!session?.user?.email) {
+      alert("ログインが必要です。");
+      throw new Error("Not logged in");
+    }
+
     const uploadedUrls: BoardImage[] = await Promise.all(
       record.compressedImages.map(async (img) => {
         const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
@@ -346,7 +355,7 @@ export default function PracticeAddPage() {
       reflection: record.reflection,
       boardImages: uploadedUrls,
       lessonTitle: record.lessonTitle,
-      author: record.author || "",
+      author: session.user.email, // ログインユーザーのメールで上書き
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
@@ -354,6 +363,7 @@ export default function PracticeAddPage() {
     });
   }
 
+  // --- 保存処理（IndexedDB + Firestore） ---
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -953,13 +963,11 @@ export default function PracticeAddPage() {
                   </div>
                 </div>
 
-                {/* ★ここに「育てたい子どもの姿」を追加 */}
                 <p style={{ marginTop: 12 }}>
                   <strong>育てたい子どもの姿：</strong>
                   {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
                 </p>
 
-                {/* ★その直後に「言語活動の工夫」 */}
                 <div style={{ marginTop: 8 }}>
                   <strong>言語活動の工夫：</strong>
                   <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
