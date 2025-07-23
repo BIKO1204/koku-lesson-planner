@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useEffect, CSSProperties } from "react";
+import React, { useState, useEffect, CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 
+import { collection, query, orderBy, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
 type EducationHistory = {
   id: string;
+  modelId: string;
   updatedAt: string;
   name: string;
   philosophy: string;
@@ -16,32 +20,47 @@ type EducationHistory = {
   note?: string;
 };
 
+// タイムラインの1履歴アイテムコンポーネント
+function TimelineItem({ item }: { item: EducationHistory }) {
+  return (
+    <div style={timelineItemStyle}>
+      <div style={circleStyle} />
+      <time style={timeStyle}>{new Date(item.updatedAt).toLocaleDateString()}</time>
+      <h3 style={timelineTitleStyle}>{item.name}</h3>
+      {item.note && <p style={noteStyle}>{item.note}</p>}
+      <p style={fieldStyle}><strong>教育観：</strong> {item.philosophy}</p>
+      <p style={fieldStyle}><strong>評価観点：</strong> {item.evaluationFocus}</p>
+      <p style={fieldStyle}><strong>言語活動：</strong> {item.languageFocus}</p>
+      <p style={fieldStyle}><strong>育てたい姿：</strong> {item.childFocus}</p>
+    </div>
+  );
+}
+
 export default function EducationHistoryPage() {
   const [history, setHistory] = useState<EducationHistory[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
 
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
+
   useEffect(() => {
-    try {
-      // キー名を「educationStylesHistory」に統一
-      const stored = localStorage.getItem("educationStylesHistory");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setHistory(parsed);
-        } else {
-          setHistory([]);
-        }
-      } else {
+    async function fetchHistory() {
+      try {
+        const colRef = collection(db, "educationModelsHistory");
+        const q = query(colRef, orderBy("updatedAt", "desc"));
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<EducationHistory, "id">),
+        }));
+        setHistory(data);
+      } catch (e) {
+        console.error("Firestore履歴読み込みエラー", e);
         setHistory([]);
       }
-    } catch (e) {
-      console.error("localStorage読み込みエラー", e);
-      setHistory([]);
     }
+    fetchHistory();
   }, []);
-
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   return (
     <>
@@ -138,35 +157,14 @@ export default function EducationHistoryPage() {
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴</h1>
+        <h1 style={titleStyle}>🕒 教育観モデル履歴（タイムライン表示）</h1>
 
         {history.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
-          <div style={listStyle}>
-            {history.map((v) => (
-              <article key={v.id + v.updatedAt} style={cardStyle}>
-                <header style={cardHeaderStyle}>
-                  <time style={dateStyle}>
-                    {new Date(v.updatedAt).toLocaleString()}
-                  </time>
-                  {v.note && <span style={noteStyle}>{v.note}</span>}
-                </header>
-                <h2 style={cardTitleStyle}>{v.name}</h2>
-                <p style={fieldStyle}>
-                  <strong>教育観：</strong> {v.philosophy}
-                </p>
-                <p style={fieldStyle}>
-                  <strong>評価観点：</strong> {v.evaluationFocus}
-                </p>
-                <p style={fieldStyle}>
-                  <strong>言語活動：</strong> {v.languageFocus}
-                </p>
-                <p style={fieldStyle}>
-                  <strong>育てたい姿：</strong> {v.childFocus}
-                </p>
-                {/* 編集ボタンは削除しました */}
-              </article>
+          <div style={timelineContainerStyle}>
+            {history.map((item) => (
+              <TimelineItem key={item.id} item={item} />
             ))}
           </div>
         )}
@@ -265,7 +263,7 @@ const mainStyle: CSSProperties = {
   maxWidth: 800,
   margin: "0 auto",
   fontFamily: "sans-serif",
-  paddingTop: 80, // ナビバー分の余白
+  paddingTop: 80,
 };
 
 const titleStyle: CSSProperties = {
@@ -274,54 +272,53 @@ const titleStyle: CSSProperties = {
   textAlign: "center",
 };
 
-const listStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: 16,
-};
-
-const cardStyle: CSSProperties = {
-  backgroundColor: "#fafafa",
-  borderRadius: 8,
-  boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-  padding: 16,
-  display: "flex",
-  flexDirection: "column",
-};
-
-const cardHeaderStyle: CSSProperties = {
-  marginBottom: 8,
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  fontSize: "0.9rem",
-};
-
-const dateStyle: CSSProperties = {
-  color: "#555",
-};
-
-const noteStyle: CSSProperties = {
-  backgroundColor: "#ffeb3b",
-  borderRadius: 4,
-  padding: "0 6px",
-  fontSize: "0.85rem",
-};
-
-const cardTitleStyle: CSSProperties = {
-  fontSize: "1.2rem",
-  margin: "0 0 8px",
-};
-
-const fieldStyle: CSSProperties = {
-  fontSize: "0.95rem",
-  margin: "4px 0",
-  lineHeight: 1.4,
-  flexGrow: 1,
-};
-
 const emptyStyle: CSSProperties = {
   padding: 24,
   textAlign: "center",
   color: "#666",
+};
+
+const timelineContainerStyle: CSSProperties = {
+  borderLeft: "3px solid #1976d2",
+  paddingLeft: 20,
+};
+
+const timelineItemStyle: CSSProperties = {
+  marginBottom: 32,
+  position: "relative",
+};
+
+const circleStyle: CSSProperties = {
+  position: "absolute",
+  left: -12,
+  top: 6,
+  width: 18,
+  height: 18,
+  borderRadius: "50%",
+  backgroundColor: "#1976d2",
+};
+
+const timeStyle: CSSProperties = {
+  fontSize: 12,
+  color: "#555",
+  marginBottom: 4,
+};
+
+const timelineTitleStyle: CSSProperties = {
+  margin: "4px 0 6px",
+  fontSize: 18,
+  fontWeight: "bold",
+};
+
+const noteStyle: CSSProperties = {
+  fontSize: 14,
+  fontStyle: "italic",
+  color: "#888",
+  marginBottom: 8,
+};
+
+const fieldStyle: CSSProperties = {
+  fontSize: 14,
+  marginBottom: 4,
+  lineHeight: 1.5,
 };
