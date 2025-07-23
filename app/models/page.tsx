@@ -224,7 +224,7 @@ export default function EducationModelsPage() {
     }
   };
 
-  // 修正済みPDF保存処理
+  // PDF保存処理（視覚的に分かりやすいスタイルを適用）
   const handlePdfSave = async (id: string) => {
     const element = pdfRefs.current.get(id);
     if (!element) {
@@ -237,17 +237,19 @@ export default function EducationModelsPage() {
       return;
     }
 
-    // 元のスタイルを保存
     const originalStyle = element.style.cssText;
 
-    // 一時的に画面内に表示
+    // PDF向けにスタイル調整
     element.style.position = "static";
     element.style.left = "auto";
     element.style.width = "210mm";
-    element.style.padding = "10mm";
+    element.style.padding = "20mm 15mm";
     element.style.backgroundColor = "white";
-    element.style.color = "black";
-    element.style.zIndex = "10000";
+    element.style.color = "#222";
+    element.style.fontFamily = "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif";
+    element.style.fontSize = "14px";
+    element.style.lineHeight = "1.7";
+    element.style.boxSizing = "border-box";
 
     const sanitizeFileName = (name: string) =>
       name.replace(/[\\/:"*?<>|]+/g, "_");
@@ -269,7 +271,6 @@ export default function EducationModelsPage() {
       alert("PDFの生成に失敗しました。");
       console.error(e);
     } finally {
-      // 元のスタイルに戻す
       element.style.cssText = originalStyle;
     }
   };
@@ -581,23 +582,102 @@ export default function EducationModelsPage() {
                   position: "absolute",
                   left: "-9999px",
                   width: "210mm",
-                  padding: "10mm",
+                  padding: "20mm 15mm",
                   backgroundColor: "white",
-                  color: "black",
+                  color: "#222",
+                  fontFamily:
+                    "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
+                  fontSize: 14,
+                  lineHeight: 1.7,
+                  boxSizing: "border-box",
                 }}
               >
-                <h1>{m.name}</h1>
-                <p>
-                  <strong>作成者：</strong> {m.creatorName}
+                <h1
+                  style={{
+                    fontSize: 28,
+                    fontWeight: "bold",
+                    marginBottom: 24,
+                    borderBottom: "2px solid #1976d2",
+                    paddingBottom: 8,
+                    color: "#1976d2",
+                  }}
+                >
+                  {m.name}
+                </h1>
+                <p
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "600",
+                    marginBottom: 12,
+                    color: "#555",
+                  }}
+                >
+                  作成者：{m.creatorName}
                 </p>
-                <h2>教育観</h2>
-                <p>{m.philosophy}</p>
-                <h2>評価観点の重視点</h2>
-                <p>{m.evaluationFocus}</p>
-                <h2>言語活動の重視点</h2>
-                <p>{m.languageFocus}</p>
-                <h2>育てたい子どもの姿</h2>
-                <p>{m.childFocus}</p>
+
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{
+                      fontSize: 20,
+                      fontWeight: "bold",
+                      marginBottom: 12,
+                      borderBottom: "1px solid #ccc",
+                      paddingBottom: 6,
+                      color: "#1565c0",
+                    }}
+                  >
+                    教育観
+                  </h2>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{m.philosophy}</p>
+                </section>
+
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{
+                      fontSize: 20,
+                      fontWeight: "bold",
+                      marginBottom: 12,
+                      borderBottom: "1px solid #ccc",
+                      paddingBottom: 6,
+                      color: "#1565c0",
+                    }}
+                  >
+                    評価観点の重視点
+                  </h2>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{m.evaluationFocus}</p>
+                </section>
+
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{
+                      fontSize: 20,
+                      fontWeight: "bold",
+                      marginBottom: 12,
+                      borderBottom: "1px solid #ccc",
+                      paddingBottom: 6,
+                      color: "#1565c0",
+                    }}
+                  >
+                    言語活動の重視点
+                  </h2>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{m.languageFocus}</p>
+                </section>
+
+                <section style={{ marginBottom: 24 }}>
+                  <h2
+                    style={{
+                      fontSize: 20,
+                      fontWeight: "bold",
+                      marginBottom: 12,
+                      borderBottom: "1px solid #ccc",
+                      paddingBottom: 6,
+                      color: "#1565c0",
+                    }}
+                  >
+                    育てたい子どもの姿
+                  </h2>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{m.childFocus}</p>
+                </section>
               </div>
 
               {/* ボタン群 */}
