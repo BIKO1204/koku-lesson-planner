@@ -165,12 +165,7 @@ export default function EducationHistoryPage() {
                 <p style={fieldStyle}>
                   <strong>育てたい姿：</strong> {v.childFocus}
                 </p>
-                <button
-                  onClick={() => router.push(`/models/edit/${v.id}`)}
-                  style={editButtonStyle}
-                >
-                  ✏️ このバージョンを編集
-                </button>
+                {/* 編集ボタンは削除しました */}
               </article>
             ))}
           </div>
@@ -323,17 +318,6 @@ const fieldStyle: CSSProperties = {
   margin: "4px 0",
   lineHeight: 1.4,
   flexGrow: 1,
-};
-
-const editButtonStyle: CSSProperties = {
-  marginTop: 12,
-  backgroundColor: "#4CAF50",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  padding: "8px 12px",
-  fontSize: "0.95rem",
-  cursor: "pointer",
 };
 
 const emptyStyle: CSSProperties = {

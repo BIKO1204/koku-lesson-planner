@@ -152,6 +152,21 @@ export default function EducationModelsPage() {
           updatedAt: now,
           creatorId: userId,
         });
+
+        // 履歴コレクションに編集履歴を追加
+        await addDoc(collection(db, "educationModelsHistory"), {
+          modelId: editId,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
+          updatedAt: now,
+          creatorId: userId,
+          note: "編集",
+        });
+
         newModel = {
           id: editId,
           name: form.name.trim(),
@@ -175,6 +190,21 @@ export default function EducationModelsPage() {
           updatedAt: now,
           creatorId: userId,
         });
+
+        // 履歴コレクションに新規作成履歴を追加
+        await addDoc(collection(db, "educationModelsHistory"), {
+          modelId: docRef.id,
+          name: form.name.trim(),
+          philosophy: form.philosophy.trim(),
+          evaluationFocus: form.evaluationFocus.trim(),
+          languageFocus: form.languageFocus.trim(),
+          childFocus: form.childFocus.trim(),
+          creatorName: form.creatorName.trim(),
+          updatedAt: now,
+          creatorId: userId,
+          note: "新規作成",
+        });
+
         newModel = {
           id: docRef.id,
           name: form.name.trim(),
@@ -224,7 +254,6 @@ export default function EducationModelsPage() {
     }
   };
 
-  // PDF保存処理（視覚的に分かりやすいスタイルを適用）
   const handlePdfSave = async (id: string) => {
     const element = pdfRefs.current.get(id);
     if (!element) {
@@ -239,7 +268,6 @@ export default function EducationModelsPage() {
 
     const originalStyle = element.style.cssText;
 
-    // PDF向けにスタイル調整
     element.style.position = "static";
     element.style.left = "auto";
     element.style.width = "210mm";
@@ -247,7 +275,8 @@ export default function EducationModelsPage() {
     element.style.padding = "20mm 15mm";
     element.style.backgroundColor = "white";
     element.style.color = "#222";
-    element.style.fontFamily = "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif";
+    element.style.fontFamily =
+      "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif";
     element.style.fontSize = "14px";
     element.style.lineHeight = "1.7";
     element.style.boxSizing = "border-box";
@@ -572,7 +601,7 @@ export default function EducationModelsPage() {
                 更新日時: {new Date(m.updatedAt).toLocaleString()}
               </p>
 
-              {/* PDF保存用の非表示DOM */}
+              {/* PDF保存用非表示DOM */}
               <div
                 ref={(el) => {
                   if (el) {
