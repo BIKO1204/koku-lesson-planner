@@ -165,7 +165,7 @@ export default function GroupedHistoryPage() {
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴（モデルごとにまとめて表示）</h1>
+        <h1 style={titleStyle}>🕒 教育観モデル履歴</h1>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
@@ -237,7 +237,7 @@ export default function GroupedHistoryPage() {
                                 : undefined,
                             }}
                           >
-                            <strong>育てたい姿：</strong> {h.childFocus}
+                            <strong>育てたい子どもの姿：</strong> {h.childFocus}
                           </p>
                         </article>
                       );

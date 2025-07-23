@@ -595,7 +595,7 @@ export default function EducationModelsPage() {
                 <strong>言語活動：</strong> {m.languageFocus}
               </p>
               <p>
-                <strong>育てたい子ども：</strong> {m.childFocus}
+                <strong>育てたい子どもの姿：</strong> {m.childFocus}
               </p>
               <p style={{ fontSize: "0.8rem", color: "#666" }}>
                 更新日時: {new Date(m.updatedAt).toLocaleString()}
