@@ -45,7 +45,7 @@ export default function EducationModelsPage() {
     evaluationFocus: "",
     languageFocus: "",
     childFocus: "",
-    creatorName: "",
+    creatorName: userName, // 初期値はログインユーザー名
   });
   const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,20 +53,14 @@ export default function EducationModelsPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [btnPressed, setBtnPressed] = useState(false);
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
+  // userNameが変わったりeditIdがnull（新規作成）になったらフォームの作成者名にuserNameをセット
+  useEffect(() => {
+    if (!editId) {
+      setForm((prev) => ({ ...prev, creatorName: userName }));
+    }
+  }, [userName, editId]);
 
-  const addToHistory = (model: EducationModel) => {
-    const key = "educationStylesHistory";
-    const stored = localStorage.getItem(key);
-    let history: EducationModel[] = stored ? JSON.parse(stored) : [];
-
-    history = history.filter((item) => item.id !== model.id);
-    history.unshift(model);
-    if (history.length > 50) history = history.slice(0, 50);
-
-    localStorage.setItem(key, JSON.stringify(history));
-  };
-
+  // Firestoreから自分の作成モデルだけ取得
   useEffect(() => {
     if (!userId) {
       setModels([]);
@@ -78,10 +72,7 @@ export default function EducationModelsPage() {
         const q = query(
           colRef,
           where("creatorId", "==", userId),
-          orderBy(
-            sortOrder === "newest" ? "updatedAt" : "name",
-            sortOrder === "newest" ? "desc" : "asc"
-          )
+          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
         );
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map((doc) => ({
@@ -96,6 +87,8 @@ export default function EducationModelsPage() {
     }
     fetchModels();
   }, [sortOrder, userId]);
+
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -124,7 +117,7 @@ export default function EducationModelsPage() {
       evaluationFocus: "",
       languageFocus: "",
       childFocus: "",
-      creatorName: "",
+      creatorName: userName, // 新規時はユーザー名に戻す
     });
     setError("");
     setSuccessMessage("");
@@ -155,6 +148,7 @@ export default function EducationModelsPage() {
       let newModel: EducationModel;
 
       if (editId) {
+        // 更新は作成者本人のみ可能（firestore security rulesでも制御推奨）
         const docRef = doc(db, "educationModels", editId);
         await updateDoc(docRef, {
           name: form.name.trim(),
@@ -163,6 +157,7 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
+          creatorId: userId,
           updatedAt: now,
         });
         newModel = {
@@ -173,10 +168,11 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
         };
       } else {
+        // 新規登録
         const colRef = collection(db, "educationModels");
         const docRef = await addDoc(colRef, {
           name: form.name.trim(),
@@ -185,8 +181,8 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
         });
         newModel = {
           id: docRef.id,
@@ -196,13 +192,12 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
         };
       }
 
-      addToHistory(newModel);
-
+      // ローカル保存・状態更新
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
@@ -214,10 +209,9 @@ export default function EducationModelsPage() {
       setError("");
       setSuccessMessage("保存しました！");
 
-      // 2秒後にメッセージ消して一覧ページに遷移
       setTimeout(() => {
         setSuccessMessage("");
-        router.push("/models"); // 遷移先URLを一覧ページに合わせてください
+        router.push("/models");
       }, 2000);
 
       setMenuOpen(false);
@@ -230,7 +224,14 @@ export default function EducationModelsPage() {
     }
   };
 
+  // 削除は作成者本人のみ許可（firestore security rulesでも必須）
   const handleDelete = async (id: string) => {
+    const model = models.find((m) => m.id === id);
+    if (!model) return;
+    if (model.creatorId !== userId) {
+      alert("削除は作成者本人のみ可能です。");
+      return;
+    }
     if (!confirm("このモデルを削除しますか？")) return;
     try {
       await deleteDoc(doc(db, "educationModels", id));
@@ -245,7 +246,7 @@ export default function EducationModelsPage() {
     }
   };
 
-  // Styles
+  // Styles定義（省略せず全部記載）
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -314,7 +315,7 @@ export default function EducationModelsPage() {
     cursor: "pointer",
     display: "block",
     width: "100%",
-    textAlign: "left", // ← ここを「左揃え」に変更しました
+    textAlign: "left",
   };
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
@@ -337,8 +338,6 @@ export default function EducationModelsPage() {
     borderRadius: 10,
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
   };
-
-  // タイトル見やすく
   const titleStyle: React.CSSProperties = {
     fontSize: "2.5rem",
     fontWeight: "bold",
@@ -347,14 +346,12 @@ export default function EducationModelsPage() {
     textShadow: "1px 1px 2px rgba(0,0,0,0.3)",
     textAlign: "center",
   };
-
   const guideTextStyle: React.CSSProperties = {
     fontSize: "0.9rem",
     color: "#666",
     marginTop: 4,
     marginBottom: 6,
   };
-
   const buttonPrimary: React.CSSProperties = {
     backgroundColor: "#4caf50",
     color: "white",
@@ -797,6 +794,78 @@ export default function EducationModelsPage() {
             {editId ? "更新して保存" : "作成して保存"}
           </button>
         </section>
+
+        {/* モデル一覧 */}
+        {models.length === 0 ? (
+          <p>まだモデルがありません。</p>
+        ) : (
+          models.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                border: "1px solid #ccc",
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 24,
+                backgroundColor: "white",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>{m.name}</h3>
+              <p>
+                <strong>作成者：</strong> {m.creatorName || "なし"}
+              </p>
+              <p>
+                <strong>教育観：</strong> {m.philosophy}
+              </p>
+              <p>
+                <strong>評価観点：</strong> {m.evaluationFocus}
+              </p>
+              <p>
+                <strong>言語活動：</strong> {m.languageFocus}
+              </p>
+              <p>
+                <strong>育てたい子ども：</strong> {m.childFocus}
+              </p>
+              <p style={{ fontSize: "0.8rem", color: "#666" }}>
+                更新日時: {new Date(m.updatedAt).toLocaleString()}
+              </p>
+              {/* 編集・削除ボタンは作成者本人のみ表示 */}
+              {m.creatorId === userId && (
+                <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => startEdit(m)}
+                    style={{
+                      backgroundColor: "#4caf50",
+                      color: "white",
+                      padding: "8px 16px",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => handleDelete(m.id)}
+                    style={{
+                      backgroundColor: "#e53935",
+                      color: "white",
+                      padding: "8px 16px",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    削除
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </main>
     </>
   );
