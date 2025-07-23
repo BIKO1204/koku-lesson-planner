@@ -1291,7 +1291,7 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 実践案削除ボタン（投稿者のみ表示） */}
+                  {/* 実践記録削除ボタン（投稿者のみ表示） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
@@ -1299,7 +1299,7 @@ export default function PracticeSharePage() {
                         style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
                       >
-                        実践案削除
+                        実践記録削除
                       </button>
                     </div>
                   )}
