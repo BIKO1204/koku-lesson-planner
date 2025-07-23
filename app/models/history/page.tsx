@@ -22,17 +22,25 @@ export default function EducationHistoryPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = localStorage.getItem("educationStylesHistory");
-    if (stored) {
-      setHistory(JSON.parse(stored));
+    try {
+      const stored = localStorage.getItem("styleModels"); // 保存側のキー名に合わせる
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setHistory(parsed);
+        } else {
+          setHistory([]);
+        }
+      } else {
+        setHistory([]);
+      }
+    } catch (e) {
+      console.error("localStorage読み込みエラー", e);
+      setHistory([]);
     }
   }, []);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
-
-  if (history.length === 0) {
-    return <p style={emptyStyle}>まだ履歴がありません。</p>;
-  }
 
   return (
     <>
@@ -87,22 +95,42 @@ export default function EducationHistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/share"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🌐 共有版実践記録
           </Link>
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
           <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🕒 教育観履歴
           </Link>
         </div>
@@ -111,37 +139,41 @@ export default function EducationHistoryPage() {
       <main style={mainStyle}>
         <h1 style={titleStyle}>🕒 教育観モデル履歴</h1>
 
-        <div style={listStyle}>
-          {history.map((v) => (
-            <article key={v.id + v.updatedAt} style={cardStyle}>
-              <header style={cardHeaderStyle}>
-                <time style={dateStyle}>
-                  {new Date(v.updatedAt).toLocaleString()}
-                </time>
-                {v.note && <span style={noteStyle}>{v.note}</span>}
-              </header>
-              <h2 style={cardTitleStyle}>{v.name}</h2>
-              <p style={fieldStyle}>
-                <strong>教育観：</strong> {v.philosophy}
-              </p>
-              <p style={fieldStyle}>
-                <strong>評価観点：</strong> {v.evaluationFocus}
-              </p>
-              <p style={fieldStyle}>
-                <strong>言語活動：</strong> {v.languageFocus}
-              </p>
-              <p style={fieldStyle}>
-                <strong>育てたい姿：</strong> {v.childFocus}
-              </p>
-              <button
-                onClick={() => router.push(`/models/edit/${v.id}`)}
-                style={editButtonStyle}
-              >
-                ✏️ このバージョンを編集
-              </button>
-            </article>
-          ))}
-        </div>
+        {history.length === 0 ? (
+          <p style={emptyStyle}>まだ履歴がありません。</p>
+        ) : (
+          <div style={listStyle}>
+            {history.map((v) => (
+              <article key={v.id + v.updatedAt} style={cardStyle}>
+                <header style={cardHeaderStyle}>
+                  <time style={dateStyle}>
+                    {new Date(v.updatedAt).toLocaleString()}
+                  </time>
+                  {v.note && <span style={noteStyle}>{v.note}</span>}
+                </header>
+                <h2 style={cardTitleStyle}>{v.name}</h2>
+                <p style={fieldStyle}>
+                  <strong>教育観：</strong> {v.philosophy}
+                </p>
+                <p style={fieldStyle}>
+                  <strong>評価観点：</strong> {v.evaluationFocus}
+                </p>
+                <p style={fieldStyle}>
+                  <strong>言語活動：</strong> {v.languageFocus}
+                </p>
+                <p style={fieldStyle}>
+                  <strong>育てたい姿：</strong> {v.childFocus}
+                </p>
+                <button
+                  onClick={() => router.push(`/models/edit/${v.id}`)}
+                  style={editButtonStyle}
+                >
+                  ✏️ このバージョンを編集
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
       </main>
     </>
   );

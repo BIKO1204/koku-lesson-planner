@@ -81,7 +81,8 @@ export default function EducationModelsPage() {
           ...(doc.data() as Omit<EducationModel, "id">),
         }));
         setModels(data);
-        localStorage.setItem("styleModels", JSON.stringify(data));
+        // 履歴ページと同じキー名でローカル保存
+        localStorage.setItem("educationStylesHistory", JSON.stringify(data));
       } catch (e) {
         console.error("Firestore読み込みエラー:", e);
       }
@@ -118,7 +119,7 @@ export default function EducationModelsPage() {
       evaluationFocus: "",
       languageFocus: "",
       childFocus: "",
-      creatorName: userName, // 新規時はユーザー名に戻す
+      creatorName: userName,
     });
     setError("");
     setSuccessMessage("");
@@ -196,12 +197,12 @@ export default function EducationModelsPage() {
         };
       }
 
-      // ローカル保存・状態更新
       const updatedLocalModels = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
 
-      localStorage.setItem("styleModels", JSON.stringify(updatedLocalModels));
+      // ここもキーを履歴ページと合わせて保存
+      localStorage.setItem("educationStylesHistory", JSON.stringify(updatedLocalModels));
       setModels(updatedLocalModels);
 
       cancelEdit();
@@ -223,7 +224,6 @@ export default function EducationModelsPage() {
     }
   };
 
-  // 削除処理（必要なら呼び出し可能）
   const handleDelete = async (id: string) => {
     const model = models.find((m) => m.id === id);
     if (!model) return;
@@ -236,7 +236,7 @@ export default function EducationModelsPage() {
       await deleteDoc(doc(db, "educationModels", id));
       const filtered = models.filter((m) => m.id !== id);
       setModels(filtered);
-      localStorage.setItem("styleModels", JSON.stringify(filtered));
+      localStorage.setItem("educationStylesHistory", JSON.stringify(filtered));
       if (editId === id) cancelEdit();
       setMenuOpen(false);
     } catch (e) {
@@ -395,6 +395,7 @@ export default function EducationModelsPage() {
         >
           🔓 ログアウト
         </button>
+
         <div style={menuLinksWrapperStyle}>
           <button
             style={navBtnStyle}

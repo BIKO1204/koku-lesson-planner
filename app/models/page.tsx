@@ -224,8 +224,8 @@ export default function EducationModelsPage() {
     }
   };
 
-  // PDF保存処理
-  const handlePdfSave = (id: string) => {
+  // 修正済みPDF保存処理
+  const handlePdfSave = async (id: string) => {
     const element = pdfRefs.current.get(id);
     if (!element) {
       alert("PDF生成対象が見つかりません。");
@@ -236,21 +236,42 @@ export default function EducationModelsPage() {
       alert("モデル情報が見つかりません。");
       return;
     }
+
+    // 元のスタイルを保存
+    const originalStyle = element.style.cssText;
+
+    // 一時的に画面内に表示
+    element.style.position = "static";
+    element.style.left = "auto";
+    element.style.width = "210mm";
+    element.style.padding = "10mm";
+    element.style.backgroundColor = "white";
+    element.style.color = "black";
+    element.style.zIndex = "10000";
+
     const sanitizeFileName = (name: string) =>
-      name.replace(/[\\/:"*?<>|]+/g, "_"); // ファイル名に使えない文字置換
+      name.replace(/[\\/:"*?<>|]+/g, "_");
 
     const filename = `教育観モデル_${sanitizeFileName(
       model.name
     )}_${sanitizeFileName(model.creatorName)}.pdf`;
 
-    html2pdf()
-      .from(element)
-      .set({
-        margin: 10,
-        filename,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .save();
+    try {
+      await html2pdf()
+        .from(element)
+        .set({
+          margin: 10,
+          filename,
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .save();
+    } catch (e) {
+      alert("PDFの生成に失敗しました。");
+      console.error(e);
+    } finally {
+      // 元のスタイルに戻す
+      element.style.cssText = originalStyle;
+    }
   };
 
   // --- Styles ---
@@ -566,7 +587,9 @@ export default function EducationModelsPage() {
                 }}
               >
                 <h1>{m.name}</h1>
-                <p><strong>作成者：</strong> {m.creatorName}</p>
+                <p>
+                  <strong>作成者：</strong> {m.creatorName}
+                </p>
                 <h2>教育観</h2>
                 <p>{m.philosophy}</p>
                 <h2>評価観点の重視点</h2>
