@@ -174,7 +174,7 @@ export default function GroupedHistoryPage() {
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴（本人のみ表示）</h1>
+        <h1 style={titleStyle}>🕒 個人の教育観モデル履歴</h1>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
