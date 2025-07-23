@@ -88,6 +88,11 @@ export default function GroupedHistoryPage() {
     return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
   }
 
+  // 差分チェック（簡易：前回と違ったらtrue）
+  function isChanged(current: string, prev: string | undefined): boolean {
+    return prev === undefined || current.trim() !== prev.trim();
+  }
+
   return (
     <>
       {/* ナビバー */}
@@ -165,37 +170,83 @@ export default function GroupedHistoryPage() {
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
-          groupedHistories.map(({ modelId, modelName, histories }) => (
-            <section key={modelId} style={groupSectionStyle}>
-              <button
-                onClick={() => toggleExpand(modelId)}
-                style={groupToggleBtnStyle}
-                aria-expanded={expandedIds.has(modelId)}
-                aria-controls={`section-${modelId}`}
-              >
-                {expandedIds.has(modelId) ? "▼" : "▶"} {modelName} （履歴 {histories.length} 件）
-              </button>
+          groupedHistories.map(({ modelId, modelName, histories }) => {
+            // historiesは新着順。差分比較用に逆順にして前履歴を取得しやすく
+            const historiesAsc = [...histories].reverse();
 
-              {expandedIds.has(modelId) && (
-                <div id={`section-${modelId}`} style={historyListStyle}>
-                  {histories.map((h) => (
-                    <article key={h.id} style={cardStyle}>
-                      <header style={cardHeaderStyle}>
-                        <time style={dateStyle}>
-                          {formatDateTime(h.updatedAt)}
-                        </time>
-                      </header>
-                      <h2 style={cardTitleStyle}>{h.name}</h2>
-                      <p style={fieldStyle}><strong>教育観：</strong> {h.philosophy}</p>
-                      <p style={fieldStyle}><strong>評価観点：</strong> {h.evaluationFocus}</p>
-                      <p style={fieldStyle}><strong>言語活動：</strong> {h.languageFocus}</p>
-                      <p style={fieldStyle}><strong>育てたい姿：</strong> {h.childFocus}</p>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          ))
+            return (
+              <section key={modelId} style={groupSectionStyle}>
+                <button
+                  onClick={() => toggleExpand(modelId)}
+                  style={groupToggleBtnStyle}
+                  aria-expanded={expandedIds.has(modelId)}
+                  aria-controls={`section-${modelId}`}
+                >
+                  {expandedIds.has(modelId) ? "▼" : "▶"} {modelName} （履歴 {histories.length} 件）
+                </button>
+
+                {expandedIds.has(modelId) && (
+                  <div id={`section-${modelId}`} style={historyListStyle}>
+                    {historiesAsc.map((h, i) => {
+                      const prev = i > 0 ? historiesAsc[i - 1] : undefined;
+
+                      return (
+                        <article key={h.id} style={cardStyle}>
+                          <header style={cardHeaderStyle}>
+                            <time style={dateStyle}>
+                              {formatDateTime(h.updatedAt)}
+                            </time>
+                          </header>
+                          <h2 style={cardTitleStyle}>{h.name}</h2>
+
+                          <p
+                            style={{
+                              ...fieldStyle,
+                              backgroundColor: isChanged(h.philosophy, prev?.philosophy)
+                                ? "#fff9c4"
+                                : undefined,
+                            }}
+                          >
+                            <strong>教育観：</strong> {h.philosophy}
+                          </p>
+                          <p
+                            style={{
+                              ...fieldStyle,
+                              backgroundColor: isChanged(h.evaluationFocus, prev?.evaluationFocus)
+                                ? "#fff9c4"
+                                : undefined,
+                            }}
+                          >
+                            <strong>評価観点：</strong> {h.evaluationFocus}
+                          </p>
+                          <p
+                            style={{
+                              ...fieldStyle,
+                              backgroundColor: isChanged(h.languageFocus, prev?.languageFocus)
+                                ? "#fff9c4"
+                                : undefined,
+                            }}
+                          >
+                            <strong>言語活動：</strong> {h.languageFocus}
+                          </p>
+                          <p
+                            style={{
+                              ...fieldStyle,
+                              backgroundColor: isChanged(h.childFocus, prev?.childFocus)
+                                ? "#fff9c4"
+                                : undefined,
+                            }}
+                          >
+                            <strong>育てたい姿：</strong> {h.childFocus}
+                          </p>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })
         )}
       </main>
     </>
