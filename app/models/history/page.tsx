@@ -20,31 +20,20 @@ type EducationHistory = {
   note?: string;
 };
 
-// タイムラインの1履歴アイテムコンポーネント
-function TimelineItem({ item }: { item: EducationHistory }) {
-  return (
-    <div style={timelineItemStyle}>
-      <div style={circleStyle} />
-      <time style={timeStyle}>{new Date(item.updatedAt).toLocaleDateString()}</time>
-      <h3 style={timelineTitleStyle}>{item.name}</h3>
-      {item.note && <p style={noteStyle}>{item.note}</p>}
-      <p style={fieldStyle}><strong>教育観：</strong> {item.philosophy}</p>
-      <p style={fieldStyle}><strong>評価観点：</strong> {item.evaluationFocus}</p>
-      <p style={fieldStyle}><strong>言語活動：</strong> {item.languageFocus}</p>
-      <p style={fieldStyle}><strong>育てたい姿：</strong> {item.childFocus}</p>
-    </div>
-  );
-}
+type GroupedHistory = {
+  modelId: string;
+  modelName: string;
+  histories: EducationHistory[];
+};
 
-export default function EducationHistoryPage() {
-  const [history, setHistory] = useState<EducationHistory[]>([]);
+export default function GroupedHistoryPage() {
+  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
-
   useEffect(() => {
-    async function fetchHistory() {
+    async function fetchAndGroup() {
       try {
         const colRef = collection(db, "educationModelsHistory");
         const q = query(colRef, orderBy("updatedAt", "desc"));
@@ -53,14 +42,51 @@ export default function EducationHistoryPage() {
           id: doc.id,
           ...(doc.data() as Omit<EducationHistory, "id">),
         }));
-        setHistory(data);
+
+        // modelIdでグルーピング
+        const map = new Map<string, GroupedHistory>();
+        data.forEach((h) => {
+          if (!map.has(h.modelId)) {
+            map.set(h.modelId, {
+              modelId: h.modelId,
+              modelName: h.name,
+              histories: [],
+            });
+          }
+          map.get(h.modelId)!.histories.push(h);
+        });
+
+        setGroupedHistories(Array.from(map.values()));
       } catch (e) {
-        console.error("Firestore履歴読み込みエラー", e);
-        setHistory([]);
+        console.error("Firestore読み込み・グルーピングエラー", e);
+        setGroupedHistories([]);
       }
     }
-    fetchHistory();
+    fetchAndGroup();
   }, []);
+
+  const toggleExpand = (modelId: string) => {
+    setExpandedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(modelId)) {
+        newSet.delete(modelId);
+      } else {
+        newSet.add(modelId);
+      }
+      return newSet;
+    });
+  };
+
+  // 日付フォーマット関数
+  function formatDateTime(dateString: string): string {
+    const d = new Date(dateString);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+  }
 
   return (
     <>
@@ -68,17 +94,17 @@ export default function EducationHistoryPage() {
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
-          onClick={toggleMenu}
+          onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+          onKeyDown={(e) => e.key === "Enter" && setMenuOpen((v) => !v)}
         >
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
+          <span style={barStyle} />
+          <span style={barStyle} />
+          <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+        <h1 style={{ color: "white", marginLeft: 16, fontSize: "1.25rem" }}>
           国語授業プランナー
         </h1>
       </nav>
@@ -94,7 +120,7 @@ export default function EducationHistoryPage() {
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー全体 */}
+      {/* メニュー */}
       <div
         style={{
           ...menuWrapperStyle,
@@ -102,12 +128,9 @@ export default function EducationHistoryPage() {
         }}
         aria-hidden={!menuOpen}
       >
-        {/* ログアウトボタン */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
-
-        {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
@@ -115,65 +138,71 @@ export default function EducationHistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
           </Link>
-          <Link
-            href="/models/create"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
           <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴（タイムライン表示）</h1>
+        <h1 style={titleStyle}>🕒 教育観モデル履歴（モデルごとにまとめて表示）</h1>
 
-        {history.length === 0 ? (
+        {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
-          <div style={timelineContainerStyle}>
-            {history.map((item) => (
-              <TimelineItem key={item.id} item={item} />
-            ))}
-          </div>
+          groupedHistories.map(({ modelId, modelName, histories }) => (
+            <section key={modelId} style={groupSectionStyle}>
+              <button
+                onClick={() => toggleExpand(modelId)}
+                style={groupToggleBtnStyle}
+                aria-expanded={expandedIds.has(modelId)}
+                aria-controls={`section-${modelId}`}
+              >
+                {expandedIds.has(modelId) ? "▼" : "▶"} {modelName} （履歴 {histories.length} 件）
+              </button>
+
+              {expandedIds.has(modelId) && (
+                <div id={`section-${modelId}`} style={historyListStyle}>
+                  {histories.map((h) => (
+                    <article key={h.id} style={cardStyle}>
+                      <header style={cardHeaderStyle}>
+                        <time style={dateStyle}>
+                          {formatDateTime(h.updatedAt)}
+                        </time>
+                      </header>
+                      <h2 style={cardTitleStyle}>{h.name}</h2>
+                      <p style={fieldStyle}><strong>教育観：</strong> {h.philosophy}</p>
+                      <p style={fieldStyle}><strong>評価観点：</strong> {h.evaluationFocus}</p>
+                      <p style={fieldStyle}><strong>言語活動：</strong> {h.languageFocus}</p>
+                      <p style={fieldStyle}><strong>育てたい姿：</strong> {h.childFocus}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))
         )}
       </main>
     </>
   );
 }
 
-// --- Styles ---
+// --- Styles (レスポンシブ対応) ---
 
 const navBarStyle: CSSProperties = {
   position: "fixed",
@@ -207,7 +236,8 @@ const menuWrapperStyle: CSSProperties = {
   position: "fixed",
   top: 56,
   left: 0,
-  width: 250,
+  width: "80vw",
+  maxWidth: 280,
   height: "calc(100vh - 56px)",
   backgroundColor: "#f0f0f0",
   boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
@@ -249,76 +279,94 @@ const overlayStyle: CSSProperties = {
 
 const navLinkStyle: CSSProperties = {
   display: "block",
-  padding: "0.5rem 1rem",
+  padding: "0.75rem 1rem",
   backgroundColor: "#1976d2",
   color: "white",
   fontWeight: "bold",
   borderRadius: 6,
   textDecoration: "none",
   marginBottom: "0.5rem",
+  fontSize: "1rem",
 };
 
 const mainStyle: CSSProperties = {
-  padding: 24,
-  maxWidth: 800,
+  padding: "1.5rem 1rem",
+  maxWidth: 900,
   margin: "0 auto",
-  fontFamily: "sans-serif",
+  fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif, sans-serif",
   paddingTop: 80,
+  boxSizing: "border-box",
 };
 
 const titleStyle: CSSProperties = {
   fontSize: "1.8rem",
-  marginBottom: 16,
+  marginBottom: "1rem",
   textAlign: "center",
 };
 
 const emptyStyle: CSSProperties = {
-  padding: 24,
+  padding: "1.5rem",
   textAlign: "center",
   color: "#666",
+  fontSize: "1.1rem",
 };
 
-const timelineContainerStyle: CSSProperties = {
-  borderLeft: "3px solid #1976d2",
-  paddingLeft: 20,
+const groupSectionStyle: CSSProperties = {
+  marginBottom: "2rem",
 };
 
-const timelineItemStyle: CSSProperties = {
-  marginBottom: 32,
-  position: "relative",
-};
-
-const circleStyle: CSSProperties = {
-  position: "absolute",
-  left: -12,
-  top: 6,
-  width: 18,
-  height: 18,
-  borderRadius: "50%",
-  backgroundColor: "#1976d2",
-};
-
-const timeStyle: CSSProperties = {
-  fontSize: 12,
-  color: "#555",
-  marginBottom: 4,
-};
-
-const timelineTitleStyle: CSSProperties = {
-  margin: "4px 0 6px",
-  fontSize: 18,
+const groupToggleBtnStyle: CSSProperties = {
+  cursor: "pointer",
+  width: "100%",
+  textAlign: "left",
+  padding: "1rem 1.25rem",
+  fontSize: "1.15rem",
   fontWeight: "bold",
+  backgroundColor: "#e3f2fd",
+  border: "none",
+  borderRadius: 6,
+  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+  userSelect: "none",
 };
 
-const noteStyle: CSSProperties = {
-  fontSize: 14,
-  fontStyle: "italic",
-  color: "#888",
-  marginBottom: 8,
+const historyListStyle: CSSProperties = {
+  marginTop: "1rem",
+};
+
+const cardStyle: CSSProperties = {
+  backgroundColor: "#fafafa",
+  borderRadius: 8,
+  boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+  padding: "1rem",
+  marginBottom: "1rem",
+  display: "flex",
+  flexDirection: "column",
+  wordBreak: "break-word",
+  fontSize: "1rem",
+};
+
+const cardHeaderStyle: CSSProperties = {
+  marginBottom: "0.5rem",
+  display: "flex",
+  gap: "0.5rem",
+  alignItems: "center",
+  fontSize: "0.9rem",
+  flexWrap: "wrap",
+};
+
+const dateStyle: CSSProperties = {
+  color: "#555",
+  whiteSpace: "nowrap",
+};
+
+const cardTitleStyle: CSSProperties = {
+  fontSize: "1.2rem",
+  margin: "0 0 0.5rem",
+  wordBreak: "break-word",
 };
 
 const fieldStyle: CSSProperties = {
-  fontSize: 14,
-  marginBottom: 4,
+  marginBottom: "0.6rem",
   lineHeight: 1.5,
+  whiteSpace: "pre-wrap",
 };
