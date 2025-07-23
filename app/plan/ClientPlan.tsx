@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { db } from "../firebaseConfig";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, collection, getDocs } from "firebase/firestore";
 import { useSession } from "next-auth/react";
 
 const EDIT_KEY = "editLessonPlan";
@@ -85,6 +85,26 @@ export default function ClientPlan() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // Firestoreから教育観モデルを取得してセット
+  useEffect(() => {
+    async function fetchStyleModels() {
+      try {
+        const colRef = collection(db, "educationModels");
+        const snapshot = await getDocs(colRef);
+        const models = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.data().name || "無名のモデル",
+          content: doc.data().philosophy || "", // philosophyをcontentとして使用
+        }));
+        setStyleModels(models);
+      } catch (error) {
+        console.error("教育観モデルの読み込みに失敗しました:", error);
+        setStyleModels([]);
+      }
+    }
+    fetchStyleModels();
+  }, []);
+
   useEffect(() => {
     const storedEdit = localStorage.getItem(EDIT_KEY);
     if (storedEdit) {
@@ -116,18 +136,6 @@ export default function ClientPlan() {
       setSelectedStyleId(styleIdParam);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    const storedModels = localStorage.getItem("styleModels");
-    if (storedModels) {
-      try {
-        const arr = JSON.parse(storedModels) as StyleModel[];
-        setStyleModels(arr);
-      } catch {
-        setStyleModels([]);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     fetch("/templates.csv")
@@ -172,11 +180,7 @@ export default function ClientPlan() {
       [f]: p[f].filter((_, idx) => idx !== i),
     }));
 
-  const handleChangePoint = (
-    f: keyof EvaluationPoints,
-    i: number,
-    v: string
-  ) => {
+  const handleChangePoint = (f: keyof EvaluationPoints, i: number, v: string) => {
     const arr = [...evaluationPoints[f]];
     arr[i] = v;
     setEvaluationPoints((p) => ({ ...p, [f]: arr }));
@@ -318,169 +322,6 @@ ${languageActivities}
     } finally {
       setLoading(false);
     }
-  };
-
-  const uploadPdfToGoogleDrive = async (pdfBlob: Blob, fileName: string, accessToken: string) => {
-    const metadata = {
-      name: fileName,
-      mimeType: "application/pdf",
-    };
-
-    const formData = new FormData();
-    formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-    formData.append("file", pdfBlob);
-
-    const res = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: formData,
-      }
-    );
-
-    if (!res.ok) throw new Error("Google Driveアップロード失敗");
-    return await res.json();
-  };
-
-  const handleSaveAll = async () => {
-    if (!parsedResult) {
-      alert("まず授業案を生成してください");
-      return;
-    }
-
-    const isEdit = Boolean(editId);
-    const idToUse = isEdit ? editId! : Date.now().toString();
-    const timestamp = new Date().toISOString();
-
-    const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
-
-    if (isEdit) {
-      const newArr = existingArr.map((p) =>
-        p.id === idToUse
-          ? {
-              id: idToUse,
-              subject,
-              grade,
-              genre,
-              unit,
-              hours,
-              unitGoal,
-              evaluationPoints,
-              childVision,
-              lessonPlanList,
-              languageActivities,
-              selectedStyleId,
-              result: parsedResult,
-              timestamp,
-              usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-            }
-          : p
-      );
-      localStorage.setItem("lessonPlans", JSON.stringify(newArr));
-    } else {
-      const newPlan: LessonPlanStored = {
-        id: idToUse,
-        subject,
-        grade,
-        genre,
-        unit,
-        hours,
-        unitGoal,
-        evaluationPoints,
-        childVision,
-        lessonPlanList,
-        languageActivities,
-        selectedStyleId,
-        result: parsedResult,
-        timestamp,
-        usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-      };
-      existingArr.push(newPlan);
-      localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
-    }
-
-    try {
-      await setDoc(
-        doc(db, "lesson_plans", idToUse),
-        {
-          subject,
-          grade,
-          genre,
-          unit,
-          hours,
-          unitGoal,
-          evaluationPoints,
-          childVision,
-          lessonPlanList,
-          languageActivities,
-          selectedStyleId,
-          result: parsedResult,
-          timestamp,
-          usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-        },
-        { merge: true }
-      );
-    } catch (error) {
-      console.error("Firestoreへの保存中にエラーが発生しました:", error);
-      alert("Firestoreへの保存中にエラーが発生しました");
-      return;
-    }
-
-    const el = document.getElementById("result-content");
-    if (!el) {
-      alert("結果表示の要素が見つかりません");
-      return;
-    }
-
-    try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      const pdfBlob: Blob = await new Promise((resolve, reject) => {
-        html2pdf()
-          .from(el)
-          .outputPdf("blob")
-          .then(resolve)
-          .catch(reject);
-      });
-
-      const accessToken = (session as any)?.accessToken;
-      if (!accessToken) {
-        alert("Google Driveアップロード用のアクセストークンがありません。ログインしてください。");
-        return;
-      }
-
-      await uploadPdfToGoogleDrive(pdfBlob, `${unit}_授業案.pdf`, accessToken);
-    } catch (e: any) {
-      alert(`Google Driveへの保存に失敗しました：${e.message || e}`);
-      return;
-    }
-
-    localStorage.removeItem(EDIT_KEY);
-    alert("一括保存しました（ローカル・Firestore・Drive）");
-    router.push("/plan/history");
-  };
-
-  const handlePdfDownloadOnly = async () => {
-    if (!parsedResult) {
-      alert("まず授業案を生成してください");
-      return;
-    }
-
-    const el = document.getElementById("result-content");
-    if (!el) return alert("PDF生成対象がありません");
-    const html2pdf = (await import("html2pdf.js")).default;
-    html2pdf()
-      .from(el)
-      .set({
-        margin: 5,
-        filename: `${unit}_授業案.pdf`,
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all"] },
-      })
-      .save();
   };
 
   // ===== スタイル =====
@@ -849,7 +690,94 @@ ${languageActivities}
               }}
             >
               <button
-                onClick={handleSaveAll}
+                onClick={async () => {
+                  if (!parsedResult) {
+                    alert("まず授業案を生成してください");
+                    return;
+                  }
+
+                  const isEdit = Boolean(editId);
+                  const idToUse = isEdit ? editId! : Date.now().toString();
+                  const timestamp = new Date().toISOString();
+
+                  const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
+
+                  if (isEdit) {
+                    const newArr = existingArr.map((p) =>
+                      p.id === idToUse
+                        ? {
+                            id: idToUse,
+                            subject,
+                            grade,
+                            genre,
+                            unit,
+                            hours,
+                            unitGoal,
+                            evaluationPoints,
+                            childVision,
+                            lessonPlanList,
+                            languageActivities,
+                            selectedStyleId,
+                            result: parsedResult,
+                            timestamp,
+                            usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
+                          }
+                        : p
+                    );
+                    localStorage.setItem("lessonPlans", JSON.stringify(newArr));
+                  } else {
+                    const newPlan: LessonPlanStored = {
+                      id: idToUse,
+                      subject,
+                      grade,
+                      genre,
+                      unit,
+                      hours,
+                      unitGoal,
+                      evaluationPoints,
+                      childVision,
+                      lessonPlanList,
+                      languageActivities,
+                      selectedStyleId,
+                      result: parsedResult,
+                      timestamp,
+                      usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
+                    };
+                    existingArr.push(newPlan);
+                    localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
+                  }
+
+                  try {
+                    await setDoc(
+                      doc(db, "lesson_plans", idToUse),
+                      {
+                        subject,
+                        grade,
+                        genre,
+                        unit,
+                        hours,
+                        unitGoal,
+                        evaluationPoints,
+                        childVision,
+                        lessonPlanList,
+                        languageActivities,
+                        selectedStyleId,
+                        result: parsedResult,
+                        timestamp,
+                        usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
+                      },
+                      { merge: true }
+                    );
+                  } catch (error) {
+                    console.error("Firestoreへの保存中にエラーが発生しました:", error);
+                    alert("Firestoreへの保存中にエラーが発生しました");
+                    return;
+                  }
+
+                  localStorage.removeItem(EDIT_KEY);
+                  alert("一括保存しました（ローカル・Firestore）");
+                  router.push("/plan/history");
+                }}
                 style={{
                   padding: "12px",
                   backgroundColor: "#4CAF50",
@@ -860,11 +788,29 @@ ${languageActivities}
                   cursor: "pointer",
                 }}
               >
-                💾 一括保存 (ローカル・Firestore・Drive)
+                💾 一括保存 (ローカル・Firestore)
               </button>
 
               <button
-                onClick={handlePdfDownloadOnly}
+                onClick={async () => {
+                  if (!parsedResult) {
+                    alert("まず授業案を生成してください");
+                    return;
+                  }
+                  const el = document.getElementById("result-content");
+                  if (!el) return alert("PDF生成対象がありません");
+                  const html2pdf = (await import("html2pdf.js")).default;
+                  html2pdf()
+                    .from(el)
+                    .set({
+                      margin: 5,
+                      filename: `${unit}_授業案.pdf`,
+                      html2canvas: { scale: 2 },
+                      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                      pagebreak: { mode: ["avoid-all"] },
+                    })
+                    .save();
+                }}
                 style={{
                   padding: 12,
                   backgroundColor: "#FF9800",
