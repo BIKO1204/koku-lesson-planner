@@ -19,8 +19,7 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string;
-  author?: string;     // ログインユーザーのメール（権限判定用）
-  authorName?: string; // 手入力の作成者名（表示用）
+  authorName?: string; // ここを追加
 };
 
 type LessonPlan = {
@@ -143,7 +142,7 @@ export default function PracticeAddPage() {
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [author, setAuthor] = useState("");
+  const [authorName, setAuthorName] = useState(""); // author → authorNameに変更
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
@@ -155,142 +154,7 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  useEffect(() => {
-    const plansJson = localStorage.getItem("lessonPlans") || "[]";
-    let plans: LessonPlan[];
-    try {
-      plans = JSON.parse(plansJson) as LessonPlan[];
-    } catch {
-      plans = [];
-    }
-    const plan = plans.find((p) => p.id === id) || null;
-    setLessonPlan(plan);
-
-    if (plan && plan.result) {
-      if (typeof plan.result === "string") {
-        const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
-        setLessonTitle(firstLine);
-      } else if (typeof plan.result === "object") {
-        const unitNameFromPlan = (plan.result as ParsedResult)["単元名"];
-        setLessonTitle(typeof unitNameFromPlan === "string" ? unitNameFromPlan : "");
-      } else {
-        setLessonTitle("");
-      }
-    } else {
-      setLessonTitle("");
-    }
-
-    getRecord(id).then((existing) => {
-      if (existing) {
-        setPracticeDate(existing.practiceDate);
-        setReflection(existing.reflection);
-        setBoardImages(existing.boardImages);
-        setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-        setAuthor(existing.authorName || "");
-        setGrade(existing.grade || "");
-        setGenre(existing.genre || "");
-        setUnitName(existing.unitName || "");
-      }
-    });
-  }, [id]);
-
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-
-    const newFullImages: BoardImage[] = [];
-    const newCompressedImages: BoardImage[] = [];
-
-    for (const file of files) {
-      try {
-        const fullBase64 = await fileToBase64(file);
-        const compressedBase64 = await resizeAndCompressFile(file, 800, 600, 0.7);
-        newFullImages.push({ name: file.name, src: fullBase64 });
-        newCompressedImages.push({ name: file.name, src: compressedBase64 });
-      } catch (error) {
-        console.error("画像処理失敗", error);
-      }
-    }
-
-    setBoardImages((prev) => [...prev, ...newFullImages]);
-    setCompressedImages((prev) => [...prev, ...newCompressedImages]);
-
-    e.target.value = "";
-  };
-
-  const handleRemoveImage = (i: number) => {
-    setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
-    setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const handlePreview = (e: FormEvent) => {
-    e.preventDefault();
-    setRecord({
-      lessonId: id,
-      practiceDate,
-      reflection,
-      boardImages,
-      lessonTitle,
-      author,
-      grade,
-      genre,
-      unitName,
-    });
-  };
-
-  async function saveRecordToIndexedDB(record: PracticeRecord) {
-    const dbLocal = await getDB();
-    await dbLocal.put(STORE_NAME, record);
-  }
-
-  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
-    if (!session?.user?.email) {
-      alert("ログインが必要です。");
-      throw new Error("Not logged in");
-    }
-
-    const uploadedUrls: BoardImage[] = await Promise.all(
-      record.compressedImages.map(async (img) => {
-        const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
-        return { name: img.name, src: url };
-      })
-    );
-
-    const docRef = doc(db, "practiceRecords", record.lessonId);
-    await setDoc(docRef, {
-      practiceDate: record.practiceDate,
-      reflection: record.reflection,
-      boardImages: uploadedUrls,
-      lessonTitle: record.lessonTitle,
-      author: session.user.email,      // ログインユーザーのメール（権限管理用）
-      authorName: record.author || "", // 手入力作成者名（表示用）
-      grade: record.grade || "",
-      genre: record.genre || "",
-      unitName: record.unitName || "",
-      createdAt: new Date(),
-    });
-  }
-
-  const handleSaveBoth = async () => {
-    if (!record) {
-      alert("プレビューを作成してください");
-      return;
-    }
-    setUploading(true);
-    try {
-      await saveRecordToIndexedDB(record);
-      await saveRecordToFirestore({ ...record, compressedImages });
-      alert("ローカルとFirebaseに保存しました");
-      router.push("/practice/history");
-    } catch (e) {
-      alert("保存に失敗しました");
-      console.error(e);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // スタイル定義（前回提示分をそのままここに）
+  // --- スタイル ---
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -376,6 +240,148 @@ export default function PracticeAddPage() {
     margin: "auto",
     fontFamily: "sans-serif",
     paddingTop: 72,
+  };
+
+  // --- 初期処理 ---
+  useEffect(() => {
+    const plansJson = localStorage.getItem("lessonPlans") || "[]";
+    let plans: LessonPlan[];
+    try {
+      plans = JSON.parse(plansJson) as LessonPlan[];
+    } catch {
+      plans = [];
+    }
+    const plan = plans.find((p) => p.id === id) || null;
+    setLessonPlan(plan);
+
+    if (plan && plan.result) {
+      if (typeof plan.result === "string") {
+        const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
+        setLessonTitle(firstLine);
+      } else if (typeof plan.result === "object") {
+        const unitNameFromPlan = (plan.result as ParsedResult)["単元名"];
+        setLessonTitle(typeof unitNameFromPlan === "string" ? unitNameFromPlan : "");
+      } else {
+        setLessonTitle("");
+      }
+    } else {
+      setLessonTitle("");
+    }
+
+    getRecord(id).then((existing) => {
+      if (existing) {
+        setPracticeDate(existing.practiceDate);
+        setReflection(existing.reflection);
+        setBoardImages(existing.boardImages);
+        setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
+        setAuthorName(existing.authorName || ""); // author → authorNameに変更
+        setGrade(existing.grade || "");
+        setGenre(existing.genre || "");
+        setUnitName(existing.unitName || "");
+      }
+    });
+  }, [id]);
+
+  // --- 画像アップロード処理 ---
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+
+    const newFullImages: BoardImage[] = [];
+    const newCompressedImages: BoardImage[] = [];
+
+    for (const file of files) {
+      try {
+        const fullBase64 = await fileToBase64(file);
+        const compressedBase64 = await resizeAndCompressFile(file, 800, 600, 0.7);
+        newFullImages.push({ name: file.name, src: fullBase64 });
+        newCompressedImages.push({ name: file.name, src: compressedBase64 });
+      } catch (error) {
+        console.error("画像処理失敗", error);
+      }
+    }
+
+    setBoardImages((prev) => [...prev, ...newFullImages]);
+    setCompressedImages((prev) => [...prev, ...newCompressedImages]);
+
+    e.target.value = "";
+  };
+
+  // --- 画像削除 ---
+  const handleRemoveImage = (i: number) => {
+    setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
+    setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  // --- プレビュー作成 ---
+  const handlePreview = (e: FormEvent) => {
+    e.preventDefault();
+    setRecord({
+      lessonId: id,
+      practiceDate,
+      reflection,
+      boardImages,
+      lessonTitle,
+      authorName,  // author → authorNameに変更
+      grade,
+      genre,
+      unitName,
+    });
+  };
+
+  // --- IndexedDBに保存 ---
+  async function saveRecordToIndexedDB(record: PracticeRecord) {
+    const dbLocal = await getDB();
+    await dbLocal.put(STORE_NAME, record);
+  }
+
+  // --- Firestoreに保存 ---
+  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
+    if (!session?.user?.email) {
+      alert("ログインが必要です。");
+      throw new Error("Not logged in");
+    }
+
+    const uploadedUrls: BoardImage[] = await Promise.all(
+      record.compressedImages.map(async (img) => {
+        const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+        return { name: img.name, src: url };
+      })
+    );
+
+    const docRef = doc(db, "practiceRecords", record.lessonId);
+    await setDoc(docRef, {
+      practiceDate: record.practiceDate,
+      reflection: record.reflection,
+      boardImages: uploadedUrls,
+      lessonTitle: record.lessonTitle,
+      author: session.user.email,  // ログインメール
+      authorName: record.authorName, // 入力された作成者名
+      grade: record.grade || "",
+      genre: record.genre || "",
+      unitName: record.unitName || "",
+      createdAt: new Date(),
+    });
+  }
+
+  // --- 保存処理（IndexedDB + Firestore） ---
+  const handleSaveBoth = async () => {
+    if (!record) {
+      alert("プレビューを作成してください");
+      return;
+    }
+    setUploading(true);
+    try {
+      await saveRecordToIndexedDB(record);
+      await saveRecordToFirestore({ ...record, compressedImages });
+      alert("ローカルとFirebaseに保存しました");
+      router.push("/practice/history");
+    } catch (e) {
+      alert("保存に失敗しました");
+      console.error(e);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -527,8 +533,8 @@ export default function PracticeAddPage() {
               作成者名：
               <input
                 type="text"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
+                value={authorName} // author → authorNameに変更
+                onChange={(e) => setAuthorName(e.target.value)}
                 required
                 style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
               />
@@ -606,7 +612,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 授業案詳細表示 */}
+          {/* 授業案詳細表示（フォーム内） */}
           {lessonPlan?.result && typeof lessonPlan.result === "object" && (
             <section
               style={{
@@ -856,13 +862,146 @@ export default function PracticeAddPage() {
           >
             <h2>{lessonTitle}</h2>
 
+            {/* 授業案詳細（プレビュー画面） */}
+            {lessonPlan?.result && typeof lessonPlan.result === "object" && (
+              <section
+                style={{
+                  border: "2px solid #2196F3",
+                  borderRadius: 6,
+                  padding: 12,
+                  marginBottom: 16,
+                  backgroundColor: "#e3f2fd",
+                }}
+              >
+                <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>
+                  授業案詳細（プレビュー）
+                </h3>
+
+                <p>
+                  <strong>教科書名：</strong>
+                  {(lessonPlan.result as ParsedResult)["教科書名"] || ""}
+                </p>
+                <p>
+                  <strong>学年：</strong>
+                  {(lessonPlan.result as ParsedResult)["学年"] || ""}
+                </p>
+                <p>
+                  <strong>ジャンル：</strong>
+                  {(lessonPlan.result as ParsedResult)["ジャンル"] || ""}
+                </p>
+                <p>
+                  <strong>単元名：</strong>
+                  {(lessonPlan.result as ParsedResult)["単元名"] || ""}
+                </p>
+                <p>
+                  <strong>授業時間数：</strong>
+                  {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
+                </p>
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>評価の観点：</strong>
+                  <div>
+                    <strong>知識・技能</strong>
+                    <ul>
+                      {Array.isArray(
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
+                          "知識・技能"
+                        ]
+                      )
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["知識・技能"]!.map((v, i) => (
+                            <li key={`knowledge-${i}`}>{v}</li>
+                          ))
+                        : null}
+                    </ul>
+                  </div>
+                  <div>
+                    <strong>思考・判断・表現</strong>
+                    <ul>
+                      {Array.isArray(
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
+                          "思考・判断・表現"
+                        ]
+                      )
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["思考・判断・表現"]!.map((v, i) => (
+                            <li key={`thinking-${i}`}>{v}</li>
+                          ))
+                        : null}
+                    </ul>
+                  </div>
+                  <div>
+                    <strong>主体的に学習に取り組む態度</strong>
+                    <ul>
+                      {Array.isArray(
+                        (lessonPlan.result as ParsedResult)[
+                          "評価の観点"
+                        ]?.["主体的に学習に取り組む態度"]
+                      )
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["主体的に学習に取り組む態度"]!.map((v, i) => (
+                            <li key={`attitude-${i}`}>{v}</li>
+                          ))
+                        : Array.isArray(
+                            (lessonPlan.result as ParsedResult)["評価の観点"]?.[
+                              "態度"
+                            ]
+                          )
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["態度"]!.map((v, i) => (
+                            <li key={`attitude-alt-${i}`}>{v}</li>
+                          ))
+                        : null}
+                    </ul>
+                  </div>
+                </div>
+
+                <p style={{ marginTop: 12 }}>
+                  <strong>育てたい子どもの姿：</strong>
+                  {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
+                </p>
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>言語活動の工夫：</strong>
+                  <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>単元の目標：</strong>
+                  <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <strong>授業の流れ：</strong>
+                  <ul>
+                    {typeof (lessonPlan.result as ParsedResult)[
+                      "授業の流れ"
+                    ] === "object"
+                      ? Object.entries(
+                          (lessonPlan.result as ParsedResult)["授業の流れ"]!
+                        ).map(([key, val], i) => (
+                          <li key={`flow-${i}`}>
+                            <strong>{key}：</strong>
+                            {val}
+                          </li>
+                        ))
+                      : null}
+                  </ul>
+                </div>
+              </section>
+            )}
+
             <section style={{ marginTop: 24 }}>
               <h3>実践記録</h3>
               <p>
                 <strong>実施日：</strong> {record.practiceDate}
               </p>
               <p>
-                <strong>作成者：</strong> {record.authorName || "不明"}
+                <strong>作成者：</strong> {record.authorName || "不明"} {/* author → authorName */}
               </p>
 
               <p>

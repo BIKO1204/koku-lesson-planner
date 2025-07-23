@@ -46,6 +46,7 @@ type PracticeRecord = {
   genre?: string;
   unitName?: string;
   author?: string;
+  authorName?: string;  // 追加
   pdfUrl?: string;
   pdfName?: string;
   createdAt?: string;
@@ -106,6 +107,7 @@ export default function PracticeSharePage() {
         lessonId: doc.id,
         likedUsers: (doc.data() as any).likedUsers || [],
         author: (doc.data() as any).author || "",
+        authorName: (doc.data() as any).authorName || "", // 追加
         pdfUrl: (doc.data() as any).pdfUrl || "",
         pdfName: (doc.data() as any).pdfName || "",
         createdAt: (doc.data() as any).createdAt || "",
@@ -148,7 +150,7 @@ export default function PracticeSharePage() {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
-    if (authorFilter && !r.author?.includes(authorFilter)) return false;
+    if (authorFilter && !r.authorName?.includes(authorFilter)) return false; // author → authorName に変更
     return true;
   });
 
@@ -481,7 +483,7 @@ export default function PracticeSharePage() {
     return result;
   };
 
-  // PDF生成関数（ここで修正：ファイル名は単元名_実践記録_作成者名.pdf）
+  // PDF生成関数（ファイル名は単元名_実践記録_作成者名.pdf）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
 
@@ -503,7 +505,7 @@ export default function PracticeSharePage() {
 
       // ファイル名用単元名・作成者名を安全化してファイル名生成
       const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
-      const safeAuthor = record.author ? record.author.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
+      const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
       // 該当授業案取得
@@ -602,7 +604,7 @@ export default function PracticeSharePage() {
       tempDiv.innerHTML = `
         <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${record.lessonTitle || safeUnitName}</h1>
         <p><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
-        <p><strong>作成者：</strong> ${record.author || "－"}</p>
+        <p><strong>作成者：</strong> ${record.authorName || "－"}</p>
 
         ${lessonPlanHtml}
 
@@ -633,7 +635,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- Styles --- (省略：前のコードのまま使えます)
+  // --- Styles ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -1070,7 +1072,7 @@ export default function PracticeSharePage() {
                     実施日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
                   <p style={authorNameStyle}>
-                    作成者: {r.author || "－"}
+                    作成者: {r.authorName || "－"}
                   </p>
 
                   {/* 編集ボタン */}
