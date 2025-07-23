@@ -25,8 +25,8 @@ type EducationModel = {
   languageFocus: string;
   childFocus: string;
   updatedAt: string;
-  creatorId: string; // 本人識別用ID（メールアドレスなど）
-  creatorName: string; // 表示用の作成者名
+  creatorId: string;
+  creatorName: string;
 };
 
 export default function EducationModelsPage() {
@@ -231,11 +231,23 @@ export default function EducationModelsPage() {
       alert("PDF生成対象が見つかりません。");
       return;
     }
+    const model = models.find((m) => m.id === id);
+    if (!model) {
+      alert("モデル情報が見つかりません。");
+      return;
+    }
+    const sanitizeFileName = (name: string) =>
+      name.replace(/[\\/:"*?<>|]+/g, "_"); // ファイル名に使えない文字置換
+
+    const filename = `教育観モデル_${sanitizeFileName(
+      model.name
+    )}_${sanitizeFileName(model.creatorName)}.pdf`;
+
     html2pdf()
       .from(element)
       .set({
         margin: 10,
-        filename: `教育観モデル_${id}.pdf`,
+        filename,
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       })
       .save();
