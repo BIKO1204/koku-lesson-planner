@@ -42,7 +42,6 @@ export default function StyleDetailPage() {
   // --- データロード ---
   useEffect(() => {
     if (!id) return;
-    // キーを "educationModels" に統一
     const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]");
     const foundStyle = styleModels.find((s: EducationModel) => s.id === id);
     if (foundStyle) {
@@ -55,12 +54,10 @@ export default function StyleDetailPage() {
         childFocus: foundStyle.childFocus,
       });
     }
-    // 関連授業案は lessonPlans から
     const plans = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     const matchedPlans = plans.filter((p: any) => p.usedStyleName === foundStyle?.name);
     setRelatedPlans(matchedPlans);
 
-    // 履歴キーは "educationModelsHistory" に統一
     const hist = JSON.parse(localStorage.getItem("educationModelsHistory") || "[]") as EducationHistory[];
     const filteredHist = hist.filter(h => h.id === id);
     setHistory(filteredHist);
@@ -150,13 +147,13 @@ export default function StyleDetailPage() {
       {/* メニュー本体 */}
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
         {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
+        <button onClick={() => { signOut(); closeMenu(); }} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
 
         {/* メニューリンク */}
         <div style={menuScrollStyle}>
-          {[
+          {[ 
             ["/", "🏠 ホーム"],
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
@@ -392,7 +389,7 @@ const logoutButtonStyle: React.CSSProperties = {
 
 const mainStyle: React.CSSProperties = {
   padding: "2rem 1rem",
-  maxWidth: 800, // ここを800pxに設定
+  maxWidth: 800,
   margin: "0 auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
@@ -414,7 +411,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  maxWidth: 800, // 入力欄も800pxに統一
+  maxWidth: 800,
   width: "100%",
   padding: 8,
   fontSize: "1rem",
