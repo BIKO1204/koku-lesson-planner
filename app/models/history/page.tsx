@@ -23,7 +23,8 @@ export default function EducationHistoryPage() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("styleModels"); // 保存側のキー名に合わせる
+      // キー名を「educationStylesHistory」に統一
+      const stored = localStorage.getItem("educationStylesHistory");
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
