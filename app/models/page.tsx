@@ -226,6 +226,12 @@ export default function EducationModelsPage() {
       cancelEdit();
       setError("");
       setMenuOpen(false);
+
+      // ここで編集後に履歴ページへ遷移
+      if (editId) {
+        router.push("/models/history");
+      }
+
       return true;
     } catch (e) {
       console.error("Firestore保存エラー", e);
