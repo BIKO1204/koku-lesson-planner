@@ -46,7 +46,7 @@ type PracticeRecord = {
   genre?: string;
   unitName?: string;
   author?: string;
-  authorName?: string;  // 追加
+  authorName?: string;
   pdfUrl?: string;
   pdfName?: string;
   createdAt?: string;
@@ -61,45 +61,36 @@ export default function PracticeSharePage() {
   const userId = session?.user?.email || "";
   const router = useRouter();
 
-  // フィルター入力状態
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
   const [inputAuthor, setInputAuthor] = useState<string>("");
 
-  // フィルター適用用
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
   const [authorFilter, setAuthorFilter] = useState<string | null>(null);
 
-  // 実践記録・授業案データ
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
 
-  // コメント入力管理（UI用）
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
-  // コメント編集管理
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
-  // PDFアップロード中の管理（lessonIdの配列）
   const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
 
-  // メニュー表示と画面幅判定
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // PDF生成中フラグ（重複クリック防止用）
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
-  // Firebase Storage
   const storage = getStorage();
 
   useEffect(() => {
-    // 実践記録取得（Firestore）
+    // 実践記録を取得、practiceRecordsコレクションから日付降順で
     const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
@@ -115,7 +106,7 @@ export default function PracticeSharePage() {
       setRecords(recs);
     });
 
-    // 授業案もFirestoreから取得
+    // 授業案も取得
     const lessonPlansCollection = collection(db, "lesson_plans");
     const unsubscribePlans = onSnapshot(lessonPlansCollection, (snapshot) => {
       const plansData: LessonPlan[] = snapshot.docs.map(doc => ({
@@ -137,7 +128,7 @@ export default function PracticeSharePage() {
     };
   }, []);
 
-  // フィルター検索ボタン押下時にフィルター反映
+  // フィルター検索反映
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
@@ -145,7 +136,7 @@ export default function PracticeSharePage() {
     setAuthorFilter(inputAuthor.trim() || null);
   };
 
-  // フィルター適用済みデータ
+  // フィルター適用済みリスト
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
@@ -154,10 +145,9 @@ export default function PracticeSharePage() {
     return true;
   });
 
-  // メニュー開閉
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // いいね判定
+  // いいね済み判定
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
@@ -196,7 +186,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // コメント入力変更
+  // コメント入力処理
   const handleCommentChange = (lessonId: string, value: string) => {
     setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
@@ -313,7 +303,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDFアップロード処理（投稿者のみ許可）
+  // PDFアップロード
   const handlePdfUpload = async (lessonId: string, file: File) => {
     if (!session) {
       alert("ログインしてください");
@@ -349,7 +339,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // PDF削除処理（投稿者のみ許可）
+  // PDF削除
   const handleDeletePdf = async (lessonId: string, pdfName?: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -390,7 +380,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 実践案削除時にPDFも削除（投稿者のみ許可）
+  // 実践案削除
   const handleDeleteRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -425,7 +415,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // 編集ページ遷移
+  // 編集画面へ遷移
   const handleEdit = (lessonId: string) => {
     router.push(`/practice/add/${lessonId}`);
   };
@@ -469,7 +459,7 @@ export default function PracticeSharePage() {
     });
   };
 
-  // 画像を逐次base64変換する関数（非同期で分割処理）
+  // 画像を逐次base64に変換（非同期・最大5枚まで）
   const convertImagesToBase64 = async (images: BoardImage[], maxCount = 5): Promise<string[]> => {
     const result: string[] = [];
     const limitedImages = images.slice(0, maxCount);
@@ -488,7 +478,7 @@ export default function PracticeSharePage() {
     return result;
   };
 
-  // PDF生成関数（ファイル名は単元名_実践記録_作成者名.pdf）
+  // PDF生成（余白を詰めて画像は見やすく調整）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
 
@@ -502,57 +492,54 @@ export default function PracticeSharePage() {
 
       const html2pdf = (await import("html2pdf.js")).default;
       const tempDiv = document.createElement("div");
-      tempDiv.style.padding = "20px";
+
+      // PDF全体スタイル調整（余白狭め、文字小さめ、行間詰め）
+      tempDiv.style.padding = "12px";
       tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
       tempDiv.style.backgroundColor = "#fff";
       tempDiv.style.color = "#000";
-      tempDiv.style.lineHeight = "1.6";
+      tempDiv.style.lineHeight = "1.3";
+      tempDiv.style.fontSize = "12px";
 
-      // ファイル名用単元名・作成者名を安全化してファイル名生成
       const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
       const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
-      // 該当授業案取得
       const plan = lessonPlans.find(p => p.id === record.lessonId);
 
-      // 授業案HTML組み立て
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
-        lessonPlanHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">授業案</h2>`;
-        lessonPlanHtml += `<p><strong>教科書名：</strong> ${plan.result["教科書名"] || "－"}</p>`;
-        lessonPlanHtml += `<p><strong>単元名：</strong> ${plan.result["単元名"] || "－"}</p>`;
-        lessonPlanHtml += `<p><strong>授業時間数：</strong> ${plan.result["授業時間数"] || "－"}時間</p>`;
-        lessonPlanHtml += `<p><strong>単元の目標：</strong> ${plan.result["単元の目標"] || "－"}</p>`;
+        lessonPlanHtml += `<h2 style="color:#4CAF50; margin-top: 8px; margin-bottom: 8px;">授業案</h2>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>教科書名：</strong> ${plan.result["教科書名"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元名：</strong> ${plan.result["単元名"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業時間数：</strong> ${plan.result["授業時間数"] || "－"}時間</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元の目標：</strong> ${plan.result["単元の目標"] || "－"}</p>`;
 
         if (plan.result["評価の観点"]) {
-          lessonPlanHtml += `<strong>評価の観点：</strong>`;
+          lessonPlanHtml += `<strong style="display:block; margin-top: 8px;">評価の観点：</strong>`;
 
-          // 知識・技能
           const knowledge = Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
             ? plan.result["評価の観点"]["知識・技能"]
             : plan.result["評価の観点"]?.["知識・技能"]
             ? [plan.result["評価の観点"]["知識・技能"]]
             : [];
-          lessonPlanHtml += `<p><strong>知識・技能</strong></p><ul>`;
+          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>知識・技能</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           knowledge.forEach((v: string) => {
-            lessonPlanHtml += `<li>${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
-          // 思考・判断・表現
           const thinking = Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
             ? plan.result["評価の観点"]["思考・判断・表現"]
             : plan.result["評価の観点"]?.["思考・判断・表現"]
             ? [plan.result["評価の観点"]["思考・判断・表現"]]
             : [];
-          lessonPlanHtml += `<p><strong>思考・判断・表現</strong></p><ul>`;
+          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>思考・判断・表現</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           thinking.forEach((v: string) => {
-            lessonPlanHtml += `<li>${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
-          // 主体的に学習に取り組む態度
           const attitude = Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
             ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
             : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
@@ -560,18 +547,18 @@ export default function PracticeSharePage() {
             : plan.result["評価の観点"]?.["態度"]
             ? [plan.result["評価の観点"]["態度"]]
             : [];
-          lessonPlanHtml += `<p><strong>主体的に学習に取り組む態度</strong></p><ul>`;
+          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>主体的に学習に取り組む態度</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           attitude.forEach((v: string) => {
-            lessonPlanHtml += `<li>${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
           });
           lessonPlanHtml += `</ul>`;
         }
 
-        lessonPlanHtml += `<p><strong>育てたい子どもの姿：</strong> ${plan.result["育てたい子どもの姿"] || "－"}</p>`;
-        lessonPlanHtml += `<p><strong>言語活動の工夫：</strong> ${plan.result["言語活動の工夫"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>育てたい子どもの姿：</strong> ${plan.result["育てたい子どもの姿"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>言語活動の工夫：</strong> ${plan.result["言語活動の工夫"] || "－"}</p>`;
 
         if (plan.result["授業の流れ"]) {
-          lessonPlanHtml += `<p><strong>授業の流れ：</strong></p><ul>`;
+          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業の流れ：</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           Object.entries(plan.result["授業の流れ"])
             .sort((a, b) => {
               const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
@@ -580,26 +567,32 @@ export default function PracticeSharePage() {
             })
             .forEach(([key, val]) => {
               const content = typeof val === "string" ? val : JSON.stringify(val);
-              lessonPlanHtml += `<li><strong>${key}:</strong> ${content}</li>`;
+              lessonPlanHtml += `<li style="margin-bottom:2px;"><strong>${key}:</strong> ${content}</li>`;
             });
           lessonPlanHtml += `</ul>`;
         }
       }
 
-      // 板書画像はbase64変換し取得
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
-        boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 24px;">板書画像</h2>`;
+        boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 12px;">板書画像</h2>`;
 
-        // 画像をbase64に変換（最大5枚まで）
         const base64Images = await convertImagesToBase64(record.boardImages, 5);
 
         base64Images.forEach((base64, idx) => {
           if (base64) {
             boardImagesHtml += `
-              <div style="page-break-inside: avoid; margin-bottom: 16px;">
-                <p><strong>板書${idx + 1}</strong></p>
-                <img src="${base64}" style="width: 100%; max-width: 600px; height: auto; border: 1px solid #ccc; border-radius: 8px;" />
+              <div style="page-break-inside: avoid; margin-bottom: 12px;">
+                <p style="margin-top:4px; margin-bottom:6px; font-weight: bold;">板書${idx + 1}</p>
+                <img src="${base64}" style="
+                  width: 100%;
+                  max-width: 600px;
+                  height: auto;
+                  border: 1px solid #ccc;
+                  border-radius: 8px;
+                  display: block;
+                  margin: 0 auto;
+                " />
               </div>
             `;
           }
@@ -607,14 +600,16 @@ export default function PracticeSharePage() {
       }
 
       tempDiv.innerHTML = `
-        <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px;">${record.lessonTitle || safeUnitName}</h1>
-        <p><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
-        <p><strong>作成者：</strong> ${record.authorName || "－"}</p>
+        <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px; margin-top:0; margin-bottom: 12px; font-size: 20px;">
+          ${record.lessonTitle || safeUnitName}
+        </h1>
+        <p style="margin-top:4px; margin-bottom:4px;"><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
+        <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${record.authorName || "－"}</p>
 
         ${lessonPlanHtml}
 
-        <h2 style="color:#4CAF50; margin-top: 24px;">振り返り</h2>
-        <p style="white-space: pre-wrap;">${record.reflection || "－"}</p>
+        <h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">振り返り</h2>
+        <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${record.reflection || "－"}</p>
 
         ${boardImagesHtml}
       `;
@@ -640,7 +635,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // --- Styles ---
+  // CSSプロパティの定義
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -838,7 +833,7 @@ export default function PracticeSharePage() {
     marginBottom: 12,
   };
 
-  // PDFファイル選択UI
+  // PDFアップロードUI部品
   const PdfFileInput = ({
     lessonId,
     uploading,
@@ -1250,7 +1245,7 @@ export default function PracticeSharePage() {
                     </div>
                   )}
 
-                  {/* PDFアップロード・表示・削除（投稿者のみ許可） */}
+                  {/* PDFアップロード・表示・削除 */}
                   <div style={{ marginTop: 12 }}>
                     {r.pdfUrl ? (
                       <>
@@ -1291,7 +1286,7 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 実践記録削除ボタン（投稿者のみ表示） */}
+                  {/* 実践記録削除ボタン */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
