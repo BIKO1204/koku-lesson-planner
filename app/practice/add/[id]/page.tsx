@@ -998,7 +998,7 @@ export default function PracticeAddPage() {
             <section style={{ marginTop: 24 }}>
               <h3>実践記録</h3>
               <p>
-                <strong>実施日：</strong> {record.practiceDate}
+                <strong>実践開始日：</strong> {record.practiceDate}
               </p>
               <p>
                 <strong>作成者：</strong> {record.authorName || "不明"} {/* author → authorName */}

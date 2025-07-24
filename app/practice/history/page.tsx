@@ -535,7 +535,7 @@ export default function PracticeHistoryPage() {
                     )}
 
                     <p style={{ marginTop: 16 }}>
-                      <strong>実施日：</strong> {r.practiceDate}
+                      <strong>実践開始日：</strong> {r.practiceDate}
                     </p>
 
                     <p>
