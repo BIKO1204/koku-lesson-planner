@@ -66,7 +66,10 @@ export default function ClientPlan() {
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
 
+  // 選択した教育観モデル（従来のselect用）
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
+
+  // 作成モデルボタン選択用state
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
 
   const [subject, setSubject] = useState("東京書籍");
@@ -115,7 +118,7 @@ export default function ClientPlan() {
     fetchStyleModels();
   }, []);
 
-  // 編集データ復元時のselectedAuthorIdも復元
+  // 編集データ復元時にselectedAuthorIdも復元（マッピングから推測）
   useEffect(() => {
     const storedEdit = localStorage.getItem(EDIT_KEY);
     if (storedEdit) {
@@ -136,6 +139,7 @@ export default function ClientPlan() {
         setParsedResult(plan.result);
         setInitialData(plan);
 
+        // selectedStyleIdに対応するauthorIdをセット
         const authorFromStyle = authors.find((a) => a.id === plan.selectedStyleId);
         if (authorFromStyle) {
           setSelectedAuthorId(authorFromStyle.id);
@@ -154,7 +158,6 @@ export default function ClientPlan() {
     }
   }, [searchParams]);
 
-  // CSVテンプレートから評価観点を自動取得
   useEffect(() => {
     fetch("/templates.csv")
       .then((res) => res.text())
@@ -164,15 +167,9 @@ export default function ClientPlan() {
           (r) => r.学年 === grade && r.ジャンル === genre
         );
         const grouped: EvaluationPoints = {
-          knowledge: matched
-            .filter((r) => r.観点 === "knowledge")
-            .map((r) => r.内容),
-          thinking: matched
-            .filter((r) => r.観点 === "thinking")
-            .map((r) => r.内容),
-          attitude: matched
-            .filter((r) => r.観点 === "attitude")
-            .map((r) => r.内容),
+          knowledge: matched.filter((r) => r.観点 === "knowledge").map((r) => r.内容),
+          thinking: matched.filter((r) => r.観点 === "thinking").map((r) => r.内容),
+          attitude: matched.filter((r) => r.観点 === "attitude").map((r) => r.内容),
         };
         if (
           grouped.knowledge.length ||
@@ -352,6 +349,7 @@ ${languageActivities}
     }
   };
 
+  // 保存ボタンの処理（ローカルとFirestoreに分けて保存）
   const handleSave = async () => {
     if (!parsedResult) {
       alert("まず授業案を生成してください");
@@ -366,6 +364,7 @@ ${languageActivities}
     const idToUse = isEdit ? editId! : Date.now().toString();
     const timestamp = new Date().toISOString();
 
+    // 選択された作成モデル情報取得
     const author = authors.find((a) => a.id === selectedAuthorId);
     if (!author) {
       alert("不正な作成モデルが選択されています");
@@ -373,6 +372,12 @@ ${languageActivities}
     }
     const collectionName = author.collection;
 
+    // 最初のモデル名を優先
+    const styleModelName = styleModels.find(m => m.id === selectedStyleId)?.name;
+    const authorName = author.label;
+    const usedStyleName = styleModelName || authorName || null;
+
+    // ローカル保存
     const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     if (isEdit) {
       const newArr = existingArr.map((p) =>
@@ -392,7 +397,7 @@ ${languageActivities}
               selectedStyleId,
               result: parsedResult,
               timestamp,
-              usedStyleName: author.label,
+              usedStyleName,
             }
           : p
       );
@@ -413,12 +418,13 @@ ${languageActivities}
         selectedStyleId,
         result: parsedResult,
         timestamp,
-        usedStyleName: author.label,
+        usedStyleName,
       };
       existingArr.push(newPlan);
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
+    // Firestore保存
     try {
       await setDoc(
         doc(db, collectionName, idToUse),
@@ -436,7 +442,7 @@ ${languageActivities}
           selectedStyleId,
           result: parsedResult,
           timestamp,
-          usedStyleName: author.label,
+          usedStyleName,
         },
         { merge: true }
       );
@@ -648,6 +654,35 @@ ${languageActivities}
             </label>
           </div>
 
+          {/* 作成モデルボタン群 */}
+          <div style={{ marginBottom: "1rem" }}>
+            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>
+              作成モデルを選択してください（必須）
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {authors.map((author) => (
+                <button
+                  key={author.id}
+                  type="button"
+                  onClick={() => handleAuthorSelect(author.id)}
+                  style={{
+                    flex: 1,
+                    padding: "0.8rem 1rem",
+                    borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
+                    backgroundColor:
+                      selectedAuthorId === author.id ? "#1976d2" : "#ccc",
+                    color: selectedAuthorId === author.id ? "white" : "black",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {author.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <label>
             モデル選択：<br />
             <select value={selectedStyleId} onChange={handleStyleChange} style={inputStyle}>
@@ -729,6 +764,7 @@ ${languageActivities}
                   : f === "thinking"
                   ? "② 思考・判断・表現："
                   : "③ 主体的に学習に取り組む態度："}
+
               </label>
               {evaluationPoints[f].map((v, i) => (
                 <div
@@ -774,35 +810,6 @@ ${languageActivities}
               style={inputStyle}
             />
           </label>
-
-          {/* ←ここに作成モデルボタン群を移動しました*/}
-          <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
-            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>
-              作成モデルを選択してください（必須）
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              {authors.map((author) => (
-                <button
-                  key={author.id}
-                  type="button"
-                  onClick={() => handleAuthorSelect(author.id)}
-                  style={{
-                    flex: 1,
-                    padding: "0.8rem 1rem",
-                    borderRadius: 6,
-                    border: "none",
-                    cursor: "pointer",
-                    backgroundColor:
-                      selectedAuthorId === author.id ? "#1976d2" : "#ccc",
-                    color: selectedAuthorId === author.id ? "white" : "black",
-                    fontWeight: "bold",
-                  }}
-                >
-                  {author.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {hours && (
             <div style={{ marginBottom: "1rem" }}>

@@ -310,7 +310,7 @@ export default function HistoryPage() {
                     {plan.grade}・{plan.genre}
                   </p>
                   <p>
-                    <strong>スタイル：</strong>
+                    <strong>モデル：</strong>
                     {plan.usedStyleName ?? "（未設定）"}
                   </p>
                   <p>
