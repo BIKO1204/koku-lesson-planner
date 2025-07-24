@@ -909,7 +909,8 @@ export default function PracticeSharePage() {
                   <p style={practiceDateStyle}>
                     実施日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
-                  <p style={authorNameStyle}>作成者: {r.authorName || "－"}</p>
+                  {/* 作成者名表示はauthorName優先 */}
+                  <p style={authorNameStyle}>作成者: {r.authorName || r.author || "－"}</p>
 
                   <button
                     onClick={() => handleEdit(r.lessonId)}
