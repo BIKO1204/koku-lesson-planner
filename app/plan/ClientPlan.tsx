@@ -49,6 +49,7 @@ type LessonPlanStored = {
   result: ParsedResult;
   timestamp: string;
   usedStyleName?: string | null;
+  planName?: string; // 追加：保存用授業モデル名
 };
 
 export default function ClientPlan() {
@@ -67,6 +68,9 @@ export default function ClientPlan() {
 
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
+
+  // ★新規追加：授業モデル名（保存名）入力用state
+  const [planName, setPlanName] = useState<string>("");
 
   const [subject, setSubject] = useState("東京書籍");
   const [grade, setGrade] = useState("1年");
@@ -132,6 +136,8 @@ export default function ClientPlan() {
         setSelectedStyleId(plan.selectedStyleId);
         setParsedResult(plan.result);
         setInitialData(plan);
+
+        if(plan.planName) setPlanName(plan.planName); // ★編集復元時に授業モデル名も復元
 
         const authorFromStyle = authors.find((a) => a.id === plan.selectedStyleId);
         if (authorFromStyle) {
@@ -215,6 +221,10 @@ export default function ClientPlan() {
 
     if (!selectedAuthorId) {
       alert("作成モデルを選択してください");
+      return;
+    }
+    if (!planName.trim()) {
+      alert("授業モデル名（保存名）を入力してください");
       return;
     }
 
@@ -357,6 +367,10 @@ ${languageActivities}
       alert("作成モデルを選択してください");
       return;
     }
+    if (!planName.trim()) {
+      alert("授業モデル名（保存名）を入力してください");
+      return;
+    }
 
     const isEdit = Boolean(editId);
     const idToUse = isEdit ? editId! : Date.now().toString();
@@ -388,7 +402,8 @@ ${languageActivities}
               selectedStyleId,
               result: parsedResult,
               timestamp,
-              usedStyleName: author.label,
+              usedStyleName: planName.trim() || author.label, // ★ planName優先
+              planName: planName.trim(), // ★ 保存名も残す
             }
           : p
       );
@@ -409,7 +424,8 @@ ${languageActivities}
         selectedStyleId,
         result: parsedResult,
         timestamp,
-        usedStyleName: author.label,
+        usedStyleName: planName.trim() || author.label, // ★ planName優先
+        planName: planName.trim(), // ★ 保存名も残す
       };
       existingArr.push(newPlan);
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
@@ -432,7 +448,8 @@ ${languageActivities}
           selectedStyleId,
           result: parsedResult,
           timestamp,
-          usedStyleName: author.label,
+          usedStyleName: planName.trim() || author.label, // ★ planName優先
+          planName: planName.trim(), // ★ 保存名も残す
         },
         { merge: true }
       );
@@ -637,6 +654,18 @@ ${languageActivities}
           </div>
 
           <label>
+            授業モデル名（保存名）：<br />
+            <input
+              type="text"
+              value={planName}
+              onChange={(e) => setPlanName(e.target.value)}
+              style={inputStyle}
+              placeholder="例）面白い授業モデル"
+              required
+            />
+          </label>
+
+          <label>
             モデル選択：<br />
             <select value={selectedStyleId} onChange={handleStyleChange} style={inputStyle}>
               <option value="">（未選択）</option>
@@ -784,7 +813,6 @@ ${languageActivities}
             </div>
           )}
 
-          {/* ★ここに作成モデルボタン群を移動しました */}
           <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
             <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>
               作成モデルを選択してください（必須）
@@ -815,12 +843,14 @@ ${languageActivities}
 
           <button
             type="submit"
-            disabled={!selectedAuthorId}
+            disabled={!selectedAuthorId || !planName.trim()}
             style={{
               ...inputStyle,
-              backgroundColor: selectedAuthorId ? "#2196F3" : "#ccc",
+              backgroundColor:
+                selectedAuthorId && planName.trim() ? "#2196F3" : "#ccc",
               color: "white",
-              cursor: selectedAuthorId ? "pointer" : "not-allowed",
+              cursor:
+                selectedAuthorId && planName.trim() ? "pointer" : "not-allowed",
             }}
           >
             {mode === "manual" ? "授業案を表示する" : "授業案を生成する"}
