@@ -50,10 +50,12 @@ type PracticeRecord = {
   pdfUrl?: string;
   pdfName?: string;
   createdAt?: string;
+  modelType?: string; // モデル識別用
 };
 type LessonPlan = {
   id: string;
   result: any;
+  modelType?: string; // モデル識別用
 };
 
 export default function PracticeSharePage() {
@@ -61,74 +63,122 @@ export default function PracticeSharePage() {
   const userId = session?.user?.email || "";
   const router = useRouter();
 
+  // フィルター入力用ステート
   const [inputGrade, setInputGrade] = useState<string>("");
   const [inputGenre, setInputGenre] = useState<string>("");
   const [inputUnitName, setInputUnitName] = useState<string>("");
   const [inputAuthor, setInputAuthor] = useState<string>("");
 
+  // フィルター適用用ステート
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
   const [unitNameFilter, setUnitNameFilter] = useState<string | null>(null);
   const [authorFilter, setAuthorFilter] = useState<string | null>(null);
 
+  // 実践記録一覧
   const [records, setRecords] = useState<PracticeRecord[]>([]);
+  // 授業案一覧
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
 
+  // コメント投稿用
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
+  // コメント編集関連
   const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
+  // PDFアップロード処理中ID
   const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
 
+  // メニュー開閉
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
 
+  // PDF生成処理中ID
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
   const storage = getStorage();
 
+  // 初回＆マウント時：複数モデルコレクションから実践記録をリアルタイム取得
   useEffect(() => {
-    // 実践記録を取得、practiceRecordsコレクションから日付降順で
-    const q = query(collection(db, "practiceRecords"), orderBy("practiceDate", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
-        ...(doc.data() as PracticeRecord),
-        lessonId: doc.id,
-        likedUsers: (doc.data() as any).likedUsers || [],
-        author: (doc.data() as any).author || "",
-        authorName: (doc.data() as any).authorName || "",
-        pdfUrl: (doc.data() as any).pdfUrl || "",
-        pdfName: (doc.data() as any).pdfName || "",
-        createdAt: (doc.data() as any).createdAt || "",
-      }));
-      setRecords(recs);
+    // 4つのモデルごとのコレクション名
+    const modelCollections = [
+      "practiceRecords_reading",
+      "practiceRecords_discussion",
+      "practiceRecords_writing",
+      "practiceRecords_language_activity",
+    ];
+
+    const unsubscribers: (() => void)[] = [];
+    let allRecords: PracticeRecord[] = [];
+
+    modelCollections.forEach((colName) => {
+      const q = query(collection(db, colName), orderBy("practiceDate", "desc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
+          ...(doc.data() as PracticeRecord),
+          lessonId: doc.id,
+          modelType: colName.replace("practiceRecords_", ""),
+          likedUsers: (doc.data() as any).likedUsers || [],
+          author: (doc.data() as any).author || "",
+          authorName: (doc.data() as any).authorName || "",
+          pdfUrl: (doc.data() as any).pdfUrl || "",
+          pdfName: (doc.data() as any).pdfName || "",
+          createdAt: (doc.data() as any).createdAt || "",
+        }));
+
+        // 同じモデルの古い記録を除外し、最新を追加
+        allRecords = [
+          ...allRecords.filter(r => r.modelType !== colName.replace("practiceRecords_", "")),
+          ...recs,
+        ];
+
+        // 日付降順にソート
+        allRecords.sort((a, b) => b.practiceDate.localeCompare(a.practiceDate));
+
+        setRecords([...allRecords]);
+      });
+      unsubscribers.push(unsubscribe);
     });
 
-    // 授業案も取得
-    const lessonPlansCollection = collection(db, "lesson_plans");
-    const unsubscribePlans = onSnapshot(lessonPlansCollection, (snapshot) => {
-      const plansData: LessonPlan[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        result: doc.data().result,
-      }));
-      setLessonPlans(plansData);
-    });
+    // 授業案コレクションは分割されているので4つからまとめて取得
+    const lessonPlanCollections = [
+      "lesson_plans_reading",
+      "lesson_plans_discussion",
+      "lesson_plans_writing",
+      "lesson_plans_language_activity",
+    ];
 
-    // 画面幅判定
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    handleResize();
-    window.addEventListener("resize", handleResize);
+    const planUnsubs: (() => void)[] = [];
+    let allPlans: LessonPlan[] = [];
+
+    lessonPlanCollections.forEach((colName) => {
+      const q = query(collection(db, colName));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const plansData: LessonPlan[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          result: doc.data().result,
+          modelType: colName.replace("lesson_plans_", ""),
+        }));
+
+        // 同じモデルの古い授業案を除外し最新を追加
+        allPlans = [
+          ...allPlans.filter(p => p.modelType !== colName.replace("lesson_plans_", "")),
+          ...plansData,
+        ];
+
+        setLessonPlans([...allPlans]);
+      });
+      planUnsubs.push(unsubscribe);
+    });
 
     return () => {
-      unsubscribe();
-      unsubscribePlans();
-      window.removeEventListener("resize", handleResize);
+      unsubscribers.forEach(unsub => unsub());
+      planUnsubs.forEach(unsub => unsub());
     };
   }, []);
 
-  // フィルター検索反映
+  // フィルター適用ボタン
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
@@ -136,7 +186,7 @@ export default function PracticeSharePage() {
     setAuthorFilter(inputAuthor.trim() || null);
   };
 
-  // フィルター適用済みリスト
+  // フィルター済みリスト
   const filteredRecords = records.filter((r) => {
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
@@ -145,9 +195,10 @@ export default function PracticeSharePage() {
     return true;
   });
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
+  // メニュー開閉トグル
+  const toggleMenu = () => setMenuOpen(prev => !prev);
 
-  // いいね済み判定
+  // いいね判定
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
@@ -163,7 +214,13 @@ export default function PracticeSharePage() {
       alert("ユーザー情報が取得できません");
       return;
     }
-    const docRef = doc(db, "practiceRecords", lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("モデルタイプが特定できません");
+      return;
+    }
+    const collectionName = `practiceRecords_${record.modelType}`;
+    const docRef = doc(db, collectionName, lessonId);
     try {
       await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
@@ -186,12 +243,12 @@ export default function PracticeSharePage() {
     }
   };
 
-  // コメント入力処理
+  // コメント入力変更
   const handleCommentChange = (lessonId: string, value: string) => {
-    setNewComments((prev) => ({ ...prev, [lessonId]: value }));
+    setNewComments(prev => ({ ...prev, [lessonId]: value }));
   };
   const handleCommentAuthorChange = (lessonId: string, value: string) => {
-    setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
+    setNewCommentAuthors(prev => ({ ...prev, [lessonId]: value }));
   };
 
   // コメント追加
@@ -210,18 +267,25 @@ export default function PracticeSharePage() {
       alert("コメント投稿者名を入力してください");
       return;
     }
+    const record = records.find(r => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("モデルタイプが特定できません");
+      return;
+    }
+    const collectionName = `practiceRecords_${record.modelType}`;
+    const docRef = doc(db, collectionName, lessonId);
+
     try {
-      const docRef = doc(db, "practiceRecords", lessonId);
       await updateDoc(docRef, {
         comments: arrayUnion({
-          userId: userId,
+          userId,
           displayName: commentAuthor,
           comment,
           createdAt: new Date().toISOString(),
         }),
       });
-      setNewComments((prev) => ({ ...prev, [lessonId]: "" }));
-      setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
+      setNewComments(prev => ({ ...prev, [lessonId]: "" }));
+      setNewCommentAuthors(prev => ({ ...prev, [lessonId]: "" }));
     } catch (e) {
       console.error("コメント追加失敗", e);
       alert("コメントの投稿に失敗しました");
@@ -233,15 +297,17 @@ export default function PracticeSharePage() {
     setEditingCommentId({ recordId, index });
     setEditingCommentText(currentText);
   };
+  // コメント編集キャンセル
   const cancelEditComment = () => {
     setEditingCommentId(null);
     setEditingCommentText("");
   };
+  // コメント編集テキスト変更
   const onEditCommentTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditingCommentText(e.target.value);
   };
 
-  // コメント編集保存
+  // コメント更新
   const handleUpdateComment = async () => {
     if (!editingCommentId) return;
     const { recordId, index } = editingCommentId;
@@ -253,8 +319,8 @@ export default function PracticeSharePage() {
       alert("コメントを入力してください");
       return;
     }
-    const record = records.find((r) => r.lessonId === recordId);
-    if (!record || !record.comments || !record.comments[index]) {
+    const record = records.find(r => r.lessonId === recordId);
+    if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
     }
@@ -267,8 +333,9 @@ export default function PracticeSharePage() {
       ...updatedComments[index],
       comment: editingCommentText,
     };
+    const collectionName = `practiceRecords_${record.modelType}`;
+    const docRef = doc(db, collectionName, recordId);
     try {
-      const docRef = doc(db, "practiceRecords", recordId);
       await updateDoc(docRef, { comments: updatedComments });
       cancelEditComment();
     } catch (e) {
@@ -283,8 +350,8 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === recordId);
-    if (!record || !record.comments || !record.comments[index]) {
+    const record = records.find(r => r.lessonId === recordId);
+    if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
     }
@@ -294,8 +361,9 @@ export default function PracticeSharePage() {
     }
     const updatedComments = [...record.comments];
     updatedComments.splice(index, 1);
+    const collectionName = `practiceRecords_${record.modelType}`;
+    const docRef = doc(db, collectionName, recordId);
     try {
-      const docRef = doc(db, "practiceRecords", recordId);
       await updateDoc(docRef, { comments: updatedComments });
     } catch (e) {
       console.error("コメント削除失敗", e);
@@ -309,33 +377,32 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record) {
-      alert("対象の実践案が見つかりません");
+    const record = records.find(r => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("対象の実践案またはモデルタイプが見つかりません");
       return;
     }
     if (record.author !== userId) {
       alert("PDFのアップロードは投稿者のみ可能です");
       return;
     }
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
       await uploadBytes(pdfRef, file);
       const url = await getDownloadURL(pdfRef);
-
-      const docRef = doc(db, "practiceRecords", lessonId);
+      const collectionName = `practiceRecords_${record.modelType}`;
+      const docRef = doc(db, collectionName, lessonId);
       await updateDoc(docRef, {
         pdfUrl: url,
         pdfName: file.name,
       });
-
       alert("PDFをアップロードしました");
     } catch (error) {
       console.error("PDFアップロード失敗", error);
       alert("PDFアップロードに失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
@@ -345,9 +412,9 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record) {
-      alert("対象の実践案が見つかりません");
+    const record = records.find(r => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("対象の実践案またはモデルタイプが見つかりません");
       return;
     }
     if (record.author !== userId) {
@@ -359,36 +426,34 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にPDFファイルを削除しますか？")) return;
-
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdfName}`);
       await deleteObject(pdfRef);
-
-      const docRef = doc(db, "practiceRecords", lessonId);
+      const collectionName = `practiceRecords_${record.modelType}`;
+      const docRef = doc(db, collectionName, lessonId);
       await updateDoc(docRef, {
         pdfUrl: "",
         pdfName: "",
       });
-
       alert("PDFを削除しました");
     } catch (error) {
       console.error("PDF削除失敗", error);
       alert("PDF削除に失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
-  // 実践案削除
+  // 実践記録削除
   const handleDeleteRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record) {
-      alert("対象の実践案が見つかりません");
+    const record = records.find(r => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("対象の実践案またはモデルタイプが見つかりません");
       return;
     }
     if (record.author !== userId) {
@@ -396,31 +461,30 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にこの実践案を削除しますか？")) return;
-
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       if (record.pdfName) {
         const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${record.pdfName}`);
         await deleteObject(pdfRef);
       }
-      const docRef = doc(db, "practiceRecords", lessonId);
+      const collectionName = `practiceRecords_${record.modelType}`;
+      const docRef = doc(db, collectionName, lessonId);
       await deleteDoc(docRef);
-
       alert("実践案を削除しました");
     } catch (error) {
       console.error("実践案削除失敗", error);
       alert("実践案の削除に失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
-  // 編集画面へ遷移
+  // 編集ページへ遷移
   const handleEdit = (lessonId: string) => {
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // 画像URLをbase64に変換（タイムアウト付き）
+  // 画像をBase64変換(タイムアウト付き)
   const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -431,7 +495,6 @@ export default function PracticeSharePage() {
         img.src = "";
         reject(new Error("画像変換タイムアウト"));
       }, timeout);
-
       img.onload = () => {
         if (didTimeout) return;
         clearTimeout(timer);
@@ -448,25 +511,21 @@ export default function PracticeSharePage() {
           reject(e);
         }
       };
-
       img.onerror = () => {
         if (didTimeout) return;
         clearTimeout(timer);
         reject(new Error("画像読み込み失敗"));
       };
-
       img.src = url;
     });
   };
 
-  // 画像を逐次base64に変換（非同期・最大5枚まで）
+  // 板書画像を最大5枚までBase64変換
   const convertImagesToBase64 = async (images: BoardImage[], maxCount = 5): Promise<string[]> => {
     const result: string[] = [];
     const limitedImages = images.slice(0, maxCount);
-
     for (let i = 0; i < limitedImages.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
+      await new Promise(resolve => setTimeout(resolve, 50));
       try {
         const base64 = await toBase64ImageWithTimeout(limitedImages[i].src, 5000);
         result.push(base64);
@@ -474,26 +533,20 @@ export default function PracticeSharePage() {
         result.push("");
       }
     }
-
     return result;
   };
 
-  // PDF生成（余白を詰めて画像は見やすく調整）
+  // PDF生成処理
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
-
     if (pdfGeneratingId) {
       alert("PDF生成処理が既に進行中です。しばらくお待ちください。");
       return;
     }
-
     try {
       setPdfGeneratingId(record.lessonId);
-
       const html2pdf = (await import("html2pdf.js")).default;
       const tempDiv = document.createElement("div");
-
-      // PDF全体スタイル調整（余白狭め、文字小さめ、行間詰め）
       tempDiv.style.padding = "12px";
       tempDiv.style.fontFamily = "'Yu Gothic', 'YuGothic', 'Meiryo', 'sans-serif'";
       tempDiv.style.backgroundColor = "#fff";
@@ -505,7 +558,8 @@ export default function PracticeSharePage() {
       const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
-      const plan = lessonPlans.find(p => p.id === record.lessonId);
+      // modelTypeも一致させて授業案を探す
+      const plan = lessonPlans.find(p => p.id === record.lessonId && p.modelType === record.modelType);
 
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
@@ -521,8 +575,8 @@ export default function PracticeSharePage() {
           const knowledge = Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
             ? plan.result["評価の観点"]["知識・技能"]
             : plan.result["評価の観点"]?.["知識・技能"]
-            ? [plan.result["評価の観点"]["知識・技能"]]
-            : [];
+              ? [plan.result["評価の観点"]["知識・技能"]]
+              : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>知識・技能</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           knowledge.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -532,8 +586,8 @@ export default function PracticeSharePage() {
           const thinking = Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
             ? plan.result["評価の観点"]["思考・判断・表現"]
             : plan.result["評価の観点"]?.["思考・判断・表現"]
-            ? [plan.result["評価の観点"]["思考・判断・表現"]]
-            : [];
+              ? [plan.result["評価の観点"]["思考・判断・表現"]]
+              : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>思考・判断・表現</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           thinking.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -543,10 +597,10 @@ export default function PracticeSharePage() {
           const attitude = Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
             ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
             : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-            ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-            : plan.result["評価の観点"]?.["態度"]
-            ? [plan.result["評価の観点"]["態度"]]
-            : [];
+              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+              : plan.result["評価の観点"]?.["態度"]
+                ? [plan.result["評価の観点"]["態度"]]
+                : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>主体的に学習に取り組む態度</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           attitude.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -576,9 +630,7 @@ export default function PracticeSharePage() {
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 12px;">板書画像</h2>`;
-
         const base64Images = await convertImagesToBase64(record.boardImages, 5);
-
         base64Images.forEach((base64, idx) => {
           if (base64) {
             boardImagesHtml += `
@@ -605,15 +657,11 @@ export default function PracticeSharePage() {
         </h1>
         <p style="margin-top:4px; margin-bottom:4px;"><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
         <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${record.authorName || "－"}</p>
-
         ${lessonPlanHtml}
-
         <h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">振り返り</h2>
         <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${record.reflection || "－"}</p>
-
         ${boardImagesHtml}
       `;
-
       document.body.appendChild(tempDiv);
 
       await html2pdf()
@@ -635,205 +683,9 @@ export default function PracticeSharePage() {
     }
   };
 
-  // CSSプロパティの定義
-  const navBarStyle: CSSProperties = {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: 56,
-    backgroundColor: "#1976d2",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 1rem",
-    zIndex: 1000,
-  };
-  const hamburgerStyle: CSSProperties = {
-    cursor: "pointer",
-    width: 30,
-    height: 22,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  };
-  const barStyle: CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
-  const menuWrapperStyle: CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "100vh",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-  };
-  const menuScrollStyle: CSSProperties = {
-    padding: "1rem",
-    paddingBottom: 80,
-    overflowY: "auto",
-    flexGrow: 1,
-  };
-  const logoutButtonStyle: CSSProperties = {
-    padding: "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-    position: "relative",
-    zIndex: 1000,
-  };
-  const overlayStyle: CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const wrapperResponsiveStyle: CSSProperties = {
-    display: "flex",
-    maxWidth: 1200,
-    margin: "auto",
-    paddingTop: isMobile ? 16 : 72,
-    gap: isMobile ? 8 : 24,
-    flexDirection: isMobile ? "column" : "row",
-  };
-  const sidebarResponsiveStyle: CSSProperties = {
-    width: isMobile ? "100%" : 280,
-    maxWidth: "100%",
-    padding: 12,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 8,
-    boxShadow: "0 0 6px rgba(0,0,0,0.1)",
-    height: isMobile ? "auto" : "calc(100vh - 72px)",
-    overflowY: "auto",
-    position: isMobile ? "relative" : "sticky",
-    top: isMobile ? "auto" : 72,
-    marginBottom: isMobile ? 12 : 0,
-    boxSizing: "border-box",
-  };
-  const mainContentResponsiveStyle: CSSProperties = {
-    flex: 1,
-    fontFamily: "sans-serif",
-    width: isMobile ? "100%" : "auto",
-    padding: isMobile ? "8px 12px" : "0",
-    overflowWrap: "break-word",
-    wordBreak: "break-word",
-    maxWidth: isMobile ? "100%" : undefined,
-  };
-  const cardStyle: CSSProperties = {
-    border: "2px solid #ddd",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    backgroundColor: "#fdfdfd",
-    wordBreak: "break-word",
-  };
-  const boardImageContainerStyle: CSSProperties = {
-    width: "100%",
-    marginBottom: 12,
-    pageBreakInside: "avoid",
-  };
-  const likeBtnStyle: CSSProperties = {
-    marginRight: 12,
-    cursor: "pointer",
-    color: "#1976d2",
-    fontSize: "1rem",
-    opacity: 1,
-  };
-  const likeBtnDisabledStyle: CSSProperties = {
-    ...likeBtnStyle,
-    cursor: "default",
-    opacity: 0.6,
-  };
-  const commentListStyle: CSSProperties = {
-    maxHeight: 150,
-    overflowY: "auto",
-    marginTop: 8,
-    border: "1px solid #ddd",
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: "#fff",
-  };
-  const commentInputStyle: CSSProperties = {
-    width: "100%",
-    padding: 8,
-    marginTop: 8,
-    borderRadius: 4,
-    border: "1px solid #ccc",
-  };
-  const commentBtnStyle: CSSProperties = {
-    marginTop: 8,
-    padding: "6px 12px",
-    backgroundColor: "#4caf50",
-    color: "white",
-    border: "none",
-    borderRadius: 4,
-    cursor: "pointer",
-  };
-  const commentAuthorInputStyle: CSSProperties = {
-    width: "100%",
-    padding: 6,
-    marginTop: 8,
-    borderRadius: 4,
-    border: "1px solid #aaa",
-  };
-  const navLinkStyle: CSSProperties = {
-    display: "block",
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    textDecoration: "none",
-    marginBottom: "0.5rem",
-  };
-  const filterSectionTitleStyle: CSSProperties = {
-    fontWeight: "bold",
-    marginTop: 12,
-    marginBottom: 8,
-    fontSize: "1.1rem",
-  };
-  const lessonPlanSectionStyle: CSSProperties = {
-    backgroundColor: "#fafafa",
-    padding: isMobile ? 8 : 12,
-    borderRadius: 6,
-    marginBottom: isMobile ? 12 : 16,
-    wordBreak: "break-word",
-    fontSize: isMobile ? "0.85rem" : "1rem",
-    lineHeight: isMobile ? 1.2 : 1.5,
-  };
-  const practiceDateStyle: CSSProperties = {
-    fontSize: isMobile ? "0.8rem" : "0.9rem",
-    color: "#666",
-    fontStyle: "italic",
-    marginTop: 4,
-    marginBottom: 8,
-  };
-  const authorNameStyle: CSSProperties = {
-    fontSize: isMobile ? "0.85rem" : "0.95rem",
-    color: "#444",
-    fontWeight: "bold",
-    marginBottom: 12,
-  };
+  // --- CSSプロパティ群（省略。必要に応じて前回コードを参照） ---
 
-  // PDFアップロードUI部品
+  // PDFファイルアップロードUIコンポーネント
   const PdfFileInput = ({
     lessonId,
     uploading,
@@ -1060,12 +912,19 @@ export default function PracticeSharePage() {
             <p>条件に合う実践記録がありません。</p>
           ) : (
             filteredRecords.map((r) => {
-              const plan = lessonPlans.find((p) => p.id === r.lessonId);
+              const plan = lessonPlans.find(
+                (p) => p.id === r.lessonId && p.modelType === r.modelType
+              );
               const isAuthor = r.author === userId;
 
               return (
                 <article key={r.lessonId} style={cardStyle}>
-                  <h2 style={{ marginBottom: 8 }}>{r.lessonTitle}</h2>
+                  <h2 style={{ marginBottom: 8 }}>
+                    {r.lessonTitle}{" "}
+                    <small style={{ fontSize: "0.85rem", color: "#888" }}>
+                      [{r.modelType || "不明なモデル"}]
+                    </small>
+                  </h2>
 
                   {/* 実施日と作成者名 */}
                   <p style={practiceDateStyle}>
@@ -1424,3 +1283,201 @@ export default function PracticeSharePage() {
     </>
   );
 }
+
+// ここからCSSプロパティ（必要に応じて調整してください）
+
+const navBarStyle: CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: 56,
+  backgroundColor: "#1976d2",
+  display: "flex",
+  alignItems: "center",
+  padding: "0 1rem",
+  zIndex: 1000,
+};
+const hamburgerStyle: CSSProperties = {
+  cursor: "pointer",
+  width: 30,
+  height: 22,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
+};
+const barStyle: CSSProperties = {
+  height: 4,
+  backgroundColor: "white",
+  borderRadius: 2,
+};
+const menuWrapperStyle: CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: 250,
+  height: "100vh",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transform: "translateX(0)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+};
+const menuScrollStyle: CSSProperties = {
+  padding: "1rem",
+  paddingBottom: 80,
+  overflowY: "auto",
+  flexGrow: 1,
+};
+const logoutButtonStyle: CSSProperties = {
+  padding: "0.75rem 1rem",
+  backgroundColor: "#e53935",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  flexShrink: 0,
+  margin: "1rem",
+  position: "relative",
+  zIndex: 1000,
+};
+const overlayStyle: CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "100vh",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: 1,
+  visibility: "visible",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+};
+const wrapperResponsiveStyle: CSSProperties = {
+  display: "flex",
+  maxWidth: 1200,
+  margin: "auto",
+  paddingTop: 72,
+  gap: 24,
+  flexDirection: "row",
+};
+const sidebarResponsiveStyle: CSSProperties = {
+  width: 280,
+  maxWidth: "100%",
+  padding: 12,
+  backgroundColor: "#f9f9f9",
+  borderRadius: 8,
+  boxShadow: "0 0 6px rgba(0,0,0,0.1)",
+  height: "calc(100vh - 72px)",
+  overflowY: "auto",
+  position: "sticky",
+  top: 72,
+  marginBottom: 0,
+  boxSizing: "border-box",
+};
+const mainContentResponsiveStyle: CSSProperties = {
+  flex: 1,
+  fontFamily: "sans-serif",
+  width: "auto",
+  padding: "0",
+  overflowWrap: "break-word",
+  wordBreak: "break-word",
+};
+const cardStyle: CSSProperties = {
+  border: "2px solid #ddd",
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 24,
+  backgroundColor: "#fdfdfd",
+  wordBreak: "break-word",
+};
+const boardImageContainerStyle: CSSProperties = {
+  width: "100%",
+  marginBottom: 12,
+  pageBreakInside: "avoid",
+};
+const likeBtnStyle: CSSProperties = {
+  marginRight: 12,
+  cursor: "pointer",
+  color: "#1976d2",
+  fontSize: "1rem",
+  opacity: 1,
+};
+const likeBtnDisabledStyle: CSSProperties = {
+  ...likeBtnStyle,
+  cursor: "default",
+  opacity: 0.6,
+};
+const commentListStyle: CSSProperties = {
+  maxHeight: 150,
+  overflowY: "auto",
+  marginTop: 8,
+  border: "1px solid #ddd",
+  padding: 8,
+  borderRadius: 6,
+  backgroundColor: "#fff",
+};
+const commentInputStyle: CSSProperties = {
+  width: "100%",
+  padding: 8,
+  marginTop: 8,
+  borderRadius: 4,
+  border: "1px solid #ccc",
+};
+const commentBtnStyle: CSSProperties = {
+  marginTop: 8,
+  padding: "6px 12px",
+  backgroundColor: "#4caf50",
+  color: "white",
+  border: "none",
+  borderRadius: 4,
+  cursor: "pointer",
+};
+const commentAuthorInputStyle: CSSProperties = {
+  width: "100%",
+  padding: 6,
+  marginTop: 8,
+  borderRadius: 4,
+  border: "1px solid #aaa",
+};
+const navLinkStyle: CSSProperties = {
+  display: "block",
+  padding: "0.5rem 1rem",
+  backgroundColor: "#1976d2",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  textDecoration: "none",
+  marginBottom: "0.5rem",
+};
+const filterSectionTitleStyle: CSSProperties = {
+  fontWeight: "bold",
+  marginTop: 12,
+  marginBottom: 8,
+  fontSize: "1.1rem",
+};
+const lessonPlanSectionStyle: CSSProperties = {
+  backgroundColor: "#fafafa",
+  padding: 12,
+  borderRadius: 6,
+  marginBottom: 16,
+  wordBreak: "break-word",
+  fontSize: "1rem",
+  lineHeight: 1.5,
+};
+const practiceDateStyle: CSSProperties = {
+  fontSize: "0.9rem",
+  color: "#666",
+  fontStyle: "italic",
+  marginTop: 4,
+  marginBottom: 8,
+};
+const authorNameStyle: CSSProperties = {
+  fontSize: "0.95rem",
+  color: "#444",
+  fontWeight: "bold",
+  marginBottom: 12,
+};

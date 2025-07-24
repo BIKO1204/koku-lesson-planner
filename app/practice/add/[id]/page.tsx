@@ -19,7 +19,8 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string;
-  authorName?: string; // ここを追加
+  authorName?: string;
+  modelType: string; // モデルタイプ追加
 };
 
 type LessonPlan = {
@@ -132,6 +133,13 @@ async function uploadImageToStorage(base64: string, fileName: string): Promise<s
   return getDownloadURL(storageRef);
 }
 
+const modelTypes = [
+  { label: "読解モデル", value: "lesson_plans_reading" },
+  { label: "話し合いモデル", value: "lesson_plans_discussion" },
+  { label: "作文モデル", value: "lesson_plans_writing" },
+  { label: "言語活動モデル", value: "lesson_plans_language_activity" },
+];
+
 export default function PracticeAddPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
@@ -142,10 +150,11 @@ export default function PracticeAddPage() {
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
   const [compressedImages, setCompressedImages] = useState<BoardImage[]>([]);
   const [lessonTitle, setLessonTitle] = useState("");
-  const [authorName, setAuthorName] = useState(""); // author → authorNameに変更
+  const [authorName, setAuthorName] = useState("");
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
   const [unitName, setUnitName] = useState("");
+  const [modelType, setModelType] = useState(modelTypes[0].value);
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
@@ -154,95 +163,6 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // --- スタイル ---
-  const navBarStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: 56,
-    backgroundColor: "#1976d2",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 1rem",
-    zIndex: 1000,
-  };
-  const hamburgerStyle: React.CSSProperties = {
-    cursor: "pointer",
-    width: 30,
-    height: 22,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  };
-  const barStyle: React.CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
-  const menuWrapperStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "calc(100vh - 56px)",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-  };
-  const logoutButtonStyle: React.CSSProperties = {
-    padding: "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-  };
-  const menuLinksWrapperStyle: React.CSSProperties = {
-    overflowY: "auto",
-    flexGrow: 1,
-    padding: "1rem",
-  };
-  const navBtnStyle: React.CSSProperties = {
-    marginBottom: 8,
-    padding: "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    display: "block",
-    width: "100%",
-    textAlign: "left",
-  };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "calc(100vh - 56px)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const containerStyle: React.CSSProperties = {
-    padding: 24,
-    maxWidth: 800,
-    margin: "auto",
-    fontFamily: "sans-serif",
-    paddingTop: 72,
-  };
-
-  // --- 初期処理 ---
   useEffect(() => {
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
@@ -274,15 +194,15 @@ export default function PracticeAddPage() {
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-        setAuthorName(existing.authorName || ""); // author → authorNameに変更
+        setAuthorName(existing.authorName || "");
         setGrade(existing.grade || "");
         setGenre(existing.genre || "");
         setUnitName(existing.unitName || "");
+        setModelType(existing.modelType || modelTypes[0].value);
       }
     });
   }, [id]);
 
-  // --- 画像アップロード処理 ---
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -307,13 +227,11 @@ export default function PracticeAddPage() {
     e.target.value = "";
   };
 
-  // --- 画像削除 ---
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  // --- プレビュー作成 ---
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
     setRecord({
@@ -322,20 +240,19 @@ export default function PracticeAddPage() {
       reflection,
       boardImages,
       lessonTitle,
-      authorName,  // author → authorNameに変更
+      authorName,
       grade,
       genre,
       unitName,
+      modelType,
     });
   };
 
-  // --- IndexedDBに保存 ---
   async function saveRecordToIndexedDB(record: PracticeRecord) {
     const dbLocal = await getDB();
     await dbLocal.put(STORE_NAME, record);
   }
 
-  // --- Firestoreに保存 ---
   async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
     if (!session?.user?.email) {
       alert("ログインが必要です。");
@@ -355,16 +272,16 @@ export default function PracticeAddPage() {
       reflection: record.reflection,
       boardImages: uploadedUrls,
       lessonTitle: record.lessonTitle,
-      author: session.user.email,  // ログインメール
-      authorName: record.authorName, // 入力された作成者名
+      author: session.user.email,
+      authorName: record.authorName,
       grade: record.grade || "",
       genre: record.genre || "",
       unitName: record.unitName || "",
+      modelType: record.modelType,
       createdAt: new Date(),
     });
   }
 
-  // --- 保存処理（IndexedDB + Firestore） ---
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -533,7 +450,7 @@ export default function PracticeAddPage() {
               作成者名：
               <input
                 type="text"
-                value={authorName} // author → authorNameに変更
+                value={authorName}
                 onChange={(e) => setAuthorName(e.target.value)}
                 required
                 style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
@@ -612,139 +529,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 授業案詳細表示（フォーム内） */}
-          {lessonPlan?.result && typeof lessonPlan.result === "object" && (
-            <section
-              style={{
-                border: "2px solid #2196F3",
-                borderRadius: 6,
-                padding: 12,
-                marginBottom: 16,
-                backgroundColor: "#e3f2fd",
-              }}
-            >
-              <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>
-                実践記録：授業案詳細
-              </h3>
-
-              <p>
-                <strong>教科書名：</strong>
-                {(lessonPlan.result as ParsedResult)["教科書名"] || ""}
-              </p>
-              <p>
-                <strong>学年：</strong>
-                {(lessonPlan.result as ParsedResult)["学年"] || ""}
-              </p>
-              <p>
-                <strong>ジャンル：</strong>
-                {(lessonPlan.result as ParsedResult)["ジャンル"] || ""}
-              </p>
-              <p>
-                <strong>単元名：</strong>
-                {(lessonPlan.result as ParsedResult)["単元名"] || ""}
-              </p>
-              <p>
-                <strong>授業時間数：</strong>
-                {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
-              </p>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>評価の観点：</strong>
-                <div>
-                  <strong>知識・技能</strong>
-                  <ul>
-                    {Array.isArray(
-                      (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                        "知識・技能"
-                      ]
-                    )
-                      ? (lessonPlan.result as ParsedResult)[
-                          "評価の観点"
-                        ]?.["知識・技能"]!.map((v, i) => (
-                          <li key={`knowledge-${i}`}>{v}</li>
-                        ))
-                      : null}
-                  </ul>
-                </div>
-                <div>
-                  <strong>思考・判断・表現</strong>
-                  <ul>
-                    {Array.isArray(
-                      (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                        "思考・判断・表現"
-                      ]
-                    )
-                      ? (lessonPlan.result as ParsedResult)[
-                          "評価の観点"
-                        ]?.["思考・判断・表現"]!.map((v, i) => (
-                          <li key={`thinking-${i}`}>{v}</li>
-                        ))
-                      : null}
-                  </ul>
-                </div>
-                <div>
-                  <strong>主体的に学習に取り組む態度</strong>
-                  <ul>
-                    {Array.isArray(
-                      (lessonPlan.result as ParsedResult)[
-                        "評価の観点"
-                      ]?.["主体的に学習に取り組む態度"]
-                    )
-                      ? (lessonPlan.result as ParsedResult)[
-                          "評価の観点"
-                        ]?.["主体的に学習に取り組む態度"]!.map((v, i) => (
-                          <li key={`attitude-${i}`}>{v}</li>
-                        ))
-                      : Array.isArray(
-                          (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                            "態度"
-                          ]
-                        )
-                      ? (lessonPlan.result as ParsedResult)[
-                          "評価の観点"
-                        ]?.["態度"]!.map((v, i) => (
-                          <li key={`attitude-alt-${i}`}>{v}</li>
-                        ))
-                      : null}
-                  </ul>
-                </div>
-              </div>
-
-              <p style={{ marginTop: 12 }}>
-                <strong>育てたい子どもの姿：</strong>
-                {(lessonPlan.result as ParsedResult)["育てたい子どもの姿"] || ""}
-              </p>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>言語活動の工夫：</strong>
-                <p>{(lessonPlan.result as ParsedResult)["言語活動の工夫"] || ""}</p>
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>単元の目標：</strong>
-                <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                <strong>授業の流れ：</strong>
-                <ul>
-                  {typeof (lessonPlan.result as ParsedResult)[
-                    "授業の流れ"
-                  ] === "object"
-                    ? Object.entries(
-                        (lessonPlan.result as ParsedResult)["授業の流れ"]!
-                      ).map(([key, val], i) => (
-                        <li key={`flow-${i}`}>
-                          <strong>{key}：</strong>
-                          {val}
-                        </li>
-                      ))
-                    : null}
-                </ul>
-              </div>
-            </section>
-          )}
-
+          {/* モデルタイプ選択 */}
           <div
             style={{
               border: "2px solid #1976d2",
@@ -754,14 +539,19 @@ export default function PracticeAddPage() {
             }}
           >
             <label>
-              振り返り：<br />
-              <textarea
-                value={reflection}
+              モデルタイプ：
+              <select
+                value={modelType}
+                onChange={(e) => setModelType(e.target.value)}
                 required
-                onChange={(e) => setReflection(e.target.value)}
-                rows={6}
-                style={{ width: "100%", padding: 8 }}
-              />
+                style={{ marginLeft: 8, padding: 4 }}
+              >
+                {modelTypes.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
@@ -1001,7 +791,7 @@ export default function PracticeAddPage() {
                 <strong>実践開始日：</strong> {record.practiceDate}
               </p>
               <p>
-                <strong>作成者：</strong> {record.authorName || "不明"} {/* author → authorName */}
+                <strong>作成者：</strong> {record.authorName || "不明"}
               </p>
 
               <p>
@@ -1066,3 +856,91 @@ export default function PracticeAddPage() {
     </>
   );
 }
+
+// CSSスタイル群
+const navBarStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: 56,
+  backgroundColor: "#1976d2",
+  display: "flex",
+  alignItems: "center",
+  padding: "0 1rem",
+  zIndex: 1000,
+};
+const hamburgerStyle: React.CSSProperties = {
+  cursor: "pointer",
+  width: 30,
+  height: 22,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
+};
+const barStyle: React.CSSProperties = {
+  height: 4,
+  backgroundColor: "white",
+  borderRadius: 2,
+};
+const menuWrapperStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: 250,
+  height: "calc(100vh - 56px)",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transform: "translateX(0)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+};
+const logoutButtonStyle: React.CSSProperties = {
+  padding: "0.75rem 1rem",
+  backgroundColor: "#e53935",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  flexShrink: 0,
+  margin: "1rem",
+};
+const menuLinksWrapperStyle: React.CSSProperties = {
+  overflowY: "auto",
+  flexGrow: 1,
+  padding: "1rem",
+};
+const navBtnStyle: React.CSSProperties = {
+  marginBottom: 8,
+  padding: "0.5rem 1rem",
+  backgroundColor: "#1976d2",
+  color: "white",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+};
+const overlayStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "calc(100vh - 56px)",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: 0,
+  visibility: "hidden",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+};
+const containerStyle: React.CSSProperties = {
+  padding: 24,
+  maxWidth: 800,
+  margin: "auto",
+  fontFamily: "sans-serif",
+  paddingTop: 72,
+};

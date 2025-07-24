@@ -5,20 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
 import { signOut } from "next-auth/react";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type BoardImage = { name: string; src: string };
+
 type PracticeRecord = {
   lessonId: string;
   lessonTitle: string;
   practiceDate: string;
   reflection: string;
   boardImages: BoardImage[];
-  grade?: string; // 追加：学年も持つ前提
+  grade?: string;
+  modelType?: string;  // ← 追加
 };
+
 type LessonPlan = {
   id: string;
+  modelType: string;  // ← 追加
   result: any;
 };
 
@@ -53,18 +57,43 @@ async function uploadRecordToFirebase(record: PracticeRecord) {
     reflection: record.reflection,
     boardImages: record.boardImages,
     lessonTitle: record.lessonTitle,
-    grade: record.grade || "", // gradeも保存
+    grade: record.grade || "",
+    modelType: record.modelType || "",
     createdAt: serverTimestamp(),
   });
+}
+
+/**
+ * 複数コレクションから授業案をまとめて取得する例
+ * ここに実際の複数モデルのコレクション名を追加してください
+ */
+const LESSON_PLAN_COLLECTIONS = [
+  "lesson_plans_reading",
+  "lesson_plans_writing",
+  "lesson_plans_discussion",
+  "lesson_plans_language_activity",
+];
+
+async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
+  let allPlans: LessonPlan[] = [];
+
+  for (const collectionName of LESSON_PLAN_COLLECTIONS) {
+    const colRef = collection(db, collectionName);
+    const snapshot = await getDocs(colRef);
+    const plans = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      modelType: collectionName, // コレクション名をmodelTypeとして保持
+      result: doc.data().result,
+    }));
+    allPlans = allPlans.concat(plans);
+  }
+  return allPlans;
 }
 
 export default function PracticeHistoryPage() {
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
-  // 並び替えキーにgradeを追加
-  const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">(
-    "practiceDate"
-  );
+  const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">("practiceDate");
   const [menuOpen, setMenuOpen] = useState(false);
   const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
 
@@ -75,27 +104,20 @@ export default function PracticeHistoryPage() {
       .then(setRecords)
       .catch(() => setRecords([]));
 
-    const plans = localStorage.getItem("lessonPlans");
-    if (plans) {
-      try {
-        setLessonPlans(JSON.parse(plans));
-      } catch {
-        setLessonPlans([]);
-      }
-    }
+    fetchAllLessonPlans()
+      .then(setLessonPlans)
+      .catch(() => setLessonPlans([]));
   }, []);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 学年の正しい順序を定義
+  // 学年順
   const gradeOrder = ["1年", "2年", "3年", "4年", "5年", "6年"];
 
   const sorted = [...records].sort((a, b) => {
     if (sortKey === "practiceDate") {
-      // 新着順なので降順
       return b.practiceDate.localeCompare(a.practiceDate);
     } else if (sortKey === "grade") {
-      // 学年順。gradeOrderのインデックスで比較。無い場合は後ろに
       const aIndex = gradeOrder.indexOf(a.grade || "");
       const bIndex = gradeOrder.indexOf(b.grade || "");
       if (aIndex === -1 && bIndex === -1) return 0;
@@ -103,7 +125,6 @@ export default function PracticeHistoryPage() {
       if (bIndex === -1) return -1;
       return aIndex - bIndex;
     } else if (sortKey === "lessonTitle") {
-      // 教材名順（昇順）
       return a.lessonTitle.localeCompare(b.lessonTitle);
     }
     return 0;
@@ -134,6 +155,11 @@ export default function PracticeHistoryPage() {
       }
 
       if (!record.lessonTitle) record.lessonTitle = "タイトルなし";
+      if (!record.modelType) {
+        alert("modelTypeが設定されていません。投稿できません。");
+        setUploadingRecordId(null);
+        return;
+      }
 
       await uploadRecordToFirebase(record);
 
@@ -147,7 +173,7 @@ export default function PracticeHistoryPage() {
     }
   };
 
-  // --- スタイル定義 ---
+  // --- スタイル ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -335,7 +361,13 @@ export default function PracticeHistoryPage() {
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         {/* ログアウトボタン */}
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
+        <button
+          onClick={() => {
+            signOut();
+            setMenuOpen(false);
+          }}
+          style={logoutButtonStyle}
+        >
           🔓 ログアウト
         </button>
 
@@ -347,11 +379,7 @@ export default function PracticeHistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
           <Link
@@ -392,7 +420,7 @@ export default function PracticeHistoryPage() {
       <main style={mainContainerStyle}>
         <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
 
-        {/* 共有ページへのリンク追加 */}
+        {/* 共有ページへのリンク */}
         <div style={{ marginBottom: 20 }}>
           <Link
             href="/practice/share"
@@ -431,7 +459,10 @@ export default function PracticeHistoryPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {sorted.map((r, idx) => {
-              const plan = lessonPlans.find((p) => p.id === r.lessonId);
+              // modelTypeで授業案を正しく紐づけ
+              const plan = lessonPlans.find(
+                (p) => p.id === r.lessonId && p.modelType === r.modelType
+              );
               return (
                 <article key={`${r.lessonId}-${idx}`} style={cardStyle}>
                   <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
@@ -653,6 +684,13 @@ export default function PracticeHistoryPage() {
                       style={deleteBtn}
                     >
                       🗑 削除
+                    </button>
+                    <button
+                      onClick={() => handlePostToShared(r.lessonId)}
+                      style={postBtn}
+                      disabled={uploadingRecordId === r.lessonId}
+                    >
+                      {uploadingRecordId === r.lessonId ? "投稿中..." : "🌐 投稿"}
                     </button>
                   </div>
                 </article>
