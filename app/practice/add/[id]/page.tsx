@@ -266,7 +266,10 @@ export default function PracticeAddPage() {
       })
     );
 
-    const docRef = doc(db, record.modelType, record.lessonId);
+    // コレクション名を共有版と合わせるために修正
+    const practiceRecordCollection = record.modelType.replace("lesson_plans_", "practiceRecords_");
+    const docRef = doc(db, practiceRecordCollection, record.lessonId);
+
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,

@@ -17,12 +17,12 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   grade?: string;
-  modelType?: string;  // ← 追加
+  modelType?: string;  // 正規化した短縮形
 };
 
 type LessonPlan = {
   id: string;
-  modelType: string;  // ← 追加
+  modelType: string;  // 正規化した短縮形
   result: any;
 };
 
@@ -50,8 +50,13 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
+// ここを修正：モデルタイプ別コレクションに保存するように動的にコレクション名を生成する
 async function uploadRecordToFirebase(record: PracticeRecord) {
-  const docRef = doc(db, "practiceRecords", record.lessonId);
+  const practiceRecordCollection = record.modelType
+    ? `practiceRecords_${record.modelType}`
+    : "practiceRecords";
+
+  const docRef = doc(db, practiceRecordCollection, record.lessonId);
   await setDoc(docRef, {
     practiceDate: record.practiceDate,
     reflection: record.reflection,
@@ -63,9 +68,15 @@ async function uploadRecordToFirebase(record: PracticeRecord) {
   });
 }
 
+// modelType 正規化関数（コレクション名から短縮形に変換）
+function normalizeModelType(collectionName: string): string {
+  // 例: "lesson_plans_reading" → "reading"
+  //      "practiceRecords_reading" → "reading"
+  return collectionName.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
+}
+
 /**
  * 複数コレクションから授業案をまとめて取得する例
- * ここに実際の複数モデルのコレクション名を追加してください
  */
 const LESSON_PLAN_COLLECTIONS = [
   "lesson_plans_reading",
@@ -82,7 +93,7 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
     const snapshot = await getDocs(colRef);
     const plans = snapshot.docs.map((doc) => ({
       id: doc.id,
-      modelType: collectionName, // コレクション名をmodelTypeとして保持
+      modelType: normalizeModelType(collectionName), // 短縮形で保持
       result: doc.data().result,
     }));
     allPlans = allPlans.concat(plans);
@@ -101,7 +112,14 @@ export default function PracticeHistoryPage() {
 
   useEffect(() => {
     getAllRecords()
-      .then(setRecords)
+      .then((recs) => {
+        // 実践記録のmodelTypeも正規化して揃える（IndexedDBの古いデータ対応用）
+        const normalizedRecs = recs.map(r => ({
+          ...r,
+          modelType: r.modelType ? normalizeModelType(r.modelType) : "",
+        }));
+        setRecords(normalizedRecs);
+      })
       .catch(() => setRecords([]));
 
     fetchAllLessonPlans()
@@ -161,6 +179,8 @@ export default function PracticeHistoryPage() {
         return;
       }
 
+      record.modelType = normalizeModelType(record.modelType);
+
       await uploadRecordToFirebase(record);
 
       alert("共有版に投稿しました。");
@@ -174,6 +194,7 @@ export default function PracticeHistoryPage() {
   };
 
   // --- スタイル ---
+
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
