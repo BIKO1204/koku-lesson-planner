@@ -327,9 +327,10 @@ export default function PracticeHistoryPage() {
     ...buttonBaseStyle,
     backgroundColor: "#f44336",
   };
+  // 投稿ボタンの色を紫に変更
   const postBtn: CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#2196f3",
+    backgroundColor: "#800080", // 紫色
   };
 
   const planBlockStyle: CSSProperties = {
