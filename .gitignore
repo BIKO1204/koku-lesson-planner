@@ -1,19 +1,18 @@
 # Node.jsのモジュールフォルダは除外
-node_modules
+node_modules/
 
 # 環境変数ファイルは除外
 .env.local
+env.local
 
 # Firebaseサービスアカウントファイルは除外（プロジェクトルート直下）
 /serviceAccount.json
 
 # Vercelの設定ファイル
-.vercel
+.vercel/
 
 # Next.jsのビルド成果物
 .next/
 
 # Gitのミラーリポジトリフォルダ（今回の状況に合わせて除外）
 koku-lesson-deploy-mirror.git/
-
-.vercel
