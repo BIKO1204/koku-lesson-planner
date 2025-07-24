@@ -11,10 +11,10 @@ import { useSession } from "next-auth/react";
 const EDIT_KEY = "editLessonPlan";
 
 const authors = [
-  { label: "読解モデル", id: "reading-model-id", collection: "lesson_plans_reading" },
-  { label: "話し合いモデル", id: "discussion-model-id", collection: "lesson_plans_discussion" },
-  { label: "作文モデル", id: "writing-model-id", collection: "lesson_plans_writing" },
-  { label: "言語活動モデル", id: "language-activity-model-id", collection: "lesson_plans_language_activity" },
+  { label: "読解", id: "reading-model-id", collection: "lesson_plans_reading" },
+  { label: "話し合い", id: "discussion-model-id", collection: "lesson_plans_discussion" },
+  { label: "作文", id: "writing-model-id", collection: "lesson_plans_writing" },
+  { label: "言語活動", id: "language-activity-model-id", collection: "lesson_plans_language_activity" },
 ];
 
 type StyleModel = {

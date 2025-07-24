@@ -18,7 +18,7 @@ type EducationHistory = {
   languageFocus: string;
   childFocus: string;
   note?: string;
-  creatorId: string; // 追加：作成者ID
+  creatorId: string;
 };
 
 type GroupedHistory = {
@@ -27,6 +27,56 @@ type GroupedHistory = {
   histories: EducationHistory[];
 };
 
+// 差分強調＋ツールチップ表示コンポーネント
+function FieldWithDiff({
+  current,
+  previous,
+  label,
+}: {
+  current: string;
+  previous?: string;
+  label: string;
+}) {
+  const isChanged = previous === undefined || current.trim() !== previous.trim();
+  return (
+    <p
+      style={{
+        backgroundColor: isChanged ? "#fff9c4" : undefined,
+        position: "relative",
+        cursor: isChanged ? "help" : undefined,
+        whiteSpace: "pre-wrap",
+        marginBottom: 6,
+      }}
+      title={isChanged && previous ? `${label}（前回）: ${previous}` : undefined}
+    >
+      <strong>{label}：</strong> {current}
+    </p>
+  );
+}
+
+// タイムラインアイテム用ラッパー
+function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 16 }}>
+      <time style={{ width: 120, color: "#555", whiteSpace: "nowrap" }}>{date}</time>
+      <div
+        style={{
+          marginLeft: 12,
+          borderLeft: "3px solid #1976d2",
+          paddingLeft: 12,
+          flexGrow: 1,
+          backgroundColor: "#fafafa",
+          borderRadius: 6,
+          paddingTop: 8,
+          paddingBottom: 8,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function GroupedHistoryPage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
@@ -34,6 +84,24 @@ export default function GroupedHistoryPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
+
+  // localStorageから展開状態読み込み
+  useEffect(() => {
+    const saved = localStorage.getItem("expandedIds");
+    if (saved) {
+      try {
+        const parsed: string[] = JSON.parse(saved);
+        setExpandedIds(new Set(parsed));
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  // 展開状態保存
+  useEffect(() => {
+    localStorage.setItem("expandedIds", JSON.stringify(Array.from(expandedIds)));
+  }, [expandedIds]);
 
   useEffect(() => {
     async function fetchAndGroup() {
@@ -54,7 +122,6 @@ export default function GroupedHistoryPage() {
           ...(doc.data() as Omit<EducationHistory, "id">),
         }));
 
-        // modelIdでグルーピング
         const map = new Map<string, GroupedHistory>();
         data.forEach((h) => {
           if (!map.has(h.modelId)) {
@@ -96,10 +163,6 @@ export default function GroupedHistoryPage() {
     const hh = String(d.getHours()).padStart(2, "0");
     const min = String(d.getMinutes()).padStart(2, "0");
     return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
-  }
-
-  function isChanged(current: string, prev: string | undefined): boolean {
-    return prev === undefined || current.trim() !== prev.trim();
   }
 
   return (
@@ -180,6 +243,7 @@ export default function GroupedHistoryPage() {
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
+            // 更新日の古い順にする（タイムライン用）
             const historiesAsc = [...histories].reverse();
 
             return (
@@ -197,57 +261,30 @@ export default function GroupedHistoryPage() {
                   <div id={`section-${modelId}`} style={historyListStyle}>
                     {historiesAsc.map((h, i) => {
                       const prev = i > 0 ? historiesAsc[i - 1] : undefined;
-
                       return (
-                        <article key={h.id} style={cardStyle}>
-                          <header style={cardHeaderStyle}>
-                            <time style={dateStyle}>
-                              {formatDateTime(h.updatedAt)}
-                            </time>
-                          </header>
+                        <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
                           <h2 style={cardTitleStyle}>{h.name}</h2>
-
-                          <p
-                            style={{
-                              ...fieldStyle,
-                              backgroundColor: isChanged(h.philosophy, prev?.philosophy)
-                                ? "#fff9c4"
-                                : undefined,
-                            }}
-                          >
-                            <strong>教育観：</strong> {h.philosophy}
-                          </p>
-                          <p
-                            style={{
-                              ...fieldStyle,
-                              backgroundColor: isChanged(h.evaluationFocus, prev?.evaluationFocus)
-                                ? "#fff9c4"
-                                : undefined,
-                            }}
-                          >
-                            <strong>評価観点：</strong> {h.evaluationFocus}
-                          </p>
-                          <p
-                            style={{
-                              ...fieldStyle,
-                              backgroundColor: isChanged(h.languageFocus, prev?.languageFocus)
-                                ? "#fff9c4"
-                                : undefined,
-                            }}
-                          >
-                            <strong>言語活動：</strong> {h.languageFocus}
-                          </p>
-                          <p
-                            style={{
-                              ...fieldStyle,
-                              backgroundColor: isChanged(h.childFocus, prev?.childFocus)
-                                ? "#fff9c4"
-                                : undefined,
-                            }}
-                          >
-                            <strong>育てたい子どもの姿：</strong> {h.childFocus}
-                          </p>
-                        </article>
+                          <FieldWithDiff
+                            current={h.philosophy}
+                            previous={prev?.philosophy}
+                            label="教育観"
+                          />
+                          <FieldWithDiff
+                            current={h.evaluationFocus}
+                            previous={prev?.evaluationFocus}
+                            label="評価観点"
+                          />
+                          <FieldWithDiff
+                            current={h.languageFocus}
+                            previous={prev?.languageFocus}
+                            label="言語活動"
+                          />
+                          <FieldWithDiff
+                            current={h.childFocus}
+                            previous={prev?.childFocus}
+                            label="育てたい子どもの姿"
+                          />
+                        </TimelineItem>
                       );
                     })}
                   </div>
@@ -261,7 +298,7 @@ export default function GroupedHistoryPage() {
   );
 }
 
-// --- Styles (レスポンシブ対応) ---
+// スタイル（元コードのまま）
 
 const navBarStyle: CSSProperties = {
   position: "fixed",
@@ -392,40 +429,8 @@ const historyListStyle: CSSProperties = {
   marginTop: "1rem",
 };
 
-const cardStyle: CSSProperties = {
-  backgroundColor: "#fafafa",
-  borderRadius: 8,
-  boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-  padding: "1rem",
-  marginBottom: "1rem",
-  display: "flex",
-  flexDirection: "column",
-  wordBreak: "break-word",
-  fontSize: "1rem",
-};
-
-const cardHeaderStyle: CSSProperties = {
-  marginBottom: "0.5rem",
-  display: "flex",
-  gap: "0.5rem",
-  alignItems: "center",
-  fontSize: "0.9rem",
-  flexWrap: "wrap",
-};
-
-const dateStyle: CSSProperties = {
-  color: "#555",
-  whiteSpace: "nowrap",
-};
-
 const cardTitleStyle: CSSProperties = {
   fontSize: "1.2rem",
   margin: "0 0 0.5rem",
   wordBreak: "break-word",
-};
-
-const fieldStyle: CSSProperties = {
-  marginBottom: "0.6rem",
-  lineHeight: 1.5,
-  whiteSpace: "pre-wrap",
 };
