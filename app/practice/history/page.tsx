@@ -4,7 +4,7 @@ import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { doc, setDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -18,6 +18,8 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   grade?: string;
   modelType?: string;  // 正規化した短縮形
+  author?: string;     // ← 追加（共有版用）
+  authorName?: string; // ← 追加（共有版用）
 };
 
 type LessonPlan = {
@@ -50,8 +52,8 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
-// ここを修正：モデルタイプ別コレクションに保存するように動的にコレクション名を生成する
-async function uploadRecordToFirebase(record: PracticeRecord) {
+// 修正：投稿時にauthor, authorNameをセットする
+async function uploadRecordToFirebase(record: PracticeRecord, authorEmail: string) {
   const practiceRecordCollection = record.modelType
     ? `practiceRecords_${record.modelType}`
     : "practiceRecords";
@@ -65,6 +67,8 @@ async function uploadRecordToFirebase(record: PracticeRecord) {
     grade: record.grade || "",
     modelType: record.modelType || "",
     createdAt: serverTimestamp(),
+    author: authorEmail,        // ← ここで投稿者メールを入れる
+    authorName: authorEmail,    // 必要なら名前を分けて管理してください
   });
 }
 
@@ -102,6 +106,9 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
 }
 
 export default function PracticeHistoryPage() {
+  const { data: session } = useSession();
+  const userEmail = session?.user?.email || "";
+
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">("practiceDate");
@@ -181,7 +188,7 @@ export default function PracticeHistoryPage() {
 
       record.modelType = normalizeModelType(record.modelType);
 
-      await uploadRecordToFirebase(record);
+      await uploadRecordToFirebase(record, userEmail);  // ← ここで作成者を渡す
 
       alert("共有版に投稿しました。");
       router.push("/practice/share");
