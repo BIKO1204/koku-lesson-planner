@@ -58,6 +58,20 @@ type LessonPlan = {
   modelType?: string; // モデル識別用
 };
 
+// スマホ判定用フック
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    function onResize() {
+      setIsMobile(window.innerWidth <= breakpoint);
+    }
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
@@ -89,6 +103,8 @@ export default function PracticeSharePage() {
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
   const storage = getStorage();
+
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const modelCollections = [
@@ -453,6 +469,7 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
+  // 画像をbase64化（省略）
   const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -784,8 +801,23 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      <div style={wrapperResponsiveStyle}>
-        <aside style={sidebarResponsiveStyle}>
+      {/* ここがflexDirection切り替え部分 */}
+      <div
+        style={{
+          ...wrapperResponsiveStyle,
+          flexDirection: isMobile ? "column" : "row",
+        }}
+      >
+        <aside
+          style={{
+            ...sidebarResponsiveStyle,
+            width: isMobile ? "100%" : 280,
+            height: isMobile ? "auto" : "calc(100vh - 72px)",
+            marginBottom: isMobile ? 16 : 0,
+            position: isMobile ? "relative" : "sticky",
+            top: isMobile ? undefined : 72,
+          }}
+        >
           <h2 style={{ fontSize: "1.3rem", marginBottom: 16 }}>絞り込み</h2>
 
           <div>
@@ -887,7 +919,13 @@ export default function PracticeSharePage() {
           </button>
         </aside>
 
-        <main style={mainContentResponsiveStyle}>
+        <main
+          style={{
+            ...mainContentResponsiveStyle,
+            width: isMobile ? "100%" : "auto",
+            marginTop: isMobile ? 0 : undefined,
+          }}
+        >
           {filteredRecords.length === 0 ? (
             <p>条件に合う実践記録がありません。</p>
           ) : (
@@ -909,7 +947,6 @@ export default function PracticeSharePage() {
                   <p style={practiceDateStyle}>
                     実施日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
-                  {/* 作成者名表示はauthorName優先 */}
                   <p style={authorNameStyle}>作成者: {r.authorName || r.author || "－"}</p>
 
                   <button

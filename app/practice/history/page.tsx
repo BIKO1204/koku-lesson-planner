@@ -18,8 +18,8 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   grade?: string;
   modelType?: string;  // 正規化した短縮形
-  author?: string;     // ← 追加（共有版用）
-  authorName?: string; // ← 追加（共有版用）
+  author?: string;     // ← メールアドレス（本人確認用）
+  authorName?: string; // ← 手動入力のユーザー名（表示用）
 };
 
 type LessonPlan = {
@@ -52,8 +52,12 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
-// 修正：投稿時にauthor, authorNameをセットする
-async function uploadRecordToFirebase(record: PracticeRecord, authorEmail: string) {
+// 修正：投稿時にauthor（メールアドレス）とauthorName（手動入力名）をセットするよう引数を追加
+async function uploadRecordToFirebase(
+  record: PracticeRecord,
+  authorEmail: string,
+  authorName: string
+) {
   const practiceRecordCollection = record.modelType
     ? `practiceRecords_${record.modelType}`
     : "practiceRecords";
@@ -67,21 +71,15 @@ async function uploadRecordToFirebase(record: PracticeRecord, authorEmail: strin
     grade: record.grade || "",
     modelType: record.modelType || "",
     createdAt: serverTimestamp(),
-    author: authorEmail,        // ← ここで投稿者メールを入れる
-    authorName: authorEmail,    // 必要なら名前を分けて管理してください
+    author: authorEmail,      // 本人確認用メールアドレス
+    authorName: authorName,   // 表示用ユーザー名（手動入力）
   });
 }
 
-// modelType 正規化関数（コレクション名から短縮形に変換）
 function normalizeModelType(collectionName: string): string {
-  // 例: "lesson_plans_reading" → "reading"
-  //      "practiceRecords_reading" → "reading"
   return collectionName.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
 }
 
-/**
- * 複数コレクションから授業案をまとめて取得する例
- */
 const LESSON_PLAN_COLLECTIONS = [
   "lesson_plans_reading",
   "lesson_plans_writing",
@@ -97,7 +95,7 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
     const snapshot = await getDocs(colRef);
     const plans = snapshot.docs.map((doc) => ({
       id: doc.id,
-      modelType: normalizeModelType(collectionName), // 短縮形で保持
+      modelType: normalizeModelType(collectionName),
       result: doc.data().result,
     }));
     allPlans = allPlans.concat(plans);
@@ -120,7 +118,6 @@ export default function PracticeHistoryPage() {
   useEffect(() => {
     getAllRecords()
       .then((recs) => {
-        // 実践記録のmodelTypeも正規化して揃える（IndexedDBの古いデータ対応用）
         const normalizedRecs = recs.map(r => ({
           ...r,
           modelType: r.modelType ? normalizeModelType(r.modelType) : "",
@@ -136,7 +133,6 @@ export default function PracticeHistoryPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 学年順
   const gradeOrder = ["1年", "2年", "3年", "4年", "5年", "6年"];
 
   const sorted = [...records].sort((a, b) => {
@@ -188,7 +184,10 @@ export default function PracticeHistoryPage() {
 
       record.modelType = normalizeModelType(record.modelType);
 
-      await uploadRecordToFirebase(record, userEmail);  // ← ここで作成者を渡す
+      // IndexedDBにauthorNameがあれば使い、なければ空文字をセット
+      const authorNameToSave = record.authorName || "";
+
+      await uploadRecordToFirebase(record, userEmail, authorNameToSave);
 
       alert("共有版に投稿しました。");
       router.push("/practice/share");
@@ -200,7 +199,7 @@ export default function PracticeHistoryPage() {
     }
   };
 
-  // --- スタイル ---
+  // 以下UI部分
 
   const navBarStyle: CSSProperties = {
     position: "fixed",
@@ -327,7 +326,6 @@ export default function PracticeHistoryPage() {
     ...buttonBaseStyle,
     backgroundColor: "#f44336",
   };
-  // 投稿ボタンの色を紫に変更
   const postBtn: CSSProperties = {
     ...buttonBaseStyle,
     backgroundColor: "#800080", // 紫色
@@ -389,7 +387,6 @@ export default function PracticeHistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン */}
         <button
           onClick={() => {
             signOut();
@@ -400,7 +397,6 @@ export default function PracticeHistoryPage() {
           🔓 ログアウト
         </button>
 
-        {/* メニューリンク */}
         <div style={menuScrollStyle}>
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
@@ -488,7 +484,6 @@ export default function PracticeHistoryPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {sorted.map((r, idx) => {
-              // modelTypeで授業案を正しく紐づけ
               const plan = lessonPlans.find(
                 (p) => p.id === r.lessonId && p.modelType === r.modelType
               );
