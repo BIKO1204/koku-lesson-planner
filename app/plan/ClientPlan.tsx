@@ -10,6 +10,14 @@ import { useSession } from "next-auth/react";
 
 const EDIT_KEY = "editLessonPlan";
 
+// モデル情報と対応コレクション名のマッピング
+const authors = [
+  { label: "読解モデル", id: "reading-model-id", collection: "lesson_plans_reading" },
+  { label: "話し合いモデル", id: "discussion-model-id", collection: "lesson_plans_discussion" },
+  { label: "作文モデル", id: "writing-model-id", collection: "lesson_plans_writing" },
+  { label: "言語活動モデル", id: "language-activity-model-id", collection: "lesson_plans_language_activity" },
+];
+
 type StyleModel = {
   id: string;
   name: string;
@@ -57,7 +65,12 @@ export default function ClientPlan() {
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
+
+  // 選択した教育観モデル（従来のselect用） ← これは必要に応じて残しています
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
+
+  // 新規：作成モデルボタン選択用state
+  const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
 
   const [subject, setSubject] = useState("東京書籍");
   const [grade, setGrade] = useState("1年");
@@ -105,6 +118,7 @@ export default function ClientPlan() {
     fetchStyleModels();
   }, []);
 
+  // 編集データ復元時のselectedAuthorIdも復元
   useEffect(() => {
     const storedEdit = localStorage.getItem(EDIT_KEY);
     if (storedEdit) {
@@ -124,6 +138,14 @@ export default function ClientPlan() {
         setSelectedStyleId(plan.selectedStyleId);
         setParsedResult(plan.result);
         setInitialData(plan);
+
+        // 追加：編集時にselectedAuthorIdも復元（マッピングから推測）
+        // マッピングにselectedStyleIdがあればそれに対応するauthorIdをセット
+        const authorFromStyle = authors.find((a) => a.id === plan.selectedStyleId);
+        if (authorFromStyle) {
+          setSelectedAuthorId(authorFromStyle.id);
+        }
+
         setMode("ai");
       } catch {
         setEditId(null);
@@ -192,8 +214,19 @@ export default function ClientPlan() {
     setLessonPlanList(arr);
   };
 
+  // 新規：作成モデルボタン選択ハンドラ
+  const handleAuthorSelect = (id: string) => {
+    setSelectedAuthorId(id);
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!selectedAuthorId) {
+      alert("作成モデルを選択してください");
+      return;
+    }
+
     setLoading(true);
     setParsedResult(null);
 
@@ -322,6 +355,109 @@ ${languageActivities}
     } finally {
       setLoading(false);
     }
+  };
+
+  // 保存ボタンの処理（ローカルとFirestoreに分けて保存）
+  const handleSave = async () => {
+    if (!parsedResult) {
+      alert("まず授業案を生成してください");
+      return;
+    }
+    if (!selectedAuthorId) {
+      alert("作成モデルを選択してください");
+      return;
+    }
+
+    const isEdit = Boolean(editId);
+    const idToUse = isEdit ? editId! : Date.now().toString();
+    const timestamp = new Date().toISOString();
+
+    // 選択された作成モデル情報取得
+    const author = authors.find((a) => a.id === selectedAuthorId);
+    if (!author) {
+      alert("不正な作成モデルが選択されています");
+      return;
+    }
+    const collectionName = author.collection;
+
+    // ローカル保存
+    const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
+    if (isEdit) {
+      const newArr = existingArr.map((p) =>
+        p.id === idToUse
+          ? {
+              id: idToUse,
+              subject,
+              grade,
+              genre,
+              unit,
+              hours,
+              unitGoal,
+              evaluationPoints,
+              childVision,
+              lessonPlanList,
+              languageActivities,
+              selectedStyleId,
+              result: parsedResult,
+              timestamp,
+              usedStyleName: author.label,
+            }
+          : p
+      );
+      localStorage.setItem("lessonPlans", JSON.stringify(newArr));
+    } else {
+      const newPlan: LessonPlanStored = {
+        id: idToUse,
+        subject,
+        grade,
+        genre,
+        unit,
+        hours,
+        unitGoal,
+        evaluationPoints,
+        childVision,
+        lessonPlanList,
+        languageActivities,
+        selectedStyleId,
+        result: parsedResult,
+        timestamp,
+        usedStyleName: author.label,
+      };
+      existingArr.push(newPlan);
+      localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
+    }
+
+    // Firestore保存
+    try {
+      await setDoc(
+        doc(db, collectionName, idToUse),
+        {
+          subject,
+          grade,
+          genre,
+          unit,
+          hours,
+          unitGoal,
+          evaluationPoints,
+          childVision,
+          lessonPlanList,
+          languageActivities,
+          selectedStyleId,
+          result: parsedResult,
+          timestamp,
+          usedStyleName: author.label,
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("Firestoreへの保存中にエラーが発生しました:", error);
+      alert("Firestoreへの保存中にエラーが発生しました");
+      return;
+    }
+
+    localStorage.removeItem(EDIT_KEY);
+    alert("一括保存しました（ローカル・Firestore）");
+    router.push("/plan/history");
   };
 
   // ===== スタイル =====
@@ -521,6 +657,35 @@ ${languageActivities}
             </label>
           </div>
 
+          {/* 作成モデルボタン群 */}
+          <div style={{ marginBottom: "1rem" }}>
+            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>
+              作成モデルを選択してください（必須）
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {authors.map((author) => (
+                <button
+                  key={author.id}
+                  type="button"
+                  onClick={() => handleAuthorSelect(author.id)}
+                  style={{
+                    flex: 1,
+                    padding: "0.8rem 1rem",
+                    borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
+                    backgroundColor:
+                      selectedAuthorId === author.id ? "#1976d2" : "#ccc",
+                    color: selectedAuthorId === author.id ? "white" : "black",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {author.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <label>
             モデル選択：<br />
             <select value={selectedStyleId} onChange={handleStyleChange} style={inputStyle}>
@@ -671,7 +836,13 @@ ${languageActivities}
 
           <button
             type="submit"
-            style={{ ...inputStyle, backgroundColor: "#2196F3", color: "white" }}
+            disabled={!selectedAuthorId}
+            style={{
+              ...inputStyle,
+              backgroundColor: selectedAuthorId ? "#2196F3" : "#ccc",
+              color: "white",
+              cursor: selectedAuthorId ? "pointer" : "not-allowed",
+            }}
           >
             {mode === "manual" ? "授業案を表示する" : "授業案を生成する"}
           </button>
@@ -690,94 +861,7 @@ ${languageActivities}
               }}
             >
               <button
-                onClick={async () => {
-                  if (!parsedResult) {
-                    alert("まず授業案を生成してください");
-                    return;
-                  }
-
-                  const isEdit = Boolean(editId);
-                  const idToUse = isEdit ? editId! : Date.now().toString();
-                  const timestamp = new Date().toISOString();
-
-                  const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
-
-                  if (isEdit) {
-                    const newArr = existingArr.map((p) =>
-                      p.id === idToUse
-                        ? {
-                            id: idToUse,
-                            subject,
-                            grade,
-                            genre,
-                            unit,
-                            hours,
-                            unitGoal,
-                            evaluationPoints,
-                            childVision,
-                            lessonPlanList,
-                            languageActivities,
-                            selectedStyleId,
-                            result: parsedResult,
-                            timestamp,
-                            usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-                          }
-                        : p
-                    );
-                    localStorage.setItem("lessonPlans", JSON.stringify(newArr));
-                  } else {
-                    const newPlan: LessonPlanStored = {
-                      id: idToUse,
-                      subject,
-                      grade,
-                      genre,
-                      unit,
-                      hours,
-                      unitGoal,
-                      evaluationPoints,
-                      childVision,
-                      lessonPlanList,
-                      languageActivities,
-                      selectedStyleId,
-                      result: parsedResult,
-                      timestamp,
-                      usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-                    };
-                    existingArr.push(newPlan);
-                    localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
-                  }
-
-                  try {
-                    await setDoc(
-                      doc(db, "lesson_plans", idToUse),
-                      {
-                        subject,
-                        grade,
-                        genre,
-                        unit,
-                        hours,
-                        unitGoal,
-                        evaluationPoints,
-                        childVision,
-                        lessonPlanList,
-                        languageActivities,
-                        selectedStyleId,
-                        result: parsedResult,
-                        timestamp,
-                        usedStyleName: styleModels.find((m) => m.id === selectedStyleId)?.name ?? null,
-                      },
-                      { merge: true }
-                    );
-                  } catch (error) {
-                    console.error("Firestoreへの保存中にエラーが発生しました:", error);
-                    alert("Firestoreへの保存中にエラーが発生しました");
-                    return;
-                  }
-
-                  localStorage.removeItem(EDIT_KEY);
-                  alert("一括保存しました（ローカル・Firestore）");
-                  router.push("/plan/history");
-                }}
+                onClick={handleSave}
                 style={{
                   padding: "12px",
                   backgroundColor: "#4CAF50",
