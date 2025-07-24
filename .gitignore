@@ -15,3 +15,5 @@ node_modules
 
 # Gitのミラーリポジトリフォルダ（今回の状況に合わせて除外）
 koku-lesson-deploy-mirror.git/
+
+.vercel
