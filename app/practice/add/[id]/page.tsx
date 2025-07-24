@@ -266,7 +266,7 @@ export default function PracticeAddPage() {
       })
     );
 
-    const docRef = doc(db, "practiceRecords", record.lessonId);
+    const docRef = doc(db, record.modelType, record.lessonId);
     await setDoc(docRef, {
       practiceDate: record.practiceDate,
       reflection: record.reflection,
@@ -322,12 +322,12 @@ export default function PracticeAddPage() {
       </nav>
 
       <div
-        style={overlayStyle}
+        style={overlayStyle(menuOpen)}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
 
-      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+      <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
             signOut();
@@ -552,6 +552,27 @@ export default function PracticeAddPage() {
                   </option>
                 ))}
               </select>
+            </label>
+          </div>
+
+          {/* 振り返り入力欄 */}
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
+            <label>
+              振り返り：
+              <textarea
+                value={reflection}
+                onChange={(e) => setReflection(e.target.value)}
+                required
+                rows={5}
+                style={{ width: "100%", marginTop: 8, padding: 8 }}
+              />
             </label>
           </div>
 
@@ -883,7 +904,7 @@ const barStyle: React.CSSProperties = {
   backgroundColor: "white",
   borderRadius: 2,
 };
-const menuWrapperStyle: React.CSSProperties = {
+const menuWrapperStyle = (menuOpen: boolean): React.CSSProperties => ({
   position: "fixed",
   top: 56,
   left: 0,
@@ -891,12 +912,12 @@ const menuWrapperStyle: React.CSSProperties = {
   height: "calc(100vh - 56px)",
   backgroundColor: "#f0f0f0",
   boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-  transform: "translateX(0)",
+  transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
   transition: "transform 0.3s ease",
   zIndex: 999,
   display: "flex",
   flexDirection: "column",
-};
+});
 const logoutButtonStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
   backgroundColor: "#e53935",
@@ -925,18 +946,18 @@ const navBtnStyle: React.CSSProperties = {
   width: "100%",
   textAlign: "left",
 };
-const overlayStyle: React.CSSProperties = {
+const overlayStyle = (menuOpen: boolean): React.CSSProperties => ({
   position: "fixed",
   top: 56,
   left: 0,
   width: "100vw",
   height: "calc(100vh - 56px)",
   backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: 0,
-  visibility: "hidden",
+  opacity: menuOpen ? 1 : 0,
+  visibility: menuOpen ? "visible" : "hidden",
   transition: "opacity 0.3s ease",
   zIndex: 998,
-};
+});
 const containerStyle: React.CSSProperties = {
   padding: 24,
   maxWidth: 800,
