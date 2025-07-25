@@ -637,7 +637,7 @@ export default function PracticeSharePage() {
         <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px; margin-top:0; margin-bottom: 12px; font-size: 20px;">
           ${record.lessonTitle || safeUnitName}
         </h1>
-        <p style="margin-top:4px; margin-bottom:4px;"><strong>実施日：</strong> ${record.practiceDate || "－"}</p>
+        <p style="margin-top:4px; margin-bottom:4px;"><strong>実践開始日：</strong> ${record.practiceDate || "－"}</p>
         <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${record.authorName || "－"}</p>
         ${lessonPlanHtml}
         <h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">振り返り</h2>
