@@ -651,7 +651,7 @@ export default function PracticeSharePage() {
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: 1 },
+          html2canvas: { scale: 2 },  // 解像度アップのためscaleを2に設定
           pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
@@ -707,34 +707,6 @@ export default function PracticeSharePage() {
       </label>
     );
   };
-
-  const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "100vh",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: open ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-  });
-
-  const getOverlayStyle = (open: boolean): CSSProperties => ({
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: open ? 1 : 0,
-    visibility: open ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  });
 
   return (
     <>
@@ -1289,7 +1261,6 @@ export default function PracticeSharePage() {
 }
 
 // CSSスタイル群
-
 const navBarStyle: CSSProperties = {
   position: "fixed",
   top: 0,
@@ -1459,3 +1430,35 @@ const authorNameStyle: CSSProperties = {
   fontWeight: "bold",
   marginBottom: 12,
 };
+
+// 以下メニュー関連関数
+const toggleMenu = () => {
+  const event = new CustomEvent("toggleMenu");
+  window.dispatchEvent(event);
+};
+const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: 250,
+  height: "100vh",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transform: open ? "translateX(0)" : "translateX(-100%)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+});
+const getOverlayStyle = (open: boolean): CSSProperties => ({
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "100vh",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: open ? 1 : 0,
+  visibility: open ? "visible" : "hidden",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+});
