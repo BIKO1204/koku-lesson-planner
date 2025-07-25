@@ -27,12 +27,11 @@ type GroupedHistory = {
   histories: EducationHistory[];
 };
 
-// 単純な単語頻度計算（日本語は分かち書きしていませんが、スペース区切りなどに対応）
+// 改良版 parseWords 関数
 async function parseWords(text: string): Promise<{ text: string; value: number }[]> {
   const freqMap: Record<string, number> = {};
-  // \wは英数字のみなので、日本語はそのままバラバラになる可能性があります。
-  // より正確にしたい場合は別途分かち書き導入が必要です。
-  const words = text.match(/\b\w+\b/g) || [];
+  // ひらがな・カタカナ・漢字・英数字の連続したかたまりを抽出
+  const words = text.match(/[\u3040-\u309F]+|[\u30A0-\u30FF]+|[\u4E00-\u9FFF]+|[a-zA-Z0-9]+/g) || [];
   words.forEach((word) => {
     if (word.length > 1) {
       freqMap[word] = (freqMap[word] || 0) + 1;
@@ -216,10 +215,12 @@ export default function GroupedHistoryPage() {
     try {
       await deleteDoc(doc(db, "educationModelsHistory", id));
       setGroupedHistories((prev) =>
-        prev.map((group) => ({
-          ...group,
-          histories: group.histories.filter((h) => h.id !== id),
-        }))
+        prev
+          .map((group) => ({
+            ...group,
+            histories: group.histories.filter((h) => h.id !== id),
+          }))
+          .filter((group) => group.histories.length > 0) // 履歴0のグループは削除
       );
       alert("削除しました");
     } catch (error) {
