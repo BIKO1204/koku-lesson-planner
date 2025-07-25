@@ -49,10 +49,24 @@ export default function EducationModelsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
 
+  // スマホ判定用state
+  const [windowWidth, setWindowWidth] = useState<number>(
+    typeof window !== "undefined" ? window.innerWidth : 1000
+  );
+
   // PDF用 refs をモデルごとに保持するため、Mapで管理
   const pdfRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
+
+  // ウィンドウリサイズ監視
+  useEffect(() => {
+    function handleResize() {
+      setWindowWidth(window.innerWidth);
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     async function fetchModels() {
@@ -153,7 +167,6 @@ export default function EducationModelsPage() {
           creatorId: userId,
         });
 
-        // 履歴コレクションに編集履歴を追加
         await addDoc(collection(db, "educationModelsHistory"), {
           modelId: editId,
           name: form.name.trim(),
@@ -191,7 +204,6 @@ export default function EducationModelsPage() {
           creatorId: userId,
         });
 
-        // 履歴コレクションに新規作成履歴を追加
         await addDoc(collection(db, "educationModelsHistory"), {
           modelId: docRef.id,
           name: form.name.trim(),
@@ -227,7 +239,6 @@ export default function EducationModelsPage() {
       setError("");
       setMenuOpen(false);
 
-      // ここで編集後に履歴ページへ遷移
       if (editId) {
         router.push("/models/history");
       }
@@ -314,6 +325,10 @@ export default function EducationModelsPage() {
   };
 
   // --- Styles ---
+
+  // スマホかどうか判定（480px未満をスマホとする）
+  const isMobile = windowWidth < 480;
+
   const navBarStyle: React.CSSProperties = {
     position: "fixed",
     top: 0,
@@ -355,16 +370,8 @@ export default function EducationModelsPage() {
     padding: "0 1rem",
     boxSizing: "border-box",
   };
-  const logoutButtonStyle: React.CSSProperties = {
-    padding: "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-  };
+
+  // メニューのボタンはスマホで少し大きく間隔を広げる
   const menuLinksWrapperStyle: React.CSSProperties = {
     overflowY: "auto",
     flexGrow: 1,
@@ -372,8 +379,8 @@ export default function EducationModelsPage() {
     paddingBottom: "20px",
   };
   const navBtnStyle: React.CSSProperties = {
-    marginBottom: 8,
-    padding: "0.5rem 1rem",
+    marginBottom: isMobile ? 14 : 8,
+    padding: isMobile ? "1rem 1rem" : "0.5rem 1rem",
     backgroundColor: "#1976d2",
     color: "white",
     borderRadius: 6,
@@ -382,6 +389,18 @@ export default function EducationModelsPage() {
     display: "block",
     width: "100%",
     textAlign: "left",
+    fontSize: isMobile ? "1.1rem" : "1rem",
+  };
+  const logoutButtonStyle: React.CSSProperties = {
+    padding: isMobile ? "1rem" : "0.75rem 1rem",
+    backgroundColor: "#e53935",
+    color: "white",
+    fontWeight: "bold",
+    border: "none",
+    cursor: "pointer",
+    flexShrink: 0,
+    margin: "1rem",
+    fontSize: isMobile ? "1.1rem" : "1rem",
   };
   const overlayStyle: React.CSSProperties = {
     position: "fixed",
@@ -396,13 +415,16 @@ export default function EducationModelsPage() {
     zIndex: 998,
   };
   const mainContainerStyle: React.CSSProperties = {
-    padding: "72px 24px 24px",
-    maxWidth: 900,
+    padding: isMobile ? "72px 12px 12px" : "72px 24px 24px",
+    maxWidth: isMobile ? "100%" : 900,
     margin: "auto",
     fontFamily: "sans-serif",
     backgroundColor: "#fff",
     borderRadius: 10,
     boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
+    boxSizing: "border-box",
+    fontSize: isMobile ? "1rem" : "1.1rem",
+    lineHeight: 1.5,
   };
   const cardStyle: React.CSSProperties = {
     border: "1px solid #ccc",
@@ -415,9 +437,9 @@ export default function EducationModelsPage() {
   };
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    padding: 8,
+    padding: isMobile ? 10 : 8,
     marginBottom: 12,
-    fontSize: "1rem",
+    fontSize: isMobile ? "1.1rem" : "1rem",
     borderRadius: 6,
     border: "1px solid #ccc",
     boxSizing: "border-box",
@@ -425,16 +447,17 @@ export default function EducationModelsPage() {
   const buttonPrimary: React.CSSProperties = {
     backgroundColor: "#4caf50",
     color: "white",
-    padding: "8px 16px",
+    padding: isMobile ? "10px 20px" : "8px 16px",
     border: "none",
     borderRadius: 6,
     cursor: "pointer",
     fontWeight: "bold",
+    fontSize: isMobile ? "1.1rem" : "1rem",
   };
 
   const editSectionTitleStyle: React.CSSProperties = {
     fontWeight: "bold",
-    fontSize: "1.1rem",
+    fontSize: isMobile ? "1.1rem" : "1.1rem",
     marginBottom: 6,
     marginTop: 12,
   };
@@ -455,7 +478,13 @@ export default function EducationModelsPage() {
           <span style={barStyle} />
           <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+        <h1
+          style={{
+            color: "white",
+            marginLeft: "1rem",
+            fontSize: isMobile ? "1.1rem" : "1.25rem",
+          }}
+        >
           国語授業プランナー
         </h1>
       </nav>
@@ -557,17 +586,17 @@ export default function EducationModelsPage() {
 
       {/* メインコンテンツ */}
       <main style={mainContainerStyle}>
-        <h1 style={{ fontSize: 24, marginBottom: 16 }}>
+        <h1 style={{ fontSize: isMobile ? 22 : 24, marginBottom: 16 }}>
           教育観モデル一覧・編集
         </h1>
 
         {/* 並び替え */}
-        <label style={{ display: "block", marginBottom: 16 }}>
+        <label style={{ display: "block", marginBottom: 16, fontSize: isMobile ? 14 : 16 }}>
           並び替え：
           <select
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value as any)}
-            style={{ marginLeft: 8, padding: 4, fontSize: "1rem" }}
+            style={{ marginLeft: 8, padding: 6, fontSize: isMobile ? 14 : 16 }}
           >
             <option value="newest">新着順</option>
             <option value="nameAsc">名前順</option>
@@ -576,34 +605,46 @@ export default function EducationModelsPage() {
 
         {/* エラー表示 */}
         {error && (
-          <p style={{ color: "red", marginBottom: 16, fontWeight: "bold" }}>
+          <p
+            style={{
+              color: "red",
+              marginBottom: 16,
+              fontWeight: "bold",
+              fontSize: isMobile ? 14 : 16,
+            }}
+          >
             {error}
           </p>
         )}
 
         {/* モデル一覧 */}
         {models.length === 0 ? (
-          <p>まだモデルがありません。</p>
+          <p style={{ fontSize: isMobile ? 14 : 16 }}>まだモデルがありません。</p>
         ) : (
           models.map((m) => (
             <div key={m.id} style={cardStyle}>
-              <h3 style={{ marginTop: 0 }}>{m.name}</h3>
-              <p>
+              <h3 style={{ marginTop: 0, fontSize: isMobile ? 18 : 20 }}>{m.name}</h3>
+              <p style={{ fontSize: isMobile ? 14 : 16 }}>
                 <strong>作成者：</strong> {m.creatorName}
               </p>
-              <p>
+              <p style={{ fontSize: isMobile ? 14 : 16 }}>
                 <strong>教育観：</strong> {m.philosophy}
               </p>
-              <p>
+              <p style={{ fontSize: isMobile ? 14 : 16 }}>
                 <strong>評価観点：</strong> {m.evaluationFocus}
               </p>
-              <p>
+              <p style={{ fontSize: isMobile ? 14 : 16 }}>
                 <strong>言語活動：</strong> {m.languageFocus}
               </p>
-              <p>
+              <p style={{ fontSize: isMobile ? 14 : 16 }}>
                 <strong>育てたい子どもの姿：</strong> {m.childFocus}
               </p>
-              <p style={{ fontSize: "0.8rem", color: "#666" }}>
+              <p
+                style={{
+                  fontSize: isMobile ? 12 : 14,
+                  color: "#666",
+                }}
+              >
                 更新日時: {new Date(m.updatedAt).toLocaleString()}
               </p>
 
@@ -766,7 +807,7 @@ export default function EducationModelsPage() {
                     backgroundColor: "#f9f9f9",
                   }}
                 >
-                  <h4>編集モード</h4>
+                  <h4 style={{ fontSize: isMobile ? 18 : 20 }}>編集モード</h4>
 
                   <label style={editSectionTitleStyle}>作成者名（必須）</label>
                   <input
