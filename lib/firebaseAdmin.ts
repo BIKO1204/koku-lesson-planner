@@ -1,12 +1,14 @@
 // lib/firebaseAdmin.ts
+
 import * as admin from "firebase-admin";
 
-const serviceAccount = require("../serviceAccountKey.json"); // ご自身のJSONパスに置き換えてください
-
 if (!admin.apps.length) {
+  // 環境変数からサービスアカウント情報をJSONパースして取得
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    // Realtime Databaseを使う場合はdatabaseURLも指定
+    // Realtime Databaseを使う場合は以下をコメント解除して設定
     // databaseURL: "https://<your-project-id>.firebaseio.com",
   });
 }
