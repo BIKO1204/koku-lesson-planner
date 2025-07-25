@@ -430,7 +430,7 @@ export default function PracticeAddPage() {
             }}
           >
             <label>
-              実施日：<br />
+              実践開始日：<br />
               <input
                 type="date"
                 value={practiceDate}
