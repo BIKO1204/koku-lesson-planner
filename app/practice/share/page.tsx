@@ -945,7 +945,7 @@ export default function PracticeSharePage() {
                   </h2>
 
                   <p style={practiceDateStyle}>
-                    実施日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
+                    実践開始日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
                   <p style={authorNameStyle}>作成者: {r.authorName || r.author || "－"}</p>
 
