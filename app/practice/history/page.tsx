@@ -52,7 +52,6 @@ async function deleteRecord(lessonId: string) {
   await db.delete(STORE_NAME, lessonId);
 }
 
-// 修正：投稿時にauthor（メールアドレス）とauthorName（手動入力名）をセットするよう引数を追加
 async function uploadRecordToFirebase(
   record: PracticeRecord,
   authorEmail: string,
@@ -71,8 +70,8 @@ async function uploadRecordToFirebase(
     grade: record.grade || "",
     modelType: record.modelType || "",
     createdAt: serverTimestamp(),
-    author: authorEmail,      // 本人確認用メールアドレス
-    authorName: authorName,   // 表示用ユーザー名（手動入力）
+    author: authorEmail,
+    authorName: authorName,
   });
 }
 
@@ -184,7 +183,6 @@ export default function PracticeHistoryPage() {
 
       record.modelType = normalizeModelType(record.modelType);
 
-      // IndexedDBにauthorNameがあれば使い、なければ空文字をセット
       const authorNameToSave = record.authorName || "";
 
       await uploadRecordToFirebase(record, userEmail, authorNameToSave);
@@ -199,8 +197,7 @@ export default function PracticeHistoryPage() {
     }
   };
 
-  // 以下UI部分
-
+  // --- スタイル群 ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -328,7 +325,7 @@ export default function PracticeHistoryPage() {
   };
   const postBtn: CSSProperties = {
     ...buttonBaseStyle,
-    backgroundColor: "#800080", // 紫色
+    backgroundColor: "#800080",
   };
 
   const planBlockStyle: CSSProperties = {
@@ -571,17 +568,20 @@ export default function PracticeHistoryPage() {
                             <div style={{ marginTop: 8 }}>
                               <strong>授業の流れ：</strong>
                               <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                                {Object.entries(plan.result["授業の流れ"]).map(
-                                  ([key, val]) => {
-                                    const content =
-                                      typeof val === "string" ? val : JSON.stringify(val);
+                                {Object.entries(plan.result["授業の流れ"])
+                                  .sort((a, b) => {
+                                    const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+                                    const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
+                                    return numA - numB;
+                                  })
+                                  .map(([key, val]) => {
+                                    const content = typeof val === "string" ? val : JSON.stringify(val);
                                     return (
                                       <li key={key}>
                                         <strong>{key}:</strong> {content}
                                       </li>
                                     );
-                                  }
-                                )}
+                                  })}
                               </ul>
                             </div>
                           )}
@@ -656,7 +656,7 @@ export default function PracticeHistoryPage() {
                               margin: [5, 5, 5, 5],
                               filename: `${r.lessonTitle}_実践記録.pdf`,
                               jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                              html2canvas: { useCORS: true, scale: 1.5 },
+                              html2canvas: { useCORS: true, scale: 3 },
                               pagebreak: { mode: ["css", "legacy"] },
                             })
                             .save();
@@ -677,7 +677,7 @@ export default function PracticeHistoryPage() {
                             .set({
                               margin: [5, 5, 5, 5],
                               jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                              html2canvas: { useCORS: true, scale: 1.5 },
+                              html2canvas: { useCORS: true, scale: 3 },
                               pagebreak: { mode: ["css", "legacy"] },
                             })
                             .outputPdf("blob");
