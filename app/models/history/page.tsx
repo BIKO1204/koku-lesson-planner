@@ -27,21 +27,6 @@ type GroupedHistory = {
   histories: EducationHistory[];
 };
 
-// 改良版 parseWords 関数
-async function parseWords(text: string): Promise<{ text: string; value: number }[]> {
-  const freqMap: Record<string, number> = {};
-  // ひらがな・カタカナ・漢字・英数字の連続したかたまりを抽出
-  const words = text.match(/[\u3040-\u309F]+|[\u30A0-\u30FF]+|[\u4E00-\u9FFF]+|[a-zA-Z0-9]+/g) || [];
-  words.forEach((word) => {
-    if (word.length > 1) {
-      freqMap[word] = (freqMap[word] || 0) + 1;
-    }
-  });
-  return Object.entries(freqMap)
-    .map(([text, value]) => ({ text, value }))
-    .sort((a, b) => b.value - a.value);
-}
-
 function FieldWithDiff({
   current,
   previous,
@@ -123,7 +108,6 @@ export default function GroupedHistoryPage() {
   const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
-  const [wordFreqs, setWordFreqs] = useState<Record<string, { text: string; value: number }[]>>({});
   const router = useRouter();
 
   // localStorageから展開状態読み込み
@@ -144,12 +128,11 @@ export default function GroupedHistoryPage() {
     localStorage.setItem("expandedIds", JSON.stringify(Array.from(expandedIds)));
   }, [expandedIds]);
 
-  // Firestoreから履歴を取得・グループ化・単語頻度計算
+  // Firestoreから履歴を取得・グループ化
   useEffect(() => {
     async function fetchAndGroup() {
       if (!userId) {
         setGroupedHistories([]);
-        setWordFreqs({});
         return;
       }
       try {
@@ -175,24 +158,9 @@ export default function GroupedHistoryPage() {
         });
         const grouped = Array.from(map.values());
         setGroupedHistories(grouped);
-
-        // 単語頻度を全文結合して計算
-        const freqs: Record<string, { text: string; value: number }[]> = {};
-        await Promise.all(
-          grouped.map(async (group) => {
-            const fullText = group.histories.map((h) => h.philosophy).join(" ");
-            try {
-              freqs[group.modelId] = await parseWords(fullText);
-            } catch {
-              freqs[group.modelId] = [];
-            }
-          })
-        );
-        setWordFreqs(freqs);
       } catch (e) {
         console.error("Firestore読み込み・グルーピングエラー", e);
         setGroupedHistories([]);
-        setWordFreqs({});
       }
     }
     fetchAndGroup();
@@ -309,7 +277,7 @@ export default function GroupedHistoryPage() {
       </div>
 
       <main style={mainStyle}>
-        <h1 style={titleStyle}>🕒 教育観モデル履歴と単語頻度リスト</h1>
+        <h1 style={titleStyle}>🕒 教育観モデル履歴</h1>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
@@ -329,56 +297,38 @@ export default function GroupedHistoryPage() {
                 </button>
 
                 {expandedIds.has(modelId) && (
-                  <>
-                    <div id={`section-${modelId}`} style={historyListStyle}>
-                      {historiesAsc.map((h, i) => {
-                        const prev = i > 0 ? historiesAsc[i - 1] : undefined;
-                        return (
-                          <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
-                            <h2 style={cardTitleStyle}>{h.name}</h2>
-                            <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
-                            <FieldWithDiff
-                              current={h.evaluationFocus}
-                              previous={prev?.evaluationFocus}
-                              label="評価観点"
-                            />
-                            <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
-                            <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
-                            <button
-                              style={{
-                                marginTop: 10,
-                                backgroundColor: "#e53935",
-                                color: "white",
-                                border: "none",
-                                borderRadius: 6,
-                                padding: "0.5rem 1rem",
-                                cursor: "pointer",
-                              }}
-                              onClick={() => deleteHistory(h.id)}
-                            >
-                              削除
-                            </button>
-                          </TimelineItem>
-                        );
-                      })}
-                    </div>
-
-                    {/* 単語頻度リストをテキストで表示 */}
-                    <div style={{ marginTop: 20 }}>
-                      <h3>単語頻度リスト</h3>
-                      {wordFreqs[modelId] && wordFreqs[modelId].length > 0 ? (
-                        <ul style={{ maxHeight: 200, overflowY: "auto", paddingLeft: 20 }}>
-                          {wordFreqs[modelId].map(({ text, value }) => (
-                            <li key={text}>
-                              {text}：{value}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p style={{ color: "#999", fontStyle: "italic" }}>単語頻度データがありません</p>
-                      )}
-                    </div>
-                  </>
+                  <div id={`section-${modelId}`} style={historyListStyle}>
+                    {historiesAsc.map((h, i) => {
+                      const prev = i > 0 ? historiesAsc[i - 1] : undefined;
+                      return (
+                        <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
+                          <h2 style={cardTitleStyle}>{h.name}</h2>
+                          <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
+                          <FieldWithDiff
+                            current={h.evaluationFocus}
+                            previous={prev?.evaluationFocus}
+                            label="評価観点"
+                          />
+                          <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
+                          <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
+                          <button
+                            style={{
+                              marginTop: 10,
+                              backgroundColor: "#e53935",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 6,
+                              padding: "0.5rem 1rem",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => deleteHistory(h.id)}
+                          >
+                            削除
+                          </button>
+                        </TimelineItem>
+                      );
+                    })}
+                  </div>
                 )}
               </section>
             );
