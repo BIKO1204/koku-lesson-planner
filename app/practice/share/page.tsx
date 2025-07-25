@@ -651,7 +651,7 @@ export default function PracticeSharePage() {
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: 3 },  // 解像度アップのためscaleを3に設定
+          html2canvas: { scale: 4, useCORS: true },  // ← ここをscale:4, useCORS:trueに変更して解像度アップ
           pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
