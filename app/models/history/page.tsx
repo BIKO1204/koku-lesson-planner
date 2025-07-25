@@ -27,7 +27,6 @@ type GroupedHistory = {
   histories: EducationHistory[];
 };
 
-// 差分強調＋ツールチップ表示コンポーネント
 function FieldWithDiff({
   current,
   previous,
@@ -46,6 +45,8 @@ function FieldWithDiff({
         cursor: isChanged ? "help" : undefined,
         whiteSpace: "pre-wrap",
         marginBottom: 6,
+        padding: isChanged ? "4px 8px" : undefined,
+        borderRadius: isChanged ? 4 : undefined,
       }}
       title={isChanged && previous ? `${label}（前回）: ${previous}` : undefined}
     >
@@ -54,21 +55,44 @@ function FieldWithDiff({
   );
 }
 
-// タイムラインアイテム用ラッパー
 function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 16 }}>
-      <time style={{ width: 120, color: "#555", whiteSpace: "nowrap" }}>{date}</time>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        marginBottom: 16,
+        flexWrap: "wrap",
+        gap: 12,
+      }}
+    >
+      <time
+        style={{
+          width: 140,
+          color: "#555",
+          whiteSpace: "nowrap",
+          flexShrink: 0,
+          fontSize: 14,
+          fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
+        }}
+      >
+        {date}
+      </time>
       <div
         style={{
           marginLeft: 12,
-          borderLeft: "3px solid #1976d2",
+          borderLeft: "4px solid #1976d2",
           paddingLeft: 12,
           flexGrow: 1,
-          backgroundColor: "#fafafa",
-          borderRadius: 6,
-          paddingTop: 8,
-          paddingBottom: 8,
+          backgroundColor: "#f9fbff",
+          borderRadius: 8,
+          paddingTop: 12,
+          paddingBottom: 12,
+          boxShadow: "0 2px 8px rgba(25, 118, 210, 0.1)",
+          fontSize: 15,
+          fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
+          minWidth: 0,
+          wordBreak: "break-word",
         }}
       >
         {children}
@@ -181,9 +205,7 @@ export default function GroupedHistoryPage() {
           <span style={barStyle} />
           <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: 16, fontSize: "1.25rem" }}>
-          国語授業プランナー
-        </h1>
+        <h1 style={navTitleStyle}>国語授業プランナー</h1>
       </nav>
 
       {/* メニューオーバーレイ */}
@@ -243,7 +265,6 @@ export default function GroupedHistoryPage() {
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
-            // 更新日の古い順にする（タイムライン用）
             const historiesAsc = [...histories].reverse();
 
             return (
@@ -298,7 +319,7 @@ export default function GroupedHistoryPage() {
   );
 }
 
-// スタイル（元コードのまま）
+// --- スタイル --- //
 
 const navBarStyle: CSSProperties = {
   position: "fixed",
@@ -326,6 +347,13 @@ const barStyle: CSSProperties = {
   height: 4,
   backgroundColor: "white",
   borderRadius: 2,
+};
+
+const navTitleStyle: CSSProperties = {
+  color: "white",
+  marginLeft: 16,
+  fontSize: "1.25rem",
+  userSelect: "none",
 };
 
 const menuWrapperStyle: CSSProperties = {
@@ -398,6 +426,7 @@ const titleStyle: CSSProperties = {
   fontSize: "1.8rem",
   marginBottom: "1rem",
   textAlign: "center",
+  userSelect: "none",
 };
 
 const emptyStyle: CSSProperties = {
