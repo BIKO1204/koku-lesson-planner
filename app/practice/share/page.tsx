@@ -33,6 +33,10 @@ type Comment = {
   comment: string;
   createdAt: string;
 };
+type PdfFile = {
+  url: string;
+  name: string;
+};
 type PracticeRecord = {
   lessonId: string;
   lessonTitle: string;
@@ -47,8 +51,7 @@ type PracticeRecord = {
   unitName?: string;
   author?: string;
   authorName?: string;
-  pdfUrl?: string;
-  pdfName?: string;
+  pdfFiles?: PdfFile[];  // 複数PDF管理
   createdAt?: string;
   modelType?: string; // モデル識別用
 };
@@ -127,8 +130,7 @@ export default function PracticeSharePage() {
           likedUsers: (doc.data() as any).likedUsers || [],
           author: (doc.data() as any).author || "",
           authorName: (doc.data() as any).authorName || "",
-          pdfUrl: (doc.data() as any).pdfUrl || "",
-          pdfName: (doc.data() as any).pdfName || "",
+          pdfFiles: (doc.data() as any).pdfFiles || [],
           createdAt: (doc.data() as any).createdAt || "",
         }));
 
@@ -201,6 +203,7 @@ export default function PracticeSharePage() {
     return record.likedUsers?.includes(userId) ?? false;
   };
 
+  // いいねのトグル対応
   const handleLike = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -217,25 +220,31 @@ export default function PracticeSharePage() {
     }
     const collectionName = `practiceRecords_${record.modelType}`;
     const docRef = doc(db, collectionName, lessonId);
+
     try {
       await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) throw new Error("該当データがありません");
         const data = docSnap.data();
         const likedUsers: string[] = data.likedUsers || [];
-        if (likedUsers.includes(userId)) throw new Error("すでにいいね済みです");
-        transaction.update(docRef, {
-          likes: increment(1),
-          likedUsers: arrayUnion(userId),
-        });
+
+        if (likedUsers.includes(userId)) {
+          // いいね解除
+          transaction.update(docRef, {
+            likes: increment(-1),
+            likedUsers: likedUsers.filter(id => id !== userId),
+          });
+        } else {
+          // いいね追加
+          transaction.update(docRef, {
+            likes: increment(1),
+            likedUsers: arrayUnion(userId),
+          });
+        }
       });
-    } catch (error: any) {
-      if (error.message === "すでにいいね済みです") {
-        alert(error.message);
-      } else {
-        console.error("いいね処理中にエラー", error);
-        alert("いいねに失敗しました");
-      }
+    } catch (error) {
+      console.error("いいね処理中にエラー", error);
+      alert("いいね処理に失敗しました");
     }
   };
 
@@ -381,9 +390,12 @@ export default function PracticeSharePage() {
       const url = await getDownloadURL(pdfRef);
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
+
+      const newPdfFiles = record.pdfFiles ? [...record.pdfFiles] : [];
+      newPdfFiles.push({ url, name: file.name });
+
       await updateDoc(docRef, {
-        pdfUrl: url,
-        pdfName: file.name,
+        pdfFiles: newPdfFiles,
       });
       alert("PDFをアップロードしました");
     } catch (error) {
@@ -394,7 +406,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  const handleDeletePdf = async (lessonId: string, pdfName?: string) => {
+  const handleDeletePdf = async (lessonId: string, pdfName: string) => {
     if (!session) {
       alert("ログインしてください");
       return;
@@ -419,9 +431,11 @@ export default function PracticeSharePage() {
       await deleteObject(pdfRef);
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
+
+      const newPdfFiles = (record.pdfFiles || []).filter(p => p.name !== pdfName);
+
       await updateDoc(docRef, {
-        pdfUrl: "",
-        pdfName: "",
+        pdfFiles: newPdfFiles,
       });
       alert("PDFを削除しました");
     } catch (error) {
@@ -449,9 +463,11 @@ export default function PracticeSharePage() {
     if (!confirm("本当にこの実践案を削除しますか？")) return;
     setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
-      if (record.pdfName) {
-        const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${record.pdfName}`);
-        await deleteObject(pdfRef);
+      if (record.pdfFiles) {
+        for (const pdf of record.pdfFiles) {
+          const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdf.name}`);
+          await deleteObject(pdfRef);
+        }
       }
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
@@ -469,7 +485,7 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // 画像をbase64化（省略）
+  // 画像をbase64化（省略）省略せず同様の実装をここに入れても良いですが長いため省略
   const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -1087,19 +1103,19 @@ export default function PracticeSharePage() {
                   )}
 
                   <div style={{ marginTop: 12 }}>
-                    {r.pdfUrl ? (
-                      <>
+                    {(r.pdfFiles || []).map((pdf, idx) => (
+                      <div key={idx} style={{ marginBottom: 8 }}>
                         <a
-                          href={r.pdfUrl}
+                          href={pdf.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{ color: "#1976d2", textDecoration: "underline" }}
                         >
-                          📄 {r.pdfName || "PDFを見る"}
+                          📄 {pdf.name}
                         </a>
                         {isAuthor && (
                           <button
-                            onClick={() => handleDeletePdf(r.lessonId, r.pdfName)}
+                            onClick={() => handleDeletePdf(r.lessonId, pdf.name)}
                             disabled={uploadingPdfIds.includes(r.lessonId)}
                             style={{
                               marginLeft: 8,
@@ -1114,15 +1130,14 @@ export default function PracticeSharePage() {
                             PDF削除
                           </button>
                         )}
-                      </>
-                    ) : (
-                      isAuthor && (
-                        <PdfFileInput
-                          lessonId={r.lessonId}
-                          uploading={uploadingPdfIds.includes(r.lessonId)}
-                          onUpload={handlePdfUpload}
-                        />
-                      )
+                      </div>
+                    ))}
+                    {isAuthor && (
+                      <PdfFileInput
+                        lessonId={r.lessonId}
+                        uploading={uploadingPdfIds.includes(r.lessonId)}
+                        onUpload={handlePdfUpload}
+                      />
                     )}
                   </div>
 
@@ -1141,13 +1156,10 @@ export default function PracticeSharePage() {
                   <div style={{ marginTop: 12 }}>
                     <button
                       style={isLikedByUser(r) ? likeBtnDisabledStyle : likeBtnStyle}
-                      onClick={() => !isLikedByUser(r) && handleLike(r.lessonId)}
-                      disabled={!session || isLikedByUser(r)}
+                      onClick={() => handleLike(r.lessonId)}
                       title={
                         !session
                           ? "ログインしてください"
-                          : isLikedByUser(r)
-                          ? "すでにいいね済みです"
                           : undefined
                       }
                     >
@@ -1367,7 +1379,7 @@ const likeBtnStyle: CSSProperties = {
 };
 const likeBtnDisabledStyle: CSSProperties = {
   ...likeBtnStyle,
-  cursor: "default",
+  cursor: "pointer",
   opacity: 0.6,
 };
 const commentListStyle: CSSProperties = {

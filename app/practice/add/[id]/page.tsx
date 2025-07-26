@@ -189,12 +189,18 @@ export default function PracticeAddPage() {
       setLessonTitle("");
     }
 
+    // --- ここから修正 ---
     getRecord(id).then((existing) => {
       if (existing) {
         setPracticeDate(existing.practiceDate);
         setReflection(existing.reflection);
-        setBoardImages(existing.boardImages);
-        setCompressedImages(existing.compressedImages || []); // ここを追加
+        // compressedImagesを優先してboardImagesにセットする修正
+        if (existing.compressedImages && existing.compressedImages.length > 0) {
+          setBoardImages(existing.compressedImages);
+        } else {
+          setBoardImages(existing.boardImages);
+        }
+        setCompressedImages(existing.compressedImages || []);
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
         setAuthorName(existing.authorName || "");
         setGrade(existing.grade || "");
@@ -203,6 +209,7 @@ export default function PracticeAddPage() {
         setModelType(existing.modelType || modelTypes[0].value);
       }
     });
+    // --- 修正ここまで ---
   }, [id]);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -241,7 +248,7 @@ export default function PracticeAddPage() {
       practiceDate,
       reflection,
       boardImages,
-      compressedImages, // 追加
+      compressedImages,
       lessonTitle,
       authorName,
       grade,
