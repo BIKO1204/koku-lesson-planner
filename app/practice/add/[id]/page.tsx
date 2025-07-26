@@ -15,6 +15,7 @@ type PracticeRecord = {
   practiceDate: string;
   reflection: string;
   boardImages: BoardImage[];
+  compressedImages?: BoardImage[]; // 追加
   lessonTitle: string;
   grade?: string;
   genre?: string;
@@ -193,6 +194,7 @@ export default function PracticeAddPage() {
         setPracticeDate(existing.practiceDate);
         setReflection(existing.reflection);
         setBoardImages(existing.boardImages);
+        setCompressedImages(existing.compressedImages || []); // ここを追加
         setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
         setAuthorName(existing.authorName || "");
         setGrade(existing.grade || "");
@@ -239,6 +241,7 @@ export default function PracticeAddPage() {
       practiceDate,
       reflection,
       boardImages,
+      compressedImages, // 追加
       lessonTitle,
       authorName,
       grade,
@@ -266,7 +269,6 @@ export default function PracticeAddPage() {
       })
     );
 
-    // コレクション名を共有版と合わせるために修正
     const practiceRecordCollection = record.modelType.replace("lesson_plans_", "practiceRecords_");
     const docRef = doc(db, practiceRecordCollection, record.lessonId);
 
@@ -881,7 +883,6 @@ export default function PracticeAddPage() {
   );
 }
 
-// CSSスタイル群
 const navBarStyle: React.CSSProperties = {
   position: "fixed",
   top: 0,
