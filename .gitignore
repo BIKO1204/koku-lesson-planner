@@ -2,11 +2,13 @@
 node_modules/
 
 # 環境変数ファイルは除外
-.env.local
+.env*
 env.local
 
 # Firebaseサービスアカウントファイルは除外（プロジェクトルート直下）
 /serviceAccount.json
+/serviceAccountKey.json
+/koku-lesson-planner-firebase-adminsdk-*.json
 
 # Vercelの設定ファイル
 .vercel/
