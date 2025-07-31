@@ -1,7 +1,7 @@
 // lib/firebase.ts
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, collection, getDocs } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -22,3 +22,10 @@ export const db = getFirestore(app);
 
 // Storage のインスタンス
 export const storage = getStorage(app);
+
+// Firestoreのusersコレクションから全ユーザーを取得する関数
+export async function fetchUsers() {
+  const usersCol = collection(db, "users");
+  const usersSnapshot = await getDocs(usersCol);
+  return usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
