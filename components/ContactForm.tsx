@@ -1,10 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { initializeApp, getApps } from "firebase/app";
+
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  // 必要に応じて他の設定も
+};
+
+if (!getApps().length) {
+  initializeApp(firebaseConfig);
+}
 
 export default function ContactForm() {
+  const auth = getAuth();
+
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
+  const [user, setUser] = useState<any>(null);
+
+  // ログイン状態監視
+  onAuthStateChanged(auth, (currentUser) => {
+    setUser(currentUser);
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -13,17 +34,29 @@ export default function ContactForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("sending");
+
     try {
+      if (!user) {
+        alert("ログインしてください");
+        setStatus("idle");
+        return;
+      }
+
+      const idToken = await user.getIdToken();
+
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, idToken }),
       });
+
       const json = await res.json();
-      console.log("APIレスポンス:", json);
+
       if (res.ok) {
         setStatus("success");
+        setForm({ name: "", email: "", message: "" });
       } else {
+        console.error("送信エラー:", json.error);
         setStatus("error");
       }
     } catch (error) {
