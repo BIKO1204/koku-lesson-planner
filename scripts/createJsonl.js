@@ -2,9 +2,10 @@ import fs from "fs";
 import path from "path";
 import admin from "firebase-admin";
 
-// サービスアカウントJSONのパスを指定
+// サービスアカウントJSONのパスを指定（プロジェクトルート直下推奨）
 const serviceAccountPath = path.resolve(process.cwd(), "serviceAccountKey.json");
 
+// Firebase Admin SDK初期化
 if (!admin.apps.length) {
   const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
   admin.initializeApp({
@@ -30,34 +31,36 @@ async function createJsonl() {
     snapshot.forEach((doc) => {
       const data = doc.data();
 
-      // system メッセージは固定の案内文などを入れても良いです
-      const messages = [
-        {
-          role: "system",
-          content: "あなたは小学校の国語の授業プランナーです。以下の情報に基づき授業案を作成してください。"
-        },
-        {
-          role: "user",
-          content: [
-            `モデル:${col.label}`,
-            `単元名:${data.unit || ""}`,
-            `単元の目標:${data.unitGoal || ""}`,
-            `学年:${data.grade || ""}`,
-            `ジャンル:${data.genre || ""}`,
-            `授業時間数:${data.hours || ""}`,
-            `育てたい子どもの姿:${data.childVision || ""}`,
-            `言語活動の工夫:${data.languageActivities || ""}`,
-            "評価の観点:",
-            `・知識・技能: ${Array.isArray(data.evaluationPoints?.knowledge) ? data.evaluationPoints.knowledge.join("、") : ""}`,
-            `・思考・判断・表現: ${Array.isArray(data.evaluationPoints?.thinking) ? data.evaluationPoints.thinking.join("、") : ""}`,
-            `・主体的に学習に取り組む態度: ${Array.isArray(data.evaluationPoints?.attitude) ? data.evaluationPoints.attitude.join("、") : ""}`,
-            "---",
-            "この情報をもとに、授業案を作成してください。"
-          ].join("\n")
-        }
-      ];
+      // systemメッセージ（固定案内）
+      const systemMessage = {
+        role: "system",
+        content: "あなたは小学校の国語の授業プランナーです。以下の情報に基づき授業案を作成してください。",
+      };
 
-      // completion は assistant の1メッセージとしてオブジェクトで渡す
+      // userメッセージ（単元情報まとめ）
+      const userMessageContent = [
+        `モデル:${col.label}`,
+        `単元名:${data.unit || ""}`,
+        `単元の目標:${data.unitGoal || ""}`,
+        `学年:${data.grade || ""}`,
+        `ジャンル:${data.genre || ""}`,
+        `授業時間数:${data.hours || ""}`,
+        `育てたい子どもの姿:${data.childVision || ""}`,
+        `言語活動の工夫:${data.languageActivities || ""}`,
+        "評価の観点:",
+        `・知識・技能: ${Array.isArray(data.evaluationPoints?.knowledge) ? data.evaluationPoints.knowledge.join("、") : ""}`,
+        `・思考・判断・表現: ${Array.isArray(data.evaluationPoints?.thinking) ? data.evaluationPoints.thinking.join("、") : ""}`,
+        `・主体的に学習に取り組む態度: ${Array.isArray(data.evaluationPoints?.attitude) ? data.evaluationPoints.attitude.join("、") : ""}`,
+        "---",
+        "この情報をもとに、授業案を作成してください。",
+      ].join("\n");
+
+      const userMessage = {
+        role: "user",
+        content: userMessageContent,
+      };
+
+      // assistantメッセージ（授業案の流れ）
       let completionContent = "";
       if (data.result && data.result["授業の流れ"]) {
         const flowKeys = Object.keys(data.result["授業の流れ"]).sort((a, b) => parseInt(a) - parseInt(b));
@@ -70,12 +73,15 @@ async function createJsonl() {
         });
       }
 
-      const completion = {
+      const assistantMessage = {
         role: "assistant",
-        content: completionContent.trim()
+        content: completionContent.trim(),
       };
 
-      lines.push(JSON.stringify({ messages, completion }));
+      // messages配列としてまとめてJSONLの1行にする
+      lines.push(JSON.stringify({
+        messages: [systemMessage, userMessage, assistantMessage]
+      }));
     });
   }
 
