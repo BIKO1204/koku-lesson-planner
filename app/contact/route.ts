@@ -1,6 +1,5 @@
-// app/api/contact/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase"; // Firebase初期化済み
+import { db } from "@/lib/firebase"; // Firebase初期化ファイルのパスに応じて調整してください
 import { collection, addDoc, Timestamp } from "firebase/firestore";
 
 export async function POST(request: NextRequest) {
