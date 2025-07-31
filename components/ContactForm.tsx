@@ -19,9 +19,15 @@ export default function ContactForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (res.ok) setStatus("success");
-      else setStatus("error");
-    } catch {
+      const json = await res.json();
+      console.log("APIレスポンス:", json);
+      if (res.ok) {
+        setStatus("success");
+      } else {
+        setStatus("error");
+      }
+    } catch (error) {
+      console.error("通信エラー:", error);
       setStatus("error");
     }
   };

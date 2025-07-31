@@ -40,8 +40,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <main>{children}</main>
 
               {/* フッター */}
-              <footer style={{ padding: "1rem", borderTop: "1px solid #ccc", textAlign: "center" }}>
-                <Link href="/contact">お問い合わせ</Link>
+              <footer style={{ padding: "1rem", borderTop: "1px solid #ccc", textAlign: "center", color: "#666", fontSize: "0.9rem" }}>
+                © 2025 国語授業案アプリ
               </footer>
             </AuthWrapper>
           </AuthProvider>
