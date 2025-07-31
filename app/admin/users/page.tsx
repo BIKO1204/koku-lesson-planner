@@ -1,83 +1,64 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getFirestore, collection, getDocs } from "firebase/firestore";
-import { initializeApp, getApps } from "firebase/app";
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-};
-
-if (!getApps().length) {
-  initializeApp(firebaseConfig);
-}
-
-const db = getFirestore();
 
 type User = {
-  uid?: string;
+  id: string;
   email?: string;
   name?: string;
   role?: string;
+  disabled?: boolean;
 };
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<(User & { id: string })[]>([]);
+export default function AdminPage() {
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    async function fetchUsers() {
       try {
-        const snapshot = await getDocs(collection(db, "users"));
-        const userList = snapshot.docs.map(doc => ({
-          id: doc.id,               // FirestoreのドキュメントIDを別名で保持
-          ...(doc.data() as User),
-        }));
-        setUsers(userList);
+        const res = await fetch("/api/admin");
+        const data = await res.json();
+        setUsers(data.users);
       } catch (error) {
-        console.error("ユーザー一覧の取得に失敗しました:", error);
+        console.error("ユーザー取得エラー:", error);
       } finally {
         setLoading(false);
       }
-    };
+    }
     fetchUsers();
   }, []);
 
   if (loading) return <p>読み込み中...</p>;
 
   return (
-    <div style={{ padding: "1rem" }}>
-      <h1>ユーザー管理ページ</h1>
-      <table border={1} cellPadding={5} cellSpacing={0}>
+    <div>
+      <h1>管理者ページ - ユーザー一覧</h1>
+      <table border={1} cellPadding={5} style={{ borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th>ドキュメントID</th>
-            <th>UID</th>
-            <th>メール</th>
+            <th>ID</th>
+            <th>メールアドレス</th>
             <th>名前</th>
             <th>役割</th>
+            <th>停止中</th>
           </tr>
         </thead>
         <tbody>
-          {users.length === 0 ? (
+          {users.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ textAlign: "center" }}>
-                ユーザーが見つかりません
-              </td>
+              <td colSpan={5}>ユーザーが見つかりません</td>
             </tr>
-          ) : (
-            users.map(user => (
-              <tr key={user.id}>
-                <td>{user.id}</td>
-                <td>{user.uid ?? "-"}</td>
-                <td>{user.email ?? "-"}</td>
-                <td>{user.name ?? "-"}</td>
-                <td>{user.role ?? "-"}</td>
-              </tr>
-            ))
           )}
+          {users.map((user) => (
+            <tr key={user.id}>
+              <td>{user.id}</td>
+              <td>{user.email ?? "-"}</td>
+              <td>{user.name ?? "-"}</td>
+              <td>{user.role ?? "-"}</td>
+              <td>{user.disabled ? "はい" : "いいえ"}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
