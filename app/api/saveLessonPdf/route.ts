@@ -1,6 +1,6 @@
 // app/api/saveLessonPdf/route.ts
 
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { initializeApp, cert, getApps, ServiceAccount } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";
 import { google } from "googleapis";
@@ -21,7 +21,9 @@ if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
 const adminApp = !getApps().length
   ? initializeApp({ credential: cert(serviceAccount), storageBucket: bucketName })
   : getApps()[0];
-const bucket = getStorage(adminApp).bucket();
+
+// バケット名を明示的に指定
+const bucket = getStorage(adminApp).bucket(bucketName);
 
 const auth  = new google.auth.GoogleAuth({
   credentials: serviceAccount as unknown as JWTInput,
@@ -29,7 +31,7 @@ const auth  = new google.auth.GoogleAuth({
 });
 const drive = google.drive({ version: "v3", auth });
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const fileBlob = formData.get("file");
