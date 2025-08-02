@@ -3,8 +3,7 @@ import { Providers } from "./providers";
 import { AuthProvider } from "./contexts/AuthContext";
 import AuthWrapper from "../components/AuthWrapper";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
-import { getAuth } from "firebase/auth";
+import AdminLink from "../components/AdminLink";
 
 export const metadata = {
   title: "国語授業案アプリ",
@@ -16,22 +15,6 @@ export function generateViewport() {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const auth = getAuth();
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) {
-      setIsAdmin(false);
-      return;
-    }
-    user.getIdTokenResult()
-      .then((idTokenResult) => {
-        setIsAdmin(!!idTokenResult.claims.admin);
-      })
-      .catch(() => setIsAdmin(false));
-  }, [auth]);
-
   return (
     <html lang="ja">
       <head>
@@ -58,11 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li>
                     <Link href="/contact">お問い合わせ</Link>
                   </li>
-                  {isAdmin && (
-                    <li>
-                      <Link href="/admin">管理者ページ</Link>
-                    </li>
-                  )}
+                  <AdminLink />
                 </ul>
               </nav>
 
