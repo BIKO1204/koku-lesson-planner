@@ -3,7 +3,10 @@ import { adminAuth, adminDb } from "../../lib/firebaseAdmin";
 
 type Data = { message: string; data?: any } | { error: string };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<Data>
+) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -12,13 +15,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const idToken = authHeader.split("Bearer ")[1];
 
     const decodedToken = await adminAuth.verifyIdToken(idToken);
+    console.log("decodedToken:", decodedToken);
 
     if (!decodedToken.admin) {
       return res.status(403).json({ error: "管理者権限がありません" });
     }
 
     const snapshot = await adminDb.collection("secretCollection").get();
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
     return res.status(200).json({ message: "管理者認証成功", data });
   } catch (error) {
