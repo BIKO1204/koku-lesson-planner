@@ -1,7 +1,7 @@
 import "./globals.css";
 import { Providers } from "./providers";
-import { AuthProvider } from "./contexts/AuthContext"; // app内のパス
-import AuthWrapper from "../components/AuthWrapper";    // componentsのパス
+import { AuthProvider } from "./contexts/AuthContext";
+import AuthWrapper from "../components/AuthWrapper";
 import Link from "next/link";
 
 export const metadata = {
@@ -41,6 +41,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               {/* フッター */}
               <footer style={{ padding: "1rem", borderTop: "1px solid #ccc", textAlign: "center", color: "#666", fontSize: "0.9rem" }}>
+                <div style={{ marginBottom: "0.5rem" }}>
+                  <Link href="/terms" style={{ marginRight: "1rem", textDecoration: "underline" }}>
+                    利用規約
+                  </Link>
+                  <Link href="/privacy" style={{ textDecoration: "underline" }}>
+                    プライバシーポリシー
+                  </Link>
+                </div>
                 © 2025 国語授業案アプリ
               </footer>
             </AuthWrapper>
