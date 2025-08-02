@@ -20,10 +20,14 @@ const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
 if (!bucketName)    throw new Error("Missing env: FIREBASE_STORAGE_BUCKET");
 if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
 
+console.log("Using FIREBASE_STORAGE_BUCKET:", bucketName);
+
 const adminApp = !getApps().length
   ? initializeApp({ credential: cert(serviceAccount), storageBucket: bucketName })
   : getApps()[0];
-const bucket = getStorage(adminApp).bucket();
+
+// バケット名を明示的に指定して取得
+const bucket = getStorage(adminApp).bucket(bucketName);
 
 const auth  = new google.auth.GoogleAuth({
   credentials: serviceAccount as unknown as JWTInput,
@@ -109,10 +113,12 @@ export async function POST(req: NextRequest) {
     const pdfBytes  = await pdfDoc.save();
     const pdfBuffer = Buffer.from(pdfBytes);
 
+    // Firebase Storageに保存
     await bucket.file(`lessons/${filename}`).save(pdfBuffer, {
       contentType: "application/pdf",
     });
 
+    // Google Driveにアップロード
     const stream = Readable.from(pdfBuffer);
     const driveRes = await drive.files.create({
       requestBody: { name: filename, mimeType: "application/pdf", parents: [driveFolderId] },
