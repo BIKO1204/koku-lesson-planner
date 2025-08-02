@@ -17,6 +17,14 @@ export default function AdminPage() {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // ここでカスタムクレームをログ出力して確認
+  useEffect(() => {
+    const auth = getAuth();
+    auth.currentUser?.getIdTokenResult().then((idTokenResult) => {
+      console.log("クライアント側のカスタムクレーム:", idTokenResult.claims);
+    });
+  }, []);
+
   async function getAuthToken() {
     const auth = getAuth();
     const user = auth.currentUser;
@@ -120,7 +128,6 @@ export default function AdminPage() {
                   <option value="">なし</option>
                   <option value="admin">管理者</option>
                   <option value="user">一般ユーザー</option>
-                  {/* 必要に応じて追加 */}
                 </select>
               </td>
               <td>
