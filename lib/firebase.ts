@@ -1,8 +1,7 @@
-// lib/firebase.ts
-
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, collection, getDocs } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey:             process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,13 +16,10 @@ const app = !getApps().length
   ? initializeApp(firebaseConfig)
   : getApp();
 
-// Firestore のインスタンス
 export const db = getFirestore(app);
-
-// Storage のインスタンス
 export const storage = getStorage(app);
+export const auth = getAuth(app);
 
-// Firestoreのusersコレクションから全ユーザーを取得する関数
 export async function fetchUsers() {
   const usersCol = collection(db, "users");
   const usersSnapshot = await getDocs(usersCol);

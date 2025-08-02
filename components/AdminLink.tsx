@@ -2,20 +2,20 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export default function AdminLink() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
         setIsAdmin(false);
         return;
       }
       user.getIdTokenResult().then((idTokenResult) => {
-        console.log("Claims:", idTokenResult.claims); // デバッグ用
+        console.log("Claims:", idTokenResult.claims);
         setIsAdmin(!!idTokenResult.claims.admin);
       });
     });
