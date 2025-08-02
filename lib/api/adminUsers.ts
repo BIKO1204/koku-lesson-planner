@@ -1,5 +1,5 @@
 export async function updateUser(uid: string, disabled: boolean, role: string) {
-  const res = await fetch("/api/admin/users", {
+  const res = await fetch("/api/admin/userList", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ uid, disabled, role }),

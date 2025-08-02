@@ -49,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     プライバシーポリシー
                   </Link>
                 </div>
-                © 2025 国語授業案アプリ
+                © 2025 国語授業案作成アプリ
               </footer>
             </AuthWrapper>
           </AuthProvider>
