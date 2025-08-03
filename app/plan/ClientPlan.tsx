@@ -399,7 +399,7 @@ ${languageActivities}
               selectedStyleId,
               result: parsedResult,
               timestamp,
-              usedStyleName: selectedStyleName || author.label,  // ← ここで selectedStyleName 優先
+              usedStyleName: selectedStyleName || author.label,
             }
           : p
       );
@@ -420,7 +420,7 @@ ${languageActivities}
         selectedStyleId,
         result: parsedResult,
         timestamp,
-        usedStyleName: selectedStyleName || author.label,  // ← 同じく優先
+        usedStyleName: selectedStyleName || author.label,
       };
       existingArr.push(newPlan);
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
@@ -443,7 +443,7 @@ ${languageActivities}
           selectedStyleId,
           result: parsedResult,
           timestamp,
-          usedStyleName: selectedStyleName || author.label,  // ← 同じく優先
+          usedStyleName: selectedStyleName || author.label,
         },
         { merge: true }
       );
@@ -458,7 +458,7 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
-  // 以下スタイルなどは省略しません
+  // --- スタイル定義 ---
 
   const containerStyle: CSSProperties = { maxWidth: 800, margin: "auto", padding: "1rem" };
   const cardStyle: CSSProperties = {
@@ -875,16 +875,18 @@ ${languageActivities}
                   const el = document.getElementById("result-content");
                   if (!el) return alert("PDF生成対象がありません");
                   const html2pdf = (await import("html2pdf.js")).default;
-                  html2pdf()
-                    .from(el)
-                    .set({
-                      margin: 5,
-                      filename: `${unit}_授業案.pdf`,
-                      html2canvas: { scale: 2 },
-                      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                      pagebreak: { mode: ["avoid-all"] },
-                    })
-                    .save();
+                  setTimeout(() => {
+                    html2pdf()
+                      .from(el)
+                      .set({
+                        margin: 5,
+                        filename: `${unit}_授業案.pdf`,
+                        html2canvas: { scale: 2 },
+                        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                        pagebreak: { mode: ["avoid-all"] },
+                      })
+                      .save();
+                  }, 100);
                 }}
                 style={{
                   padding: 12,
@@ -900,7 +902,15 @@ ${languageActivities}
               </button>
             </div>
 
-            <div id="result-content" style={cardStyle}>
+            <div
+              id="result-content"
+              style={{
+                ...cardStyle,
+                backgroundColor: "white",
+                minHeight: "500px",
+                padding: "16px",
+              }}
+            >
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
