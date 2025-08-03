@@ -1,20 +1,32 @@
 const admin = require("firebase-admin");
-const serviceAccount = require("../serviceAccount.json"); // pathは適宜修正
+const path = require("path");
 
+// サービスアカウントJSONのパスを環境変数かデフォルトで指定
+const serviceAccountPath = process.env.SERVICE_ACCOUNT_PATH || path.join(__dirname, "serviceAccount.json");
+const serviceAccount = require(serviceAccountPath);
+
+// private_keyの改行コード問題対応
 const privateKey = serviceAccount.private_key.replace(/\\n/g, "\n");
-
 const serviceAccountConfig = {
   ...serviceAccount,
   private_key: privateKey,
 };
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccountConfig),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccountConfig),
+  });
+}
 
-const uid = "ZI3uDGchMERLmi1eqvNZo1gPeQI3";
+// コマンドライン引数 or 環境変数からUID取得
+const uid = process.argv[2] || process.env.TARGET_UID;
 
-async function setAdmin() {
+if (!uid) {
+  console.error("Usage: node setAdmin.js <uid>");
+  process.exit(1);
+}
+
+async function setAdmin(uid) {
   try {
     await admin.auth().setCustomUserClaims(uid, { admin: true });
     console.log(`UID ${uid} に管理者権限を付与しました`);
@@ -25,4 +37,4 @@ async function setAdmin() {
   }
 }
 
-setAdmin();
+setAdmin(uid);

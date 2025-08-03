@@ -29,8 +29,7 @@ export async function POST(request: NextRequest) {
     const idToken = authHeader.split("Bearer ")[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-    // 管理者権限判定を admin:true に変更
-    if (!decodedToken.admin) {
+    if (!(decodedToken.admin === true || decodedToken.role === "admin")) {
       return NextResponse.json(
         { error: "管理者権限がありません。" },
         { status: 403 }
@@ -56,7 +55,8 @@ export async function POST(request: NextRequest) {
 
     // --- 役割（カスタムクレーム）の設定 ---
     if (typeof role === "string") {
-      await admin.auth().setCustomUserClaims(uid, { role });
+      const isAdmin = role === "admin";
+      await admin.auth().setCustomUserClaims(uid, { role, admin: isAdmin });
     }
 
     // --- ユーザー状態の更新 ---

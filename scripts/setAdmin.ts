@@ -1,8 +1,8 @@
 import * as admin from "firebase-admin";
-import path from "path";
 
-// JSONファイルのフルパスを絶対パスで指定する（プロジェクトルートから見て1つ上ではなく、直接絶対パスで指定）
-const serviceAccount = require("C:/Users/yukia/Downloads/koku-lesson-planner-firebase-adminsdk-fbsvc-30c6f22a07.json");
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+  : require("./serviceAccountKey.json");
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -19,6 +19,14 @@ async function setAdmin(uid: string) {
   }
 }
 
-const targetUid = "ZI3uDGchMERLmi1eqvNZo1gPeQI3";
+async function main() {
+  const uid = process.argv[2] || process.env.TARGET_UID;
+  if (!uid) {
+    console.error("Usage: node setAdmin.js <uid>");
+    process.exit(1);
+  }
+  await setAdmin(uid);
+  process.exit(0);
+}
 
-setAdmin(targetUid);
+main();

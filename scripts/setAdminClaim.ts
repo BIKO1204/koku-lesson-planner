@@ -1,7 +1,17 @@
 import admin from "firebase-admin";
-import serviceAccountJson from "../serviceAccount.json"; // パスは適宜調整
+import path from "path";
+import fs from "fs";
 
-// private_key の改行コードを正しく変換しつつ、余分なキーを除外
+// サービスアカウントJSONのパスを環境変数やデフォルトから取得
+const serviceAccountPath =
+  process.env.SERVICE_ACCOUNT_PATH ||
+  path.resolve(__dirname, "../serviceAccount.json");
+
+// JSONファイルを読み込む
+const rawServiceAccount = fs.readFileSync(serviceAccountPath, "utf8");
+const serviceAccountJson = JSON.parse(rawServiceAccount);
+
+// 改行コードの修正
 const {
   private_key,
   type,
@@ -28,13 +38,22 @@ const serviceAccount = {
   client_x509_cert_url,
 } as admin.ServiceAccount;
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+// Firebase Admin SDK初期化（多重初期化防止）
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
-const uid = "ZI3uDGchMERLmi1eqvNZo1gPeQI3";
+// コマンドライン引数や環境変数でUID取得
+const uid = process.argv[2] || process.env.TARGET_UID;
 
-async function setAdmin() {
+if (!uid) {
+  console.error("Usage: node setAdmin.js <uid>");
+  process.exit(1);
+}
+
+async function setAdmin(uid: string) {
   try {
     await admin.auth().setCustomUserClaims(uid, { admin: true });
     console.log(`UID ${uid} に管理者権限を付与しました`);
@@ -45,4 +64,4 @@ async function setAdmin() {
   }
 }
 
-setAdmin();
+setAdmin(uid);
