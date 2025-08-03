@@ -1090,8 +1090,7 @@ export default function PracticeSharePage() {
                             src={img.src}
                             alt={img.name}
                             style={{
-                              width: "600px",    
-                              maxWidth: "100%",
+                              width: "100%",
                               height: "auto",
                               borderRadius: 8,
                               border: "1px solid #ccc",
