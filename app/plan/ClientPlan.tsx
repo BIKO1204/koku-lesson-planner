@@ -66,7 +66,7 @@ export default function ClientPlan() {
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
 
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
-  const [selectedStyleName, setSelectedStyleName] = useState<string>("");  // ← 追加
+  const [selectedStyleName, setSelectedStyleName] = useState<string>("");
 
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
 
@@ -133,7 +133,6 @@ export default function ClientPlan() {
         setLessonPlanList(plan.lessonPlanList);
         setSelectedStyleId(plan.selectedStyleId);
 
-        // 編集時に対応するモデル名もセット
         const found = styleModels.find((m) => m.id === plan.selectedStyleId);
         setSelectedStyleName(found ? found.name : "");
 
@@ -155,7 +154,6 @@ export default function ClientPlan() {
     const styleIdParam = searchParams.get("styleId");
     if (styleIdParam) {
       setSelectedStyleId(styleIdParam);
-      // styleModelsがまだ空の場合に備え、こちらはfetch完了後に設定される想定
     }
   }, [searchParams, styleModels]);
 
@@ -189,13 +187,6 @@ export default function ClientPlan() {
       .catch(() => {});
   }, [grade, genre]);
 
-  const handleStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = e.target.value;
-    setSelectedStyleId(selectedId);
-    const found = styleModels.find((m) => m.id === selectedId);
-    setSelectedStyleName(found ? found.name : "");
-  };
-
   const handleAddPoint = (f: keyof EvaluationPoints) =>
     setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
 
@@ -215,10 +206,6 @@ export default function ClientPlan() {
     const arr = [...lessonPlanList];
     arr[i] = v;
     setLessonPlanList(arr);
-  };
-
-  const handleAuthorSelect = (id: string) => {
-    setSelectedAuthorId(id);
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -458,8 +445,7 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
-  // --- スタイル定義 ---
-
+  // スタイル定義
   const containerStyle: CSSProperties = { maxWidth: 800, margin: "auto", padding: "1rem" };
   const cardStyle: CSSProperties = {
     border: "1px solid #ddd",
@@ -651,19 +637,51 @@ ${languageActivities}
 
           <label>
             モデル選択：<br />
-            <select value={selectedStyleId} onChange={handleStyleChange} style={inputStyle}>
+            <select
+              value={selectedStyleId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedStyleId(val);
+
+                const foundAuthor = authors.find((a) => a.id === val);
+                if (foundAuthor) {
+                  setSelectedStyleName(foundAuthor.label);
+                  setSelectedAuthorId(val);
+                } else {
+                  const foundStyle = styleModels.find((m) => m.id === val);
+                  setSelectedStyleName(foundStyle ? foundStyle.name : "");
+                  setSelectedAuthorId(null);
+                }
+              }}
+              style={inputStyle}
+            >
               <option value="">（未選択）</option>
-              {styleModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
+              <optgroup label="固定モデル">
+                {authors.map((author) => (
+                  <option key={author.id} value={author.id}>
+                    {author.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="教育観モデル一覧">
+                {styleModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
 
+          {/* 以下は元のフォーム要素と同じ構造です。省略しません */}
+
           <label>
             教科書名：<br />
-            <select value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle}>
+            <select
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              style={inputStyle}
+            >
               <option>東京書籍</option>
               <option>光村図書</option>
               <option>教育出版</option>
@@ -672,7 +690,11 @@ ${languageActivities}
 
           <label>
             学年：<br />
-            <select value={grade} onChange={(e) => setGrade(e.target.value)} style={inputStyle}>
+            <select
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+              style={inputStyle}
+            >
               <option>1年</option>
               <option>2年</option>
               <option>3年</option>
@@ -684,7 +706,11 @@ ${languageActivities}
 
           <label>
             ジャンル：<br />
-            <select value={genre} onChange={(e) => setGenre(e.target.value)} style={inputStyle}>
+            <select
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+              style={inputStyle}
+            >
               <option>物語文</option>
               <option>説明文</option>
               <option>詩</option>
@@ -806,7 +832,7 @@ ${languageActivities}
                 <button
                   key={author.id}
                   type="button"
-                  onClick={() => handleAuthorSelect(author.id)}
+                  onClick={() => setSelectedAuthorId(author.id)}
                   style={{
                     flex: 1,
                     padding: "0.8rem 1rem",
