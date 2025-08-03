@@ -664,7 +664,7 @@ export default function PracticeHistoryPage() {
                       }}
                       style={pdfBtn}
                     >
-                      📄 PDF出力
+                      📄 PDF保存
                     </button>
                     <button
                       onClick={() => {
