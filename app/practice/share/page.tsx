@@ -52,8 +52,8 @@ type PracticeRecord = {
   author?: string;
   authorName?: string;
   pdfFiles?: PdfFile[];  // 複数PDF管理
-  createdAt?: string;     // ←ここを使って表示順を制御します
-  modelType?: string;     // モデル識別用
+  createdAt?: string;
+  modelType?: string; // モデル識別用
 };
 type LessonPlan = {
   id: string;
@@ -121,43 +121,25 @@ export default function PracticeSharePage() {
     let allRecords: PracticeRecord[] = [];
 
     modelCollections.forEach((colName) => {
-      // ここでorderByを「createdAt」に変更して新しいものが先頭に来るようにする
-      // ただしcreatedAtがない場合はpracticeDateで代用するロジックも用意可能
-      const q = query(collection(db, colName), orderBy("createdAt", "desc"));
+      const q = query(collection(db, colName), orderBy("practiceDate", "desc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const recs: PracticeRecord[] = snapshot.docs.map((doc) => {
-          const data = doc.data() as PracticeRecord;
-          return {
-            ...data,
-            lessonId: doc.id,
-            modelType: colName.replace("practiceRecords_", ""),
-            likedUsers: (data as any).likedUsers || [],
-            author: (data as any).author || "",
-            authorName: (data as any).authorName || "",
-            pdfFiles: (data as any).pdfFiles || [],
-            createdAt: (data as any).createdAt || "",  // FirestoreのtimestampはtoDateなどで変換必要なら変換してください
-          };
-        });
+        const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
+          ...(doc.data() as PracticeRecord),
+          lessonId: doc.id,
+          modelType: colName.replace("practiceRecords_", ""),
+          likedUsers: (doc.data() as any).likedUsers || [],
+          author: (doc.data() as any).author || "",
+          authorName: (doc.data() as any).authorName || "",
+          pdfFiles: (doc.data() as any).pdfFiles || [],
+          createdAt: (doc.data() as any).createdAt || "",
+        }));
 
-        // コレクションごとの既存レコードは入れ替え
         allRecords = [
           ...allRecords.filter(r => r.modelType !== colName.replace("practiceRecords_", "")),
           ...recs,
         ];
 
-        // ここでさらに全RecordsをcreatedAt降順でソート
-        allRecords.sort((a, b) => {
-          // createdAtが文字列ならlocaleCompareで、Firestore TimestampならtoDate().getTime()で比較してください
-          // ここでは文字列比較（ISO文字列想定）
-          if (a.createdAt && b.createdAt) {
-            return b.createdAt.localeCompare(a.createdAt);
-          }
-          // createdAtない場合はpracticeDateで代用
-          if (a.practiceDate && b.practiceDate) {
-            return b.practiceDate.localeCompare(a.practiceDate);
-          }
-          return 0;
-        });
+        allRecords.sort((a, b) => b.practiceDate.localeCompare(a.practiceDate));
 
         setRecords([...allRecords]);
       });
@@ -503,7 +485,7 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // 画像をbase64化
+  // 画像をbase64化（省略）省略せず同様の実装をここに入れても良いですが長いため省略
   const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -685,7 +667,7 @@ export default function PracticeSharePage() {
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: 4, useCORS: true },  // 解像度アップ設定
+          html2canvas: { scale: 4, useCORS: true },  // ← ここをscale:4, useCORS:trueに変更して解像度アップ
           pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
@@ -807,6 +789,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
+      {/* ここがflexDirection切り替え部分 */}
       <div
         style={{
           ...wrapperResponsiveStyle,
