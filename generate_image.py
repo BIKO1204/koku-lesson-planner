@@ -9,9 +9,10 @@ def gen_page12():
     response = openai.images.generate(
         model="dall-e-3",
         prompt=(
-            "サーカステントの外で「そろそろ12じ…」とそわそわする動物たち（ゾウ、ライオン、うさぎ、ペンギン）と、"
-            "くらやみでも見えるギズモ博士のメガネをかけたニャームズとミケコ。"
-            "かわいい絵本イラスト、1024×1024px。"
+            "A cute children's book illustration of a night scene with a big red and white circus tent under a starry sky and full moon. "
+            "Animals such as an elephant, lion, rabbit, and penguin are anxiously waiting outside and inside the tent. "
+            "Detective cat characters Nyarms and Mikeko wear glowing goggles that help them see in the dark, watching carefully. "
+            "The animals look worried but hopeful, in soft warm colors and gentle rounded lines, cute and friendly style."
         ),
         n=1,
         size="1024x1024"

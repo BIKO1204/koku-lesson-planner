@@ -65,8 +65,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   >
                     利用規約
                   </Link>
-                  <Link href="/privacy" style={{ textDecoration: "underline" }}>
+                  <Link
+                    href="/privacy"
+                    style={{ marginRight: "1rem", textDecoration: "underline" }}
+                  >
                     プライバシーポリシー
+                  </Link>
+                  <Link href="/faq" style={{ textDecoration: "underline" }}>
+                    よくある質問（FAQ）
                   </Link>
                 </div>
                 © 2025 国語授業案作成アプリ
