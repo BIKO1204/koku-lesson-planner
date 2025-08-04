@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // Firebase初期化ファイルのパスに合わせてください
+import { db } from "@/lib/firebase";
 
 type Notification = {
   id: string;
@@ -14,11 +14,18 @@ type Notification = {
 
 export default function NotificationBanner() {
   const [notification, setNotification] = useState<Notification | null>(null);
+  const [isClosed, setIsClosed] = useState(false);
 
   useEffect(() => {
+    // ローカルストレージに閉じた通知IDがあれば非表示にする
+    const closedId = localStorage.getItem("closedNotificationId");
+    if (closedId) {
+      setIsClosed(true);
+    }
+
     const fetchNotification = async () => {
       const q = query(
-        collection(db, "通知"), // コレクション名をFirestoreの名前に合わせてください
+        collection(db, "通知"),
         where("visible", "==", true),
         orderBy("createdAt", "desc")
       );
@@ -38,7 +45,14 @@ export default function NotificationBanner() {
     fetchNotification();
   }, []);
 
-  if (!notification) return null;
+  const handleClose = () => {
+    if (notification) {
+      localStorage.setItem("closedNotificationId", notification.id);
+      setIsClosed(true);
+    }
+  };
+
+  if (!notification || isClosed) return null;
 
   return (
     <div
@@ -52,12 +66,30 @@ export default function NotificationBanner() {
         position: "sticky",
         top: 0,
         zIndex: 1000,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
       }}
     >
-      <span>
+      <span style={{ flex: 1, textAlign: "left" }}>
         {notification.title ? `[${notification.title}] ` : ""}
         {notification.message}
       </span>
+      <button
+        onClick={handleClose}
+        aria-label="閉じる"
+        style={{
+          background: "transparent",
+          border: "none",
+          fontWeight: "bold",
+          fontSize: "1.2rem",
+          cursor: "pointer",
+          color: "#333",
+          paddingLeft: "1rem",
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }
