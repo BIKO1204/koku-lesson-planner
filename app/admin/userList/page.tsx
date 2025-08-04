@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { getAuth } from "firebase/auth";
+import { getAuth, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 
 type User = {
   id: string;
@@ -12,20 +12,37 @@ type User = {
 };
 
 export default function AdminPage() {
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // 認証状態の監視を追加
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   async function getAuthToken() {
-    const auth = getAuth();
-    const user = auth.currentUser;
-    if (!user) throw new Error("ログインしていません");
-    return await user.getIdToken(true);
+    if (!authUser) throw new Error("ログインしていません");
+    return await authUser.getIdToken(true);
   }
 
   useEffect(() => {
+    if (!authUser) {
+      setLoading(false);
+      return;
+    }
+
     async function fetchUsers() {
+      setLoading(true);
+      setErrorMsg(null);
+      setSuccessMsg(null);
       try {
         const token = await getAuthToken();
         const res = await fetch("/api/admin", {
@@ -44,11 +61,12 @@ export default function AdminPage() {
       }
     }
     fetchUsers();
-  }, []);
+  }, [authUser]);
 
   async function handleUpdate(user: User) {
     setUpdatingUserId(user.id);
     setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       const token = await getAuthToken();
       const res = await fetch("/api/admin", {
@@ -65,6 +83,7 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "更新エラー");
+      setSuccessMsg("更新が成功しました。");
       // 更新後に再取得
       const refreshedRes = await fetch("/api/admin", {
         headers: { Authorization: `Bearer ${token}` },
@@ -80,12 +99,14 @@ export default function AdminPage() {
   }
 
   if (loading) return <p>読み込み中...</p>;
+  if (!authUser) return <p>ログインしてください。</p>;
 
   return (
     <div>
       <h1>管理者ページ - ユーザー一覧</h1>
       {errorMsg && <p style={{ color: "red" }}>{errorMsg}</p>}
-      <table border={1} cellPadding={5} style={{ borderCollapse: "collapse" }}>
+      {successMsg && <p style={{ color: "green" }}>{successMsg}</p>}
+      <table border={1} cellPadding={5} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
             <th>ID</th>

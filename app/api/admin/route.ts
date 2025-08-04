@@ -2,21 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 
 if (!admin.apps.length) {
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
-    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-    : null;
-
-  if (!serviceAccount) {
-    throw new Error("サービスアカウント情報が設定されていません。");
+  const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  let serviceAccount = null;
+  try {
+    if (!serviceAccountRaw) throw new Error("サービスアカウント情報が設定されていません。");
+    serviceAccount = JSON.parse(serviceAccountRaw);
+  } catch (e) {
+    throw new Error("サービスアカウント情報のJSON解析に失敗しました。");
   }
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
   });
 }
 
-// GET：ユーザー一覧取得
 export async function GET(request: NextRequest) {
+  if (request.method !== "GET") {
+    return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
+  }
+
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -25,7 +30,6 @@ export async function GET(request: NextRequest) {
     const idToken = authHeader.split("Bearer ")[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-    // 管理者権限判定（admin:true または role: "admin" のどちらか）
     if (!(decodedToken.admin === true || decodedToken.role === "admin")) {
       return NextResponse.json({ error: "管理者権限がありません。" }, { status: 403 });
     }
@@ -46,8 +50,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST：ユーザー停止・役割変更
 export async function POST(request: NextRequest) {
+  if (request.method !== "POST") {
+    return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
+  }
+
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -56,7 +63,6 @@ export async function POST(request: NextRequest) {
     const idToken = authHeader.split("Bearer ")[1];
     const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-    // 管理者権限判定（admin:true または role: "admin" のどちらか）
     if (!(decodedToken.admin === true || decodedToken.role === "admin")) {
       return NextResponse.json({ error: "管理者権限がありません。" }, { status: 403 });
     }
@@ -68,20 +74,32 @@ export async function POST(request: NextRequest) {
     }
 
     const updateParams: admin.auth.UpdateRequest = {};
-
     if (typeof disabled === "boolean") {
       updateParams.disabled = disabled;
     }
 
-    // roleがadminならadmin:trueもセットし、それ以外はadmin:falseをセット
-    if (typeof role === "string") {
-      const isAdmin = role === "admin";
-      await admin.auth().setCustomUserClaims(uid, { role, admin: isAdmin });
+    // role のバリデーション
+    const validRoles = ["admin", "user", ""];
+    if (role !== undefined && typeof role !== "string") {
+      return NextResponse.json({ error: "roleは文字列で指定してください。" }, { status: 400 });
+    }
+    if (role && !validRoles.includes(role)) {
+      return NextResponse.json(
+        { error: `roleは以下のいずれかで指定してください: ${validRoles.join(", ")}` },
+        { status: 400 }
+      );
     }
 
-    if ("disabled" in updateParams) {
-      await admin.auth().updateUser(uid, updateParams);
+    const promises = [];
+    if (role !== undefined) {
+      const isAdmin = role === "admin";
+      promises.push(admin.auth().setCustomUserClaims(uid, { role, admin: isAdmin }));
     }
+    if ("disabled" in updateParams) {
+      promises.push(admin.auth().updateUser(uid, updateParams));
+    }
+
+    await Promise.all(promises);
 
     return NextResponse.json({ message: "ユーザー情報を正常に更新しました。" }, { status: 200 });
   } catch (error) {

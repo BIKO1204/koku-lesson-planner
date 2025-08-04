@@ -24,6 +24,13 @@ export default function NotificationAdmin() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // 編集用state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+
+  // 新規追加用state
   const [newTitle, setNewTitle] = useState("");
   const [newMessage, setNewMessage] = useState("");
 
@@ -48,7 +55,7 @@ export default function NotificationAdmin() {
         })
       );
       setErrorMsg(null);
-    } catch (error) {
+    } catch {
       setErrorMsg("通知取得に失敗しました");
     } finally {
       setLoading(false);
@@ -72,7 +79,7 @@ export default function NotificationAdmin() {
       setNewMessage("");
       await fetchNotifications();
       setErrorMsg(null);
-    } catch (error) {
+    } catch {
       setErrorMsg("通知の追加に失敗しました");
     } finally {
       setLoading(false);
@@ -99,6 +106,36 @@ export default function NotificationAdmin() {
     }
   }
 
+  function startEdit(n: Notification) {
+    setEditingId(n.id);
+    setEditTitle(n.title);
+    setEditMessage(n.message);
+    setErrorMsg(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditTitle("");
+    setEditMessage("");
+    setErrorMsg(null);
+  }
+
+  async function saveEdit() {
+    if (!editTitle.trim() || !editMessage.trim()) {
+      setErrorMsg("タイトルとメッセージを入力してください");
+      return;
+    }
+    try {
+      if (!editingId) return;
+      const ref = doc(db, "通知", editingId);
+      await updateDoc(ref, { title: editTitle, message: editMessage });
+      await fetchNotifications();
+      cancelEdit();
+    } catch {
+      setErrorMsg("通知の更新に失敗しました");
+    }
+  }
+
   if (loading) return <p>読み込み中...</p>;
 
   return (
@@ -106,6 +143,7 @@ export default function NotificationAdmin() {
       <h1>通知管理</h1>
       {errorMsg && <p style={{ color: "red" }}>{errorMsg}</p>}
 
+      {/* 新規追加フォーム */}
       <div style={{ marginBottom: 20 }}>
         <input
           type="text"
@@ -124,6 +162,7 @@ export default function NotificationAdmin() {
         <button onClick={addNotification}>追加</button>
       </div>
 
+      {/* 通知一覧 */}
       <table border={1} cellPadding={5} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
@@ -142,19 +181,53 @@ export default function NotificationAdmin() {
           )}
           {notifications.map((n) => (
             <tr key={n.id}>
-              <td>{n.title}</td>
-              <td>{n.message}</td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={n.visible}
-                  onChange={() => toggleVisible(n.id, n.visible)}
-                />
-              </td>
-              <td>{n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : "-"}</td>
-              <td>
-                <button onClick={() => deleteNotification(n.id)}>削除</button>
-              </td>
+              {editingId === n.id ? (
+                <>
+                  <td>
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      value={editMessage}
+                      onChange={(e) => setEditMessage(e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={n.visible}
+                      onChange={() => toggleVisible(n.id, n.visible)}
+                    />
+                  </td>
+                  <td>{n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : "-"}</td>
+                  <td>
+                    <button onClick={saveEdit}>保存</button>
+                    <button onClick={cancelEdit}>キャンセル</button>
+                  </td>
+                </>
+              ) : (
+                <>
+                  <td>{n.title}</td>
+                  <td>{n.message}</td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={n.visible}
+                      onChange={() => toggleVisible(n.id, n.visible)}
+                    />
+                  </td>
+                  <td>{n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : "-"}</td>
+                  <td>
+                    <button onClick={() => startEdit(n)}>編集</button>
+                    <button onClick={() => deleteNotification(n.id)}>削除</button>
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>
