@@ -4,6 +4,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import AuthWrapper from "../components/AuthWrapper";
 import Link from "next/link";
 import AdminLink from "../components/AdminLink";
+import NotificationBanner from "../components/NotificationBanner"; // ← 通知バナーを追加
 
 export const metadata = {
   title: "国語授業案アプリ",
@@ -24,6 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <AuthProvider>
             <AuthWrapper>
+              {/* ★通知バナー（常に最上部に表示） */}
+              <NotificationBanner />
+
               {/* ナビゲーション */}
               <nav style={{ padding: "1rem", borderBottom: "1px solid #ccc" }}>
                 <ul
