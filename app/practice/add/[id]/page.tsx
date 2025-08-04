@@ -15,13 +15,13 @@ type PracticeRecord = {
   practiceDate: string;
   reflection: string;
   boardImages: BoardImage[];
-  compressedImages?: BoardImage[]; // 追加
+  compressedImages?: BoardImage[];
   lessonTitle: string;
   grade?: string;
   genre?: string;
   unitName?: string;
   authorName?: string;
-  modelType: string; // モデルタイプ追加
+  modelType: string;
 };
 
 type LessonPlan = {
@@ -426,6 +426,10 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
+        <p style={{ color: "#e53935", fontSize: 14, marginBottom: 16 }}>
+          ※板書の写真を追加・削除した場合は、必ず「プレビューを生成」ボタンを押してください
+        </p>
+
         <form onSubmit={handlePreview}>
           <div
             style={{
@@ -680,7 +684,6 @@ export default function PracticeAddPage() {
           >
             <h2>{lessonTitle}</h2>
 
-            {/* 授業案詳細（プレビュー画面） */}
             {lessonPlan?.result && typeof lessonPlan.result === "object" && (
               <section
                 style={{
