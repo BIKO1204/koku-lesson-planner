@@ -25,6 +25,12 @@ type StyleModel = {
 
 type ParsedResult = {
   [key: string]: any;
+  評価の観点: {
+    "知識・技能": string[];
+    "思考・判断・表現": string[];
+    "主体的に学習に取り組む態度": string[];
+    態度?: string[]; // 任意キー対応
+  };
 };
 
 type EvaluationPoints = {
@@ -53,12 +59,6 @@ type LessonPlanStored = {
 
 export default function ClientPlan() {
   const { data: session, status } = useSession();
-
-  useEffect(() => {
-    console.log("ログイン状態:", status);
-    console.log("セッション情報:", session);
-  }, [session, status]);
-
   const router = useRouter();
   const searchParams = useSearchParams() as URLSearchParams;
 
@@ -331,14 +331,14 @@ ${languageActivities}
         throw new Error(text || res.statusText);
       }
 
-      let data: any;
+      let data: ParsedResult;
       try {
         data = JSON.parse(text);
       } catch {
         throw new Error("サーバーから無効なJSONが返ってきました");
       }
 
-      setParsedResult(data as ParsedResult);
+      setParsedResult(data);
     } catch (e: any) {
       alert(`生成に失敗しました：${e.message}`);
     } finally {
@@ -673,8 +673,6 @@ ${languageActivities}
             </select>
           </label>
 
-          {/* 以下は元のフォーム要素と同じ構造です。省略しません */}
-
           <label>
             教科書名：<br />
             <select
@@ -986,8 +984,6 @@ ${languageActivities}
                       ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"]
                       : parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]
                       ? [parsedResult["評価の観点"]["主体的に学習に取り組む態度"]]
-                      : parsedResult["評価の観点"]?.["態度"]
-                      ? [parsedResult["評価の観点"]["態度"]]
                       : []
                   ).map((v: string, i: number) => (
                     <li key={`attitude-${i}`}>{v}</li>
