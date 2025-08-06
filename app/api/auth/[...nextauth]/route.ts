@@ -1,7 +1,23 @@
-import GoogleProvider from "next-auth/providers/google";
+import type { AdapterUser } from "next-auth/adapters";
 import type { JWT } from "next-auth/jwt";
 import type { Session } from "next-auth";
-import type { AdapterUser } from "next-auth/adapters";
+import GoogleProvider from "next-auth/providers/google";
+
+// --- firebase-admin の初期化 ---
+import admin from "firebase-admin";
+
+// 初期化は1度だけ行う
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    }),
+  });
+}
+const firestore = admin.firestore();
+// --------------------------------
 
 let NextAuthHandler: any; // 動的ロード用
 
@@ -22,7 +38,6 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   const refreshedTokens = await response.json();
 
   if (!response.ok) {
-    // リフレッシュ失敗はエラーとして返す
     return {
       ...token,
       error: "RefreshAccessTokenError",
@@ -45,10 +60,9 @@ export const authOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          access_type: "offline",  // リフレッシュトークン取得必須
-          prompt: "consent",       // 毎回同意を得る
-          scope:
-            "openid email profile https://www.googleapis.com/auth/drive.file",
+          access_type: "offline",
+          prompt: "consent",
+          scope: "openid email profile https://www.googleapis.com/auth/drive.file",
         },
       },
     }),
@@ -57,9 +71,32 @@ export const authOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 
   callbacks: {
-    async jwt({ token, account, user }: { token: JWT; account?: any | null; user?: AdapterUser | null }): Promise<JWT> {
-      // 初回ログイン時
-      if (account) {
+    async signIn({ user }: { user: AdapterUser }) {
+      if (!user.id) return false;
+      // Firestore (firebase-admin)でユーザー登録/更新
+      const userRef = firestore.collection("users").doc(user.id);
+      await userRef.set(
+        {
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return true;
+    },
+
+    async jwt({
+      token,
+      account,
+      user,
+    }: {
+      token: JWT;
+      account?: any | null;
+      user?: AdapterUser | null;
+    }): Promise<JWT> {
+      if (account && user) {
         return {
           ...token,
           accessToken: account.access_token,
@@ -69,17 +106,25 @@ export const authOptions = {
         };
       }
 
-      // トークン有効期限内ならそのまま返す
-      const expires = typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
+      const expires =
+        typeof token.accessTokenExpires === "number"
+          ? token.accessTokenExpires
+          : 0;
+
       if (Date.now() < expires) {
         return token;
       }
 
-      // 期限切れなら更新試行
       return await refreshAccessToken(token);
     },
 
-    async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
+    async session({
+      session,
+      token,
+    }: {
+      session: Session;
+      token: JWT;
+    }): Promise<Session> {
       (session as any).accessToken = token.accessToken;
       (session as any).error = (token as any).error;
       return session;
@@ -87,7 +132,7 @@ export const authOptions = {
   },
 };
 
-// 動的にNextAuthをimportしてハンドラ返却
+// --- NextAuthの動的インポート ---
 async function getHandler() {
   if (!NextAuthHandler) {
     const mod = await import("next-auth");
