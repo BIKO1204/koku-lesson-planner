@@ -1,3 +1,5 @@
+export const runtime = "nodejs"; // ← これを最初に追加！
+
 import type { AdapterUser } from "next-auth/adapters";
 import type { JWT } from "next-auth/jwt";
 import type { Session } from "next-auth";
@@ -6,7 +8,6 @@ import GoogleProvider from "next-auth/providers/google";
 // --- firebase-admin の初期化 ---
 import admin from "firebase-admin";
 
-// 初期化は1度だけ行う
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -141,12 +142,13 @@ async function getHandler() {
   return NextAuthHandler(authOptions);
 }
 
-export async function GET(req: Request, res: Response) {
+// Next.js 13 Route Handler（resは渡さない！）
+export async function GET(req: Request) {
   const handler = await getHandler();
-  return handler(req, res);
+  return handler(req);
 }
 
-export async function POST(req: Request, res: Response) {
+export async function POST(req: Request) {
   const handler = await getHandler();
-  return handler(req, res);
+  return handler(req);
 }
