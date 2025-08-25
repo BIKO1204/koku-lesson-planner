@@ -478,8 +478,52 @@ export default function PracticeHistoryPage() {
                           <p><strong>教科書名：</strong>{plan.result["教科書名"] || "－"}</p>
                           <p><strong>単元名：</strong>{plan.result["単元名"] || "－"}</p>
                           <p><strong>授業時間数：</strong>{plan.result["授業時間数"] ?? "－"}時間</p>
-                          <p><strong>単元の目標：</strong>{plan.result["単元の目標"] || "－"}</p>
+                          <p style={{ whiteSpace: "pre-wrap" }}>
+                            <strong>単元の目標：</strong>{plan.result["単元の目標"] || "－"}
+                          </p>
                         </div>
+
+                        {/* ▼ 授業の流れ（PDFにも入る） */}
+                        {plan.result["授業の流れ"] && (
+                          <div style={{ marginTop: 12 }}>
+                            <div style={{ fontWeight: "bold", marginBottom: 6 }}>授業の流れ</div>
+
+                            {typeof plan.result["授業の流れ"] === "string" && (
+                              <p style={{ whiteSpace: "pre-wrap" }}>
+                                {plan.result["授業の流れ"]}
+                              </p>
+                            )}
+
+                            {Array.isArray(plan.result["授業の流れ"]) && (
+                              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                                {plan.result["授業の流れ"].map((item: any, i: number) => (
+                                  <li key={`flow-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>
+                                    {typeof item === "string" ? item : JSON.stringify(item)}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+
+                            {typeof plan.result["授業の流れ"] === "object" &&
+                              !Array.isArray(plan.result["授業の流れ"]) && (
+                                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                                  {Object.entries(plan.result["授業の流れ"])
+                                    .sort((a, b) => {
+                                      const numA = parseInt((a[0].match(/\d+/) || ["0"])[0], 10);
+                                      const numB = parseInt((b[0].match(/\d+/) || ["0"])[0], 10);
+                                      return numA - numB;
+                                    })
+                                    .map(([key, val], i) => (
+                                      <li key={`flow-${r.lessonId}-${key}-${i}`} style={{ whiteSpace: "pre-wrap" }}>
+                                        <strong>{key}：</strong>{" "}
+                                        {typeof val === "string" ? val : JSON.stringify(val)}
+                                      </li>
+                                    ))}
+                                </ul>
+                              )}
+                          </div>
+                        )}
+                        {/* ▲ 授業の流れ */}
                       </div>
                     )}
 
