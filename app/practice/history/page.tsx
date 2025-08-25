@@ -25,9 +25,9 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   grade?: string;
-  modelType?: string;   // lesson_plans_XXX / practiceRecords_XXX の短縮識別
-  author?: string;      // 保存時のメール
-  authorName?: string;  // 表示用
+  modelType?: string; // lesson_plans_XXX / practiceRecords_XXX の短縮識別 (reading/writing/...)
+  author?: string; // 保存時のメール
+  authorName?: string; // 表示用
 };
 
 type LessonPlan = {
@@ -77,12 +77,12 @@ const LESSON_PLAN_COLLECTIONS = [
 ];
 
 function normalizeModelType(name: string) {
-  return name
-    .replace(/^lesson_plans_/, "")
-    .replace(/^practiceRecords_/, "");
+  return name.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
 }
 
-async function fetchRemotePracticeRecords(userEmail: string): Promise<PracticeRecord[]> {
+async function fetchRemotePracticeRecords(
+  userEmail: string
+): Promise<PracticeRecord[]> {
   if (!userEmail) return [];
   const all: PracticeRecord[] = [];
   for (const coll of PRACTICE_COLLECTIONS) {
@@ -97,7 +97,7 @@ async function fetchRemotePracticeRecords(userEmail: string): Promise<PracticeRe
         reflection: data.reflection || "",
         boardImages: Array.isArray(data.boardImages) ? data.boardImages : [],
         grade: data.grade || "",
-        modelType: normalizeModelType(data.modelType || coll),
+        modelType: normalizeModelType(data.modelType || coll), // => reading など
         author: data.author || "",
         authorName: data.authorName || "",
       });
@@ -112,8 +112,8 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
     const snap = await getDocs(collection(db, collectionName));
     const plans = snap.docs.map((d) => ({
       id: d.id,
-      modelType: normalizeModelType(collectionName),
-      result: d.data().result,
+      modelType: normalizeModelType(collectionName), // => reading など
+      result: (d.data() as any).result,
     }));
     allPlans = allPlans.concat(plans);
   }
@@ -127,7 +127,9 @@ export default function PracticeHistoryPage() {
 
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">("practiceDate");
+  const [sortKey, setSortKey] = useState<
+    "practiceDate" | "lessonTitle" | "grade"
+  >("practiceDate");
   const [menuOpen, setMenuOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -168,7 +170,9 @@ export default function PracticeHistoryPage() {
   function sortRecords(list: PracticeRecord[], key: typeof sortKey) {
     const arr = [...list];
     if (key === "practiceDate") {
-      return arr.sort((a, b) => (b.practiceDate || "").localeCompare(a.practiceDate || ""));
+      return arr.sort((a, b) =>
+        (b.practiceDate || "").localeCompare(a.practiceDate || "")
+      );
     } else if (key === "grade") {
       return arr.sort((a, b) => {
         const ai = gradeOrder.indexOf(a.grade || "");
@@ -179,7 +183,9 @@ export default function PracticeHistoryPage() {
         return ai - bi;
       });
     } else {
-      return arr.sort((a, b) => (a.lessonTitle || "").localeCompare(b.lessonTitle || ""));
+      return arr.sort((a, b) =>
+        (a.lessonTitle || "").localeCompare(b.lessonTitle || "")
+      );
     }
   }
 
@@ -295,11 +301,11 @@ export default function PracticeHistoryPage() {
     display: "flex",
     flexDirection: "column",
     backgroundColor: "#fdfdfd",
-    border: "2px solid #ddd", // ← 修正（ダブルクォートのネストを解消）
+    border: "2px solid #ddd",
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.05)",
     wordBreak: "break-word",
   };
 
@@ -403,25 +409,53 @@ export default function PracticeHistoryPage() {
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
           </Link>
-          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/share"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🌐 共有版実践記録
           </Link>
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🕒 教育観履歴
           </Link>
         </div>
@@ -471,34 +505,63 @@ export default function PracticeHistoryPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {records.map((r) => {
               const plan = lessonPlans.find(
-                (p) => p.id === r.lessonId && p.modelType === normalizeModelType(r.modelType || "")
+                (p) =>
+                  p.id === r.lessonId &&
+                  p.modelType === normalizeModelType(r.modelType || "")
               );
+
+              // 編集ページへ modelType を付けて渡す（別端末同期を確実・高速化）
+              const editHref = `/practice/add/${r.lessonId}?modelType=practiceRecords_${normalizeModelType(
+                r.modelType || "reading"
+              )}`;
+
               return (
                 <article key={r.lessonId} style={cardStyle}>
                   <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
-                    <h3 style={{ margin: "0 0 8px" }}>{r.lessonTitle || "タイトルなし"}</h3>
+                    <h3 style={{ margin: "0 0 8px" }}>
+                      {r.lessonTitle || "タイトルなし"}
+                    </h3>
 
                     {plan && typeof plan.result === "object" && (
                       <div style={planBlockStyle}>
                         <strong>授業案</strong>
                         <div>
-                          <p><strong>教科書名：</strong>{plan.result["教科書名"] || "－"}</p>
-                          <p><strong>単元名：</strong>{plan.result["単元名"] || "－"}</p>
-                          <p><strong>授業時間数：</strong>{plan.result["授業時間数"] ?? "－"}時間</p>
+                          <p>
+                            <strong>教科書名：</strong>
+                            {plan.result["教科書名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>単元名：</strong>
+                            {plan.result["単元名"] || "－"}
+                          </p>
+                          <p>
+                            <strong>授業時間数：</strong>
+                            {plan.result["授業時間数"] ?? "－"}時間
+                          </p>
                           <p style={{ whiteSpace: "pre-wrap" }}>
-                            <strong>単元の目標：</strong>{plan.result["単元の目標"] || "－"}
+                            <strong>単元の目標：</strong>
+                            {plan.result["単元の目標"] || "－"}
                           </p>
 
-                          {/* ▼ 追加：評価の観点 */}
+                          {/* ▼ 評価の観点 */}
                           {plan.result["評価の観点"] && (
                             <div style={{ marginTop: 8 }}>
-                              <div style={{ fontWeight: "bold", marginBottom: 4 }}>評価の観点</div>
+                              <div style={{ fontWeight: "bold", marginBottom: 4 }}>
+                                評価の観点
+                              </div>
 
                               <div>
                                 <strong>知識・技能</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
-                                  {asArray(plan.result["評価の観点"]?.["知識・技能"]).map((v, i) => (
-                                    <li key={`eval-k-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                  {asArray(
+                                    plan.result["評価の観点"]?.["知識・技能"]
+                                  ).map((v, i) => (
+                                    <li
+                                      key={`eval-k-${r.lessonId}-${i}`}
+                                      style={{ whiteSpace: "pre-wrap" }}
+                                    >
+                                      {v}
+                                    </li>
                                   ))}
                                 </ul>
                               </div>
@@ -506,8 +569,15 @@ export default function PracticeHistoryPage() {
                               <div style={{ marginTop: 4 }}>
                                 <strong>思考・判断・表現</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
-                                  {asArray(plan.result["評価の観点"]?.["思考・判断・表現"]).map((v, i) => (
-                                    <li key={`eval-t-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                  {asArray(
+                                    plan.result["評価の観点"]?.["思考・判断・表現"]
+                                  ).map((v, i) => (
+                                    <li
+                                      key={`eval-t-${r.lessonId}-${i}`}
+                                      style={{ whiteSpace: "pre-wrap" }}
+                                    >
+                                      {v}
+                                    </li>
                                   ))}
                                 </ul>
                               </div>
@@ -516,25 +586,31 @@ export default function PracticeHistoryPage() {
                                 <strong>主体的に学習に取り組む態度</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                                   {asArray(
-                                    plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
-                                    plan.result["評価の観点"]?.["態度"]
+                                    plan.result["評価の観点"]?.[
+                                      "主体的に学習に取り組む態度"
+                                    ] ?? plan.result["評価の観点"]?.["態度"]
                                   ).map((v, i) => (
-                                    <li key={`eval-a-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                    <li
+                                      key={`eval-a-${r.lessonId}-${i}`}
+                                      style={{ whiteSpace: "pre-wrap" }}
+                                    >
+                                      {v}
+                                    </li>
                                   ))}
                                 </ul>
                               </div>
                             </div>
                           )}
-                          {/* ▲ 追加ここまで */}
+                          {/* ▲ 評価の観点 */}
 
-                          {/* ▼ 追加：育てたい子どもの姿 */}
+                          {/* ▼ 育てたい子どもの姿 */}
                           <p style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
                             <strong>育てたい子どもの姿：</strong>
                             {plan.result["育てたい子どもの姿"] || "－"}
                           </p>
                           {/* ▲ */}
 
-                          {/* ▼ 追加：言語活動の工夫 */}
+                          {/* ▼ 言語活動の工夫 */}
                           <p style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>
                             <strong>言語活動の工夫：</strong>
                             {plan.result["言語活動の工夫"] || "－"}
@@ -545,7 +621,9 @@ export default function PracticeHistoryPage() {
                         {/* ▼ 授業の流れ（PDFにも入る） */}
                         {plan.result["授業の流れ"] && (
                           <div style={{ marginTop: 12 }}>
-                            <div style={{ fontWeight: "bold", marginBottom: 6 }}>授業の流れ</div>
+                            <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+                              授業の流れ
+                            </div>
 
                             {typeof plan.result["授業の流れ"] === "string" && (
                               <p style={{ whiteSpace: "pre-wrap" }}>
@@ -555,27 +633,47 @@ export default function PracticeHistoryPage() {
 
                             {Array.isArray(plan.result["授業の流れ"]) && (
                               <ul style={{ margin: 0, paddingLeft: 16 }}>
-                                {plan.result["授業の流れ"].map((item: any, i: number) => (
-                                  <li key={`flow-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>
-                                    {typeof item === "string" ? item : JSON.stringify(item)}
-                                  </li>
-                                ))}
+                                {plan.result["授業の流れ"].map(
+                                  (item: any, i: number) => (
+                                    <li
+                                      key={`flow-${r.lessonId}-${i}`}
+                                      style={{ whiteSpace: "pre-wrap" }}
+                                    >
+                                      {typeof item === "string"
+                                        ? item
+                                        : JSON.stringify(item)}
+                                    </li>
+                                  )
+                                )}
                               </ul>
                             )}
 
                             {typeof plan.result["授業の流れ"] === "object" &&
                               !Array.isArray(plan.result["授業の流れ"]) && (
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
-                                  {Object.entries(plan.result["授業の流れ"])
+                                  {Object.entries(
+                                    plan.result["授業の流れ"]
+                                  )
                                     .sort((a, b) => {
-                                      const numA = parseInt((a[0].match(/\d+/) || ["0"])[0], 10);
-                                      const numB = parseInt((b[0].match(/\d+/) || ["0"])[0], 10);
+                                      const numA = parseInt(
+                                        (a[0].match(/\d+/) || ["0"])[0],
+                                        10
+                                      );
+                                      const numB = parseInt(
+                                        (b[0].match(/\d+/) || ["0"])[0],
+                                        10
+                                      );
                                       return numA - numB;
                                     })
                                     .map(([key, val], i) => (
-                                      <li key={`flow-${r.lessonId}-${key}-${i}`} style={{ whiteSpace: "pre-wrap" }}>
+                                      <li
+                                        key={`flow-${r.lessonId}-${key}-${i}`}
+                                        style={{ whiteSpace: "pre-wrap" }}
+                                      >
                                         <strong>{key}：</strong>{" "}
-                                        {typeof val === "string" ? val : JSON.stringify(val)}
+                                        {typeof val === "string"
+                                          ? val
+                                          : JSON.stringify(val)}
                                       </li>
                                     ))}
                                 </ul>
@@ -592,15 +690,26 @@ export default function PracticeHistoryPage() {
                     <p>
                       <strong>作成者：</strong> {r.authorName || "不明"}
                     </p>
-                    <p>
-                      <strong>振り返り：</strong><br />{r.reflection}
+                    <p style={{ whiteSpace: "pre-wrap" }}>
+                      <strong>振り返り：</strong>
+                      <br />
+                      {r.reflection}
                     </p>
 
                     {r.boardImages?.length > 0 && (
-                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                        }}
+                      >
                         {r.boardImages.map((img, i) => (
                           <div key={`${img.name}-${i}`} style={{ width: "100%" }}>
-                            <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
+                            <div style={{ marginBottom: 6, fontWeight: "bold" }}>
+                              板書{i + 1}
+                            </div>
                             <img
                               src={img.src}
                               alt={img.name}
@@ -631,14 +740,23 @@ export default function PracticeHistoryPage() {
                     <button
                       onClick={() => {
                         import("html2pdf.js").then(({ default: html2pdf }) => {
-                          const el = document.getElementById(`record-${r.lessonId}`);
-                          if (!el) return alert("PDF化用の要素が見つかりませんでした。");
+                          const el = document.getElementById(
+                            `record-${r.lessonId}`
+                          );
+                          if (!el)
+                            return alert(
+                              "PDF化用の要素が見つかりませんでした。"
+                            );
                           html2pdf()
                             .from(el)
                             .set({
                               margin: [5, 5, 5, 5],
                               filename: `${r.lessonTitle || "実践記録"}.pdf`,
-                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                              jsPDF: {
+                                unit: "mm",
+                                format: "a4",
+                                orientation: "portrait",
+                              },
                               html2canvas: { useCORS: true, scale: 3 },
                               pagebreak: { mode: ["css", "legacy"] },
                             })
@@ -652,38 +770,51 @@ export default function PracticeHistoryPage() {
 
                     <button
                       onClick={() => {
-                        import("html2pdf.js").then(async ({ default: html2pdf }) => {
-                          const el = document.getElementById(`record-${r.lessonId}`);
-                          if (!el) return alert("Drive保存用の要素が見つかりませんでした。");
-                          const pdfBlob = await html2pdf()
-                            .from(el)
-                            .set({
-                              margin: [5, 5, 5, 5],
-                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                              html2canvas: { useCORS: true, scale: 3 },
-                              pagebreak: { mode: ["css", "legacy"] },
-                            })
-                            .outputPdf("blob");
-                          try {
-                            const { uploadToDrive } = await import("../../../lib/drive");
-                            await uploadToDrive(
-                              pdfBlob,
-                              `${r.lessonTitle || "実践記録"}.pdf`,
-                              "application/pdf"
+                        import("html2pdf.js").then(
+                          async ({ default: html2pdf }) => {
+                            const el = document.getElementById(
+                              `record-${r.lessonId}`
                             );
-                            alert("Driveへの保存が完了しました。");
-                          } catch (e) {
-                            console.error(e);
-                            alert("Drive保存に失敗しました。");
+                            if (!el)
+                              return alert(
+                                "Drive保存用の要素が見つかりませんでした。"
+                              );
+                            const pdfBlob = await html2pdf()
+                              .from(el)
+                              .set({
+                                margin: [5, 5, 5, 5],
+                                jsPDF: {
+                                  unit: "mm",
+                                  format: "a4",
+                                  orientation: "portrait",
+                                },
+                                html2canvas: { useCORS: true, scale: 3 },
+                                pagebreak: { mode: ["css", "legacy"] },
+                              })
+                              .outputPdf("blob");
+                            try {
+                              const { uploadToDrive } = await import(
+                                "../../../lib/drive"
+                              );
+                              await uploadToDrive(
+                                pdfBlob,
+                                `${r.lessonTitle || "実践記録"}.pdf`,
+                                "application/pdf"
+                              );
+                              alert("Driveへの保存が完了しました。");
+                            } catch (e) {
+                              console.error(e);
+                              alert("Drive保存に失敗しました。");
+                            }
                           }
-                        });
+                        );
                       }}
                       style={driveBtn}
                     >
                       ☁️ Drive保存
                     </button>
 
-                    <Link href={`/practice/add/${r.lessonId}`}>
+                    <Link href={editHref}>
                       <button style={actionBtn}>✏️ 編集</button>
                     </Link>
 

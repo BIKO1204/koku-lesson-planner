@@ -51,14 +51,14 @@ type PracticeRecord = {
   unitName?: string;
   author?: string;
   authorName?: string;
-  pdfFiles?: PdfFile[];  // 複数PDF管理
-  createdAt?: string;
-  modelType?: string; // モデル識別用
+  pdfFiles?: PdfFile[];
+  createdAt?: any;
+  modelType?: string; // reading / writing / discussion / language_activity
 };
 type LessonPlan = {
   id: string;
   result: any;
-  modelType?: string; // モデル識別用
+  modelType?: string; // reading / writing / discussion / language_activity
 };
 
 // スマホ判定用フック
@@ -74,6 +74,13 @@ function useIsMobile(breakpoint = 768) {
   }, [breakpoint]);
   return isMobile;
 }
+
+// 安全に配列化
+const asArray = (v: any): string[] => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string" && v.trim()) return [v];
+  return [];
+};
 
 export default function PracticeSharePage() {
   const { data: session } = useSession();
@@ -106,6 +113,9 @@ export default function PracticeSharePage() {
   const storage = getStorage();
   const isMobile = useIsMobile();
 
+  // メニュー開閉
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
+
   useEffect(() => {
     const modelCollections = [
       "practiceRecords_reading",
@@ -120,24 +130,28 @@ export default function PracticeSharePage() {
     modelCollections.forEach((colName) => {
       const q = query(collection(db, colName), orderBy("practiceDate", "desc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
-          ...(doc.data() as PracticeRecord),
-          lessonId: doc.id,
-          modelType: colName.replace("practiceRecords_", ""),
-          likedUsers: (doc.data() as any).likedUsers || [],
-          author: (doc.data() as any).author || "",
-          authorName: (doc.data() as any).authorName || "",
-          pdfFiles: (doc.data() as any).pdfFiles || [],
-          createdAt: (doc.data() as any).createdAt || "",
-        }));
+        const recs: PracticeRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data() as any;
+          return {
+            ...(d as PracticeRecord),
+            lessonId: docSnap.id,
+            modelType: colName.replace("practiceRecords_", ""),
+            likedUsers: d.likedUsers || [],
+            author: d.author || "",
+            authorName: d.authorName || "",
+            pdfFiles: d.pdfFiles || [],
+            createdAt: d.createdAt || "",
+            boardImages: Array.isArray(d.boardImages) ? d.boardImages : [],
+          };
+        });
 
+        // 同一 modelType を置き換え
+        const typeKey = colName.replace("practiceRecords_", "");
         allRecords = [
-          ...allRecords.filter(r => r.modelType !== colName.replace("practiceRecords_", "")),
+          ...allRecords.filter((r) => r.modelType !== typeKey),
           ...recs,
         ];
-
-        allRecords.sort((a, b) => b.practiceDate.localeCompare(a.practiceDate));
-
+        allRecords.sort((a, b) => (b.practiceDate || "").localeCompare(a.practiceDate || ""));
         setRecords([...allRecords]);
       });
       unsubscribers.push(unsubscribe);
@@ -156,25 +170,24 @@ export default function PracticeSharePage() {
     lessonPlanCollections.forEach((colName) => {
       const q = query(collection(db, colName));
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const plansData: LessonPlan[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          result: doc.data().result,
+        const plansData: LessonPlan[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          result: (docSnap.data() as any).result,
           modelType: colName.replace("lesson_plans_", ""),
         }));
-
+        const typeKey = colName.replace("lesson_plans_", "");
         allPlans = [
-          ...allPlans.filter(p => p.modelType !== colName.replace("lesson_plans_", "")),
+          ...allPlans.filter((p) => p.modelType !== typeKey),
           ...plansData,
         ];
-
         setLessonPlans([...allPlans]);
       });
       planUnsubs.push(unsubscribe);
     });
 
     return () => {
-      unsubscribers.forEach(unsub => unsub());
-      planUnsubs.forEach(unsub => unsub());
+      unsubscribers.forEach((unsub) => unsub());
+      planUnsubs.forEach((unsub) => unsub());
     };
   }, []);
 
@@ -193,8 +206,6 @@ export default function PracticeSharePage() {
     return true;
   });
 
-  const toggleMenu = () => setMenuOpen(prev => !prev);
-
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
@@ -210,7 +221,7 @@ export default function PracticeSharePage() {
       alert("ユーザー情報が取得できません");
       return;
     }
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("モデルタイプが特定できません");
       return;
@@ -222,13 +233,13 @@ export default function PracticeSharePage() {
       await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) throw new Error("該当データがありません");
-        const data = docSnap.data();
+        const data = docSnap.data() as any;
         const likedUsers: string[] = data.likedUsers || [];
 
         if (likedUsers.includes(userId)) {
           transaction.update(docRef, {
             likes: increment(-1),
-            likedUsers: likedUsers.filter(id => id !== userId),
+            likedUsers: likedUsers.filter((id) => id !== userId),
           });
         } else {
           transaction.update(docRef, {
@@ -244,10 +255,10 @@ export default function PracticeSharePage() {
   };
 
   const handleCommentChange = (lessonId: string, value: string) => {
-    setNewComments(prev => ({ ...prev, [lessonId]: value }));
+    setNewComments((prev) => ({ ...prev, [lessonId]: value }));
   };
   const handleCommentAuthorChange = (lessonId: string, value: string) => {
-    setNewCommentAuthors(prev => ({ ...prev, [lessonId]: value }));
+    setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
   };
 
   const handleAddComment = async (lessonId: string) => {
@@ -265,7 +276,7 @@ export default function PracticeSharePage() {
       alert("コメント投稿者名を入力してください");
       return;
     }
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("モデルタイプが特定できません");
       return;
@@ -282,8 +293,8 @@ export default function PracticeSharePage() {
           createdAt: new Date().toISOString(),
         }),
       });
-      setNewComments(prev => ({ ...prev, [lessonId]: "" }));
-      setNewCommentAuthors(prev => ({ ...prev, [lessonId]: "" }));
+      setNewComments((prev) => ({ ...prev, [lessonId]: "" }));
+      setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
     } catch (e) {
       console.error("コメント追加失敗", e);
       alert("コメントの投稿に失敗しました");
@@ -313,7 +324,7 @@ export default function PracticeSharePage() {
       alert("コメントを入力してください");
       return;
     }
-    const record = records.find(r => r.lessonId === recordId);
+    const record = records.find((r) => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
@@ -343,7 +354,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find(r => r.lessonId === recordId);
+    const record = records.find((r) => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
@@ -369,17 +380,17 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
     }
-    // 投稿者のみアップロード可能（既存ロジック継続）
+    // 投稿者のみアップロード可能
     if (record.author !== userId) {
       alert("PDFのアップロードは投稿者のみ可能です");
       return;
     }
-    setUploadingPdfIds(prev => [...prev, lessonId]);
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
       await uploadBytes(pdfRef, file);
@@ -390,15 +401,13 @@ export default function PracticeSharePage() {
       const newPdfFiles = record.pdfFiles ? [...record.pdfFiles] : [];
       newPdfFiles.push({ url, name: file.name });
 
-      await updateDoc(docRef, {
-        pdfFiles: newPdfFiles,
-      });
+      await updateDoc(docRef, { pdfFiles: newPdfFiles });
       alert("PDFをアップロードしました");
     } catch (error) {
       console.error("PDFアップロード失敗", error);
       alert("PDFアップロードに失敗しました");
     } finally {
-      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
     }
   };
 
@@ -407,7 +416,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
@@ -421,24 +430,22 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にPDFファイルを削除しますか？")) return;
-    setUploadingPdfIds(prev => [...prev, lessonId]);
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdfName}`);
       await deleteObject(pdfRef);
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
 
-      const newPdfFiles = (record.pdfFiles || []).filter(p => p.name !== pdfName);
+      const newPdfFiles = (record.pdfFiles || []).filter((p) => p.name !== pdfName);
 
-      await updateDoc(docRef, {
-        pdfFiles: newPdfFiles,
-      });
+      await updateDoc(docRef, { pdfFiles: newPdfFiles });
       alert("PDFを削除しました");
     } catch (error) {
       console.error("PDF削除失敗", error);
       alert("PDF削除に失敗しました");
     } finally {
-      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
     }
   };
 
@@ -447,7 +454,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
@@ -457,7 +464,7 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にこの実践案を削除しますか？")) return;
-    setUploadingPdfIds(prev => [...prev, lessonId]);
+    setUploadingPdfIds((prev) => [...prev, lessonId]);
     try {
       if (record.pdfFiles) {
         for (const pdf of record.pdfFiles) {
@@ -473,19 +480,20 @@ export default function PracticeSharePage() {
       console.error("実践案削除失敗", error);
       alert("実践案の削除に失敗しました");
     } finally {
-      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
     }
   };
 
-  // ★ ここで編集入口をガード（投稿者以外は編集不可）
+  // ★ 投稿者のみ編集可能。modelType をクエリで渡す
   const handleEdit = (lessonId: string) => {
-    const record = records.find(r => r.lessonId === lessonId);
+    const record = records.find((r) => r.lessonId === lessonId);
     const isAuthor = !!(record && record.author && userId && record.author === userId);
     if (!isAuthor) {
       alert("この実践記録の編集は投稿者のみ可能です。");
       return;
     }
-    router.push(`/practice/add/${lessonId}`);
+    const mt = record?.modelType ? `lesson_plans_${record.modelType}` : "";
+    router.push(`/practice/add/${lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
   };
 
   // 画像をbase64化（生成PDF用）
@@ -528,7 +536,7 @@ export default function PracticeSharePage() {
     const result: string[] = [];
     const limitedImages = images.slice(0, maxCount);
     for (let i = 0; i < limitedImages.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       try {
         const base64 = await toBase64ImageWithTimeout(limitedImages[i].src, 5000);
         result.push(base64);
@@ -560,7 +568,7 @@ export default function PracticeSharePage() {
       const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
-      const plan = lessonPlans.find(p => p.id === record.lessonId && p.modelType === record.modelType);
+      const plan = lessonPlans.find((p) => p.id === record.lessonId && p.modelType === record.modelType);
 
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
@@ -573,35 +581,24 @@ export default function PracticeSharePage() {
         if (plan.result["評価の観点"]) {
           lessonPlanHtml += `<strong style="display:block; margin-top: 8px;">評価の観点：</strong>`;
 
-          const knowledge = Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-            ? plan.result["評価の観点"]["知識・技能"]
-            : plan.result["評価の観点"]?.["知識・技能"]
-              ? [plan.result["評価の観点"]["知識・技能"]]
-              : [];
+          const knowledge = asArray(plan.result["評価の観点"]?.["知識・技能"]);
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>知識・技能</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           knowledge.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
-          const thinking = Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-            ? plan.result["評価の観点"]["思考・判断・表現"]
-            : plan.result["評価の観点"]?.["思考・判断・表現"]
-              ? [plan.result["評価の観点"]["思考・判断・表現"]]
-              : [];
+          const thinking = asArray(plan.result["評価の観点"]?.["思考・判断・表現"]);
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>思考・判断・表現</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           thinking.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
-          const attitude = Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
-            ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-            : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-              : plan.result["評価の観点"]?.["態度"]
-                ? [plan.result["評価の観点"]["態度"]]
-                : [];
+          const attitude = asArray(
+            plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+            plan.result["評価の観点"]?.["態度"]
+          );
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>主体的に学習に取り組む態度</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           attitude.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -613,18 +610,32 @@ export default function PracticeSharePage() {
         lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>言語活動の工夫：</strong> ${plan.result["言語活動の工夫"] || "－"}</p>`;
 
         if (plan.result["授業の流れ"]) {
-          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業の流れ：</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
-          Object.entries(plan.result["授業の流れ"])
-            .sort((a, b) => {
-              const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
-              const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
-              return numA - numB;
-            })
-            .forEach(([key, val]) => {
-              const content = typeof val === "string" ? val : JSON.stringify(val);
-              lessonPlanHtml += `<li style="margin-bottom:2px;"><strong>${key}:</strong> ${content}</li>`;
+          lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業の流れ：</strong></p>`;
+          const flow = plan.result["授業の流れ"];
+          if (typeof flow === "string") {
+            lessonPlanHtml += `<p style="white-space:pre-wrap;">${flow}</p>`;
+          } else if (Array.isArray(flow)) {
+            lessonPlanHtml += `<ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
+            flow.forEach((item: any, i: number) => {
+              lessonPlanHtml += `<li style="margin-bottom:2px;">${
+                typeof item === "string" ? item : JSON.stringify(item)
+              }</li>`;
             });
-          lessonPlanHtml += `</ul>`;
+            lessonPlanHtml += `</ul>`;
+          } else if (typeof flow === "object") {
+            lessonPlanHtml += `<ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
+            Object.entries(flow)
+              .sort((a, b) => {
+                const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+                const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
+                return numA - numB;
+              })
+              .forEach(([key, val]) => {
+                const content = typeof val === "string" ? val : JSON.stringify(val);
+                lessonPlanHtml += `<li style="margin-bottom:2px;"><strong>${key}:</strong> ${content}</li>`;
+              });
+            lessonPlanHtml += `</ul>`;
+          }
         }
       }
 
@@ -792,7 +803,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ここがflexDirection切り替え部分 */}
+      {/* レイアウト（スマホで縦・PCで横） */}
       <div
         style={{
           ...wrapperResponsiveStyle,
@@ -940,7 +951,7 @@ export default function PracticeSharePage() {
                   </p>
                   <p style={authorNameStyle}>作成者: {r.authorName || r.author || "－"}</p>
 
-                  {/* ★ 投稿者のみ編集ボタン表示 */}
+                  {/* 投稿者のみ編集ボタン表示（modelType クエリ付与） */}
                   {isAuthor && (
                     <button
                       onClick={() => handleEdit(r.lessonId)}
@@ -999,40 +1010,24 @@ export default function PracticeSharePage() {
 
                           <strong>知識・技能</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                            {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-                              ? plan.result["評価の観点"]["知識・技能"]
-                              : plan.result["評価の観点"]?.["知識・技能"]
-                              ? [plan.result["評価の観点"]["知識・技能"]]
-                              : []
-                            ).map((v: string, i: number) => (
+                            {asArray(plan.result["評価の観点"]?.["知識・技能"]).map((v, i) => (
                               <li key={`知識技能-${i}`}>{v}</li>
                             ))}
                           </ul>
 
                           <strong>思考・判断・表現</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                            {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-                              ? plan.result["評価の観点"]["思考・判断・表現"]
-                              : plan.result["評価の観点"]?.["思考・判断・表現"]
-                              ? [plan.result["評価の観点"]["思考・判断・表現"]]
-                              : []
-                            ).map((v: string, i: number) => (
+                            {asArray(plan.result["評価の観点"]?.["思考・判断・表現"]).map((v, i) => (
                               <li key={`思考判断-${i}`}>{v}</li>
                             ))}
                           </ul>
 
                           <strong>主体的に学習に取り組む態度</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                            {(Array.isArray(
-                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                            )
-                              ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                              : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-                              : plan.result["評価の観点"]?.["態度"]
-                              ? [plan.result["評価の観点"]["態度"]]
-                              : []
-                            ).map((v: string, i: number) => (
+                            {asArray(
+                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+                                plan.result["評価の観点"]?.["態度"]
+                            ).map((v, i) => (
                               <li key={`主体的-${i}`}>{v}</li>
                             ))}
                           </ul>
@@ -1051,23 +1046,43 @@ export default function PracticeSharePage() {
                       {plan.result["授業の流れ"] && (
                         <div>
                           <strong>授業の流れ：</strong>
-                          <ul>
-                            {Object.entries(plan.result["授業の流れ"])
-                              .sort((a, b) => {
-                                const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
-                                const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
-                                return numA - numB;
-                              })
-                              .map(([key, val]) => {
-                                const content =
-                                  typeof val === "string" ? val : JSON.stringify(val);
-                                return (
-                                  <li key={key}>
-                                    <strong>{key}:</strong> {content}
-                                  </li>
-                                );
-                              })}
-                          </ul>
+                          {/* 文字列 / 配列 / 連想オブジェクト すべて対応 */}
+                          {typeof plan.result["授業の流れ"] === "string" && (
+                            <p style={{ whiteSpace: "pre-wrap" }}>
+                              {plan.result["授業の流れ"]}
+                            </p>
+                          )}
+
+                          {Array.isArray(plan.result["授業の流れ"]) && (
+                            <ul>
+                              {plan.result["授業の流れ"].map((item: any, i: number) => (
+                                <li key={`flow-${r.lessonId}-${i}`}>
+                                  {typeof item === "string" ? item : JSON.stringify(item)}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {typeof plan.result["授業の流れ"] === "object" &&
+                            !Array.isArray(plan.result["授業の流れ"]) && (
+                              <ul>
+                                {Object.entries(plan.result["授業の流れ"])
+                                  .sort((a, b) => {
+                                    const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+                                    const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
+                                    return numA - numB;
+                                  })
+                                  .map(([key, val]) => {
+                                    const content =
+                                      typeof val === "string" ? val : JSON.stringify(val);
+                                    return (
+                                      <li key={key}>
+                                        <strong>{key}:</strong> {content}
+                                      </li>
+                                    );
+                                  })}
+                              </ul>
+                            )}
                         </div>
                       )}
                     </section>
@@ -1089,7 +1104,7 @@ export default function PracticeSharePage() {
                       }}
                     >
                       {r.boardImages.map((img, i) => (
-                        <div key={i} style={boardImageContainerStyle}>
+                        <div key={`${img.name || "img"}-${i}`} style={boardImageContainerStyle}>
                           <div style={{ fontWeight: "bold", marginBottom: 6 }}>
                             板書{i + 1}
                           </div>
@@ -1176,7 +1191,9 @@ export default function PracticeSharePage() {
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
                           <b>{c.displayName}</b>{" "}
-                          <small>{c.createdAt ? `(${new Date(c.createdAt).toLocaleDateString()})` : ""}</small>
+                          <small>
+                            {c.createdAt ? `(${new Date(c.createdAt).toLocaleDateString()})` : ""}
+                          </small>
                           <br />
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&
@@ -1446,11 +1463,7 @@ const authorNameStyle: CSSProperties = {
   marginBottom: 12,
 };
 
-// 以下メニュー関連関数
-const toggleMenu = () => {
-  const event = new CustomEvent("toggleMenu");
-  window.dispatchEvent(event);
-};
+// メニューのラッパー/オーバーレイ
 const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
   position: "fixed",
   top: 56,
