@@ -1,70 +1,81 @@
 "use client";
 
+import { createContext, useContext, useEffect, useState } from "react";
+import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
+import { auth } from "@/lib/firebase";
 import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from "react";
-import { auth } from "../firebaseConfig";
-import {
+  signInWithCustomToken,
   onAuthStateChanged,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-  User,
-  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
 } from "firebase/auth";
 
-export type AuthContextType = {
-  user: User | null;
-  loading: boolean;
-  loginWithGoogle: () => Promise<void>;
-  logout: () => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;  // 追加
-};
+type Ctx = { firebaseReady: boolean; signOutAll: () => Promise<void> };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthCtx = createContext<Ctx>({
+  firebaseReady: false,
+  signOutAll: async () => {},
+});
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession();
+  const [firebaseReady, setFirebaseReady] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
 
+  // Firebase 側の状態が立ち上がったかどうか
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
+    const unsub = onAuthStateChanged(auth, () => {
+      setFirebaseReady(true);
     });
-    return () => unsubscribe();
+    return unsub;
   }, []);
 
-  // Googleログイン関数
-  const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  };
+  // NextAuth がログイン済みなら custom-token で Firebase にもログイン
+  useEffect(() => {
+    async function link() {
+      if (status !== "authenticated") {
+        // NextAuth がログアウトになったら Firebase もサインアウト
+        if (auth.currentUser) {
+          try {
+            await firebaseSignOut(auth);
+          } catch {}
+        }
+        return;
+      }
+      if (isLinking) return;
+      if (auth.currentUser) return; // 既にサインイン済みなら何もしない
 
-  // メール・パスワード登録関数
-  const signup = async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
-  };
+      setIsLinking(true);
+      try {
+        const res = await fetch("/api/firebase/custom-token", {
+          credentials: "same-origin",
+        });
+        if (!res.ok) throw new Error(`custom-token ${res.status}`);
+        const { token } = await res.json();
+        await signInWithCustomToken(auth, token);
+      } catch (e) {
+        console.error("Firebase custom token sign-in failed:", e);
+      } finally {
+        setIsLinking(false);
+      }
+    }
+    link();
+  }, [status]);
 
-  const logout = async () => {
-    await signOut(auth);
-  };
+  // 両方まとめてサインアウトしたい時用（任意）
+  async function signOutAll() {
+    try {
+      await firebaseSignOut(auth);
+    } catch {}
+    await nextAuthSignOut();
+  }
 
   return (
-    <AuthContext.Provider
-      value={{ user, loading, loginWithGoogle, logout, signup }}
-    >
-      {loading ? <div>認証中...</div> : children}
-    </AuthContext.Provider>
+    <AuthCtx.Provider value={{ firebaseReady, signOutAll }}>
+      {children}
+    </AuthCtx.Provider>
   );
 }
 
-export function useAuth(): AuthContextType {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
-  return ctx;
+export function useAuthLink() {
+  return useContext(AuthCtx);
 }
