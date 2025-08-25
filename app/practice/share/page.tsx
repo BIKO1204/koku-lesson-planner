@@ -13,7 +13,6 @@ import {
   arrayUnion,
   increment,
   runTransaction,
-  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useSession, signOut } from "next-auth/react";
@@ -54,6 +53,7 @@ type PracticeRecord = {
   pdfFiles?: PdfFile[];
   createdAt?: any;
   modelType?: string; // reading / writing / discussion / language_activity
+  isShared?: boolean;  // ★ 追加：共有ページに出すかどうか（未定義 or true=共有中、false=非共有）
 };
 type LessonPlan = {
   id: string;
@@ -142,8 +142,11 @@ export default function PracticeSharePage() {
             pdfFiles: d.pdfFiles || [],
             createdAt: d.createdAt || "",
             boardImages: Array.isArray(d.boardImages) ? d.boardImages : [],
+            isShared: d.isShared, // ★ 取り込み
           };
-        });
+        })
+        // ★ 共有解除(isShared === false)は共有ページに出さない
+        .filter((r) => r.isShared !== false);
 
         // 同一 modelType を置き換え
         const typeKey = colName.replace("practiceRecords_", "");
@@ -199,6 +202,8 @@ export default function PracticeSharePage() {
   };
 
   const filteredRecords = records.filter((r) => {
+    // 念のため最終段でも非共有を除外
+    if (r.isShared === false) return false;
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
@@ -449,41 +454,6 @@ export default function PracticeSharePage() {
     }
   };
 
-  const handleDeleteRecord = async (lessonId: string) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("対象の実践案またはモデルタイプが見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("自分の実践案のみ削除できます");
-      return;
-    }
-    if (!confirm("本当にこの実践案を削除しますか？")) return;
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
-    try {
-      if (record.pdfFiles) {
-        for (const pdf of record.pdfFiles) {
-          const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdf.name}`);
-          await deleteObject(pdfRef);
-        }
-      }
-      const collectionName = `practiceRecords_${record.modelType}`;
-      const docRef = doc(db, collectionName, lessonId);
-      await deleteDoc(docRef);
-      alert("実践案を削除しました");
-    } catch (error) {
-      console.error("実践案削除失敗", error);
-      alert("実践案の削除に失敗しました");
-    } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
-    }
-  };
-
   // ★ 投稿者のみ編集可能。modelType をクエリで渡す
   const handleEdit = (lessonId: string) => {
     const record = records.find((r) => r.lessonId === lessonId);
@@ -494,6 +464,34 @@ export default function PracticeSharePage() {
     }
     const mt = record?.modelType ? `lesson_plans_${record.modelType}` : "";
     router.push(`/practice/add/${lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
+  };
+
+  // ★ 共有解除（共有ページからだけ非表示・ドキュメントは残す）
+  const handleUnshareRecord = async (lessonId: string) => {
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    const record = records.find((r) => r.lessonId === lessonId);
+    if (!record || !record.modelType) {
+      alert("対象の実践案が見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("共有解除は投稿者のみ可能です");
+      return;
+    }
+    if (!confirm("この実践記録を共有版から外します（個人の実践記録は残ります）。よろしいですか？")) return;
+
+    try {
+      const collectionName = `practiceRecords_${record.modelType}`;
+      const docRef = doc(db, collectionName, lessonId);
+      await updateDoc(docRef, { isShared: false });
+      alert("共有を解除しました（個人の実践記録は残っています）");
+    } catch (e) {
+      console.error("共有解除失敗", e);
+      alert("共有解除に失敗しました");
+    }
   };
 
   // 画像をbase64化（生成PDF用）
@@ -616,10 +614,8 @@ export default function PracticeSharePage() {
             lessonPlanHtml += `<p style="white-space:pre-wrap;">${flow}</p>`;
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
-            flow.forEach((item: any, i: number) => {
-              lessonPlanHtml += `<li style="margin-bottom:2px;">${
-                typeof item === "string" ? item : JSON.stringify(item)
-              }</li>`;
+            flow.forEach((item: any) => {
+              lessonPlanHtml += `<li style="margin-bottom:2px;">${typeof item === "string" ? item : JSON.stringify(item)}</li>`;
             });
             lessonPlanHtml += `</ul>`;
           } else if (typeof flow === "object") {
@@ -1163,14 +1159,16 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
+                  {/* ★ 完全削除は共有版ではやらず、共有解除ボタンに変更 */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
-                        onClick={() => handleDeleteRecord(r.lessonId)}
-                        style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
+                        onClick={() => handleUnshareRecord(r.lessonId)}
+                        style={{ ...commentBtnStyle, backgroundColor: "#888" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
+                        title="共有ページからだけ非表示にします（個人の実践記録は残ります）"
                       >
-                        実践記録削除
+                        共有から外す
                       </button>
                     </div>
                   )}
