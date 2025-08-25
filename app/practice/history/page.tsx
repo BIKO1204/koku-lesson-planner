@@ -52,13 +52,13 @@ async function getDB() {
 }
 
 async function getAllLocalRecords(): Promise<PracticeRecord[]> {
-  const db = await getDB();
-  return db.getAll(STORE_NAME);
+  const dbx = await getDB();
+  return dbx.getAll(STORE_NAME);
 }
 
 async function deleteLocalRecord(lessonId: string) {
-  const db = await getDB();
-  await db.delete(STORE_NAME, lessonId);
+  const dbx = await getDB();
+  await dbx.delete(STORE_NAME, lessonId);
 }
 
 // ---------- Firestore 取得系 ----------
@@ -86,8 +86,8 @@ async function fetchRemotePracticeRecords(userEmail: string): Promise<PracticeRe
   if (!userEmail) return [];
   const all: PracticeRecord[] = [];
   for (const coll of PRACTICE_COLLECTIONS) {
-    const q = query(collection(db, coll), where("author", "==", userEmail));
-    const snap = await getDocs(q);
+    const qy = query(collection(db, coll), where("author", "==", userEmail));
+    const snap = await getDocs(qy);
     snap.forEach((d) => {
       const data = d.data() as any;
       all.push({
@@ -295,7 +295,7 @@ export default function PracticeHistoryPage() {
     display: "flex",
     flexDirection: "column",
     backgroundColor: "#fdfdfd",
-    border: "2px solid #ddd",
+    border: "2px solid #ddd", // ← 修正（ダブルクォートのネストを解消）
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -354,6 +354,13 @@ export default function PracticeHistoryPage() {
     width: "100%",
     margin: "0 auto",
     paddingTop: 72,
+  };
+
+  // ヘルパー（配列化）
+  const asArray = (v: any): string[] => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === "string" && v.trim()) return [v];
+    return [];
   };
 
   return (
@@ -481,6 +488,58 @@ export default function PracticeHistoryPage() {
                           <p style={{ whiteSpace: "pre-wrap" }}>
                             <strong>単元の目標：</strong>{plan.result["単元の目標"] || "－"}
                           </p>
+
+                          {/* ▼ 追加：評価の観点 */}
+                          {plan.result["評価の観点"] && (
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontWeight: "bold", marginBottom: 4 }}>評価の観点</div>
+
+                              <div>
+                                <strong>知識・技能</strong>
+                                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                                  {asArray(plan.result["評価の観点"]?.["知識・技能"]).map((v, i) => (
+                                    <li key={`eval-k-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div style={{ marginTop: 4 }}>
+                                <strong>思考・判断・表現</strong>
+                                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                                  {asArray(plan.result["評価の観点"]?.["思考・判断・表現"]).map((v, i) => (
+                                    <li key={`eval-t-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div style={{ marginTop: 4 }}>
+                                <strong>主体的に学習に取り組む態度</strong>
+                                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                                  {asArray(
+                                    plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+                                    plan.result["評価の観点"]?.["態度"]
+                                  ).map((v, i) => (
+                                    <li key={`eval-a-${r.lessonId}-${i}`} style={{ whiteSpace: "pre-wrap" }}>{v}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          )}
+                          {/* ▲ 追加ここまで */}
+
+                          {/* ▼ 追加：育てたい子どもの姿 */}
+                          <p style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
+                            <strong>育てたい子どもの姿：</strong>
+                            {plan.result["育てたい子どもの姿"] || "－"}
+                          </p>
+                          {/* ▲ */}
+
+                          {/* ▼ 追加：言語活動の工夫 */}
+                          <p style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>
+                            <strong>言語活動の工夫：</strong>
+                            {plan.result["言語活動の工夫"] || "－"}
+                          </p>
+                          {/* ▲ */}
                         </div>
 
                         {/* ▼ 授業の流れ（PDFにも入る） */}
