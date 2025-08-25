@@ -55,6 +55,16 @@ function normalizeTimestamp(input: any): number {
   return 0;
 }
 
+/* ---------- 全角数字→半角 & 授業の流れのキーから番号抽出 ---------- */
+const toHalfWidthNumber = (s: string) =>
+  s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+
+const extractStepNumber = (key: string) => {
+  const half = toHalfWidthNumber(key);
+  const m = half.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; // 数字なしは末尾へ
+};
+
 type ParsedResult = { [key: string]: any };
 
 type LessonPlan = {
@@ -551,7 +561,7 @@ export default function HistoryPage() {
                       <div
                         style={{
                           backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",  // ← 修正：文字列を正しく
+                          border: "1px solid #ddd",
                           borderRadius: 8,
                           padding: 12,
                           marginTop: 12,
@@ -578,11 +588,13 @@ export default function HistoryPage() {
                         <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {plan.result["授業の流れ"] &&
                             typeof plan.result["授業の流れ"] === "object" &&
-                            Object.entries(plan.result["授業の流れ"]).map(([key, val], i) => (
-                              <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
-                                <strong>{key}：</strong> {String(val)}
-                              </li>
-                            ))}
+                            Object.entries(plan.result["授業の流れ"])
+                              .sort((a, b) => extractStepNumber(a[0]) - extractStepNumber(b[0]))
+                              .map(([key, val], i) => (
+                                <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
+                                  <strong>{key}：</strong> {String(val)}
+                                </li>
+                              ))}
                         </ul>
                       </div>
                     </>
