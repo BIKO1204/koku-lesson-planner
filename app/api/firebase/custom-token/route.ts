@@ -5,25 +5,31 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { adminAuth } from "@/lib/firebaseAdmin";
-import type { Session } from "next-auth";
 
 export async function GET() {
   try {
-    const session = (await getServerSession(authOptions as any)) as Session | null;
+    const session = (await getServerSession(authOptions)) as
+      | (import("next-auth").Session & { userId?: string })
+      | null;
 
-    // NextAuth の標準セッションは userId を含まないため、email を必須にします
-    const email = session?.user?.email;
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized (no session)" }, { status: 401 });
     }
 
-    // email を UID として利用（端末間で同一アカウントを同一UIDに統一）
-    const uid = email;
+    const sub = session.userId ?? (session as any).user?.id ?? null;
+    const email = (session as any).user?.email ?? null;
+
+    if (!sub) {
+      return NextResponse.json({ error: "Unauthorized (no userId/sub)" }, { status: 401 });
+    }
+
+    // UID は nextauth:<Google sub> に統一
+    const uid = `nextauth:${sub}`;
 
     const claims: Record<string, any> = {
       provider: "google",
-      email: email,
-      name: session.user?.name ?? null,
+      email,
+      name: (session as any).user?.name ?? null,
     };
 
     const customToken = await adminAuth.createCustomToken(uid, claims);

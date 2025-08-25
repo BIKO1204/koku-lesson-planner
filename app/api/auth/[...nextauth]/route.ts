@@ -1,50 +1,55 @@
 // app/api/auth/[...nextauth]/route.ts
 export const runtime = "nodejs";
 
-import NextAuth from "next-auth";
+import type { AdapterUser } from "next-auth/adapters";
+import type { JWT } from "next-auth/jwt";
+import type { Session } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { adminDb } from "@/lib/firebaseAdmin";
-import * as admin from "firebase-admin";
+import admin from "firebase-admin";
 
-// Google アクセストークンのリフレッシュ
-async function refreshAccessToken(token: any): Promise<any> {
-  const refreshToken = token?.refreshToken as string | undefined;
-  if (!refreshToken) {
-    return { ...token, error: "NoRefreshToken" };
-  }
-
-  const params = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID ?? "",
-    client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    }),
   });
+}
+const firestore = admin.firestore();
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+let NextAuthHandler: any;
+
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  if (!token.refreshToken) throw new Error("No refresh token available");
+  const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      grant_type: "refresh_token",
+      refresh_token: String(token.refreshToken),
+    }),
   });
-
-  const refreshed = await res.json();
-  if (!res.ok) {
-    return { ...token, error: "RefreshAccessTokenError" };
+  const refreshedTokens = await response.json();
+  if (!response.ok) {
+    return { ...token, error: "RefreshAccessTokenError" as const };
   }
-
   return {
     ...token,
-    accessToken: refreshed.access_token,
-    accessTokenExpires: Date.now() + (refreshed.expires_in ?? 0) * 1000,
-    refreshToken: refreshed.refresh_token ?? refreshToken,
+    accessToken: refreshedTokens.access_token,
+    accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
+    refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
     error: undefined,
   };
 }
 
-export const authOptions: any = {
+export const authOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
           access_type: "offline",
@@ -57,14 +62,14 @@ export const authOptions: any = {
   secret: process.env.NEXTAUTH_SECRET,
 
   callbacks: {
-    async signIn({ user }: { user: any }) {
-      if (!user?.id) return false;
-      const ref = adminDb.collection("users").doc(user.id);
-      await ref.set(
+    async signIn({ user }: { user: AdapterUser }) {
+      if (!user.id) return false;
+      const userRef = firestore.collection("users").doc(user.id);
+      await userRef.set(
         {
-          email: user.email ?? "",
-          name: user.name ?? "",
-          image: user.image ?? "",
+          email: user.email,
+          name: user.name,
+          image: user.image,
           lastLogin: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -77,33 +82,59 @@ export const authOptions: any = {
       account,
       user,
     }: {
-      token: any;
+      token: JWT & { userId?: string };
       account?: any | null;
-      user?: any | null;
-    }): Promise<any> {
+      user?: AdapterUser | null;
+    }): Promise<JWT & { userId?: string }> {
       if (account && user) {
+        // Google の sub は token.sub に入る。安全のため userId にもコピー
         return {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           accessTokenExpires: (account.expires_at ?? 0) * 1000,
-          user,
+          userId: (user as any).id ?? token.sub, // ★ ここが後続の custom-token で必要
         };
       }
+
       const expires =
         typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
-      if (Date.now() < expires) return token;
+      if (Date.now() < expires) {
+        return token;
+      }
+
       return await refreshAccessToken(token);
     },
 
-    async session({ session, token }: { session: any; token: any }): Promise<any> {
-      session.accessToken = token.accessToken;
-      session.error = token.error;
-      session.userId = token.sub; // Google の sub（不変）
+    async session({
+      session,
+      token,
+    }: {
+      session: Session & { userId?: string; error?: string; accessToken?: string };
+      token: JWT & { userId?: string; accessToken?: string; error?: string };
+    }): Promise<Session> {
+      session.accessToken = token.accessToken as any;
+      (session as any).error = (token as any).error;
+      (session as any).userId = token.userId ?? token.sub; // ★ custom-token で参照
       return session;
     },
   },
 };
 
-const handler = NextAuth(authOptions);
-export { handler as GET, handler as POST };
+async function getHandler() {
+  if (!NextAuthHandler) {
+    const mod = await import("next-auth");
+    NextAuthHandler = mod.default;
+  }
+  return NextAuthHandler(authOptions);
+}
+
+export async function GET(req: Request) {
+  const handler = await getHandler();
+  return handler(req);
+}
+
+export async function POST(req: Request) {
+  const handler = await getHandler();
+  return handler(req);
+}
