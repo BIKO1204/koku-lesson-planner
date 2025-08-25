@@ -1,8 +1,16 @@
-// lib/firebase.ts
-import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
-import { getAuth, type Auth } from "firebase/auth";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey:             process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -13,10 +21,47 @@ const firebaseConfig = {
   appId:              process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const app = !getApps().length
+  ? initializeApp(firebaseConfig)
+  : getApp();
 
-export const db: Firestore = getFirestore(app);
-export const storage: FirebaseStorage = getStorage(app);
-export const auth: Auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+export const auth = getAuth(app);
 
-export default app;
+// --- ユーザー関連 --- //
+export async function fetchUsers() {
+  const usersCol = collection(db, "users");
+  const usersSnapshot = await getDocs(usersCol);
+  return usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// --- 通知関連 --- //
+export async function fetchNotifications() {
+  const notificationsCol = collection(db, "通知");
+  const notificationsSnapshot = await getDocs(notificationsCol);
+  return notificationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export async function addNotification(title: string, message: string) {
+  const notificationsCol = collection(db, "通知");
+  await addDoc(notificationsCol, {
+    title,
+    message,
+    visible: true,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function updateNotification(
+  id: string,
+  data: Partial<{ title: string; message: string; visible: boolean }>
+) {
+  const notificationDoc = doc(db, "通知", id);
+  await updateDoc(notificationDoc, data);
+}
+
+export async function deleteNotification(id: string) {
+  const notificationDoc = doc(db, "通知", id);
+  await deleteDoc(notificationDoc);
+}

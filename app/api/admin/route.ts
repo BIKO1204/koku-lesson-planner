@@ -1,5 +1,3 @@
-export const runtime = "nodejs"; // ← これを必ず先頭に
-
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 
@@ -9,13 +7,8 @@ if (!admin.apps.length) {
   try {
     if (!serviceAccountRaw) throw new Error("サービスアカウント情報が設定されていません。");
     serviceAccount = JSON.parse(serviceAccountRaw);
-
-    // 「\\n」を「\n」に置換！（これが重要）
-    if (serviceAccount.private_key && typeof serviceAccount.private_key === "string") {
-      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
-    }
   } catch (e) {
-    throw new Error("サービスアカウント情報のJSON解析に失敗しました。" + (e instanceof Error ? e.message : ""));
+    throw new Error("サービスアカウント情報のJSON解析に失敗しました。");
   }
 
   admin.initializeApp({

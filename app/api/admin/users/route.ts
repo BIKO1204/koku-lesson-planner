@@ -1,22 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import admin from "firebase-admin";
 
-// Node.jsランタイムを明示（Next.js 13/14+推奨）
-export const runtime = "nodejs";
-
 if (!admin.apps.length) {
   let serviceAccount = null;
   try {
     serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
       ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
       : null;
-    // 🔽「\\n」→「\n」への置換を必ず追加
-    if (
-      serviceAccount &&
-      typeof serviceAccount.private_key === "string"
-    ) {
-      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
-    }
   } catch (e) {
     throw new Error("サービスアカウント情報のJSON解析に失敗しました。");
   }

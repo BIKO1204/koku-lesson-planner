@@ -1,27 +1,13 @@
-// app/api/auth/[...nextauth]/route.ts
-export const runtime = "nodejs";
-
-import type { AdapterUser } from "next-auth/adapters";
+import GoogleProvider from "next-auth/providers/google";
 import type { JWT } from "next-auth/jwt";
 import type { Session } from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
-import admin from "firebase-admin";
+import type { AdapterUser } from "next-auth/adapters";
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-const firestore = admin.firestore();
-
-let NextAuthHandler: any;
+let NextAuthHandler: any; // 動的ロード用
 
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   if (!token.refreshToken) throw new Error("No refresh token available");
+
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -32,10 +18,17 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       refresh_token: String(token.refreshToken),
     }),
   });
+
   const refreshedTokens = await response.json();
+
   if (!response.ok) {
-    return { ...token, error: "RefreshAccessTokenError" as const };
+    // リフレッシュ失敗はエラーとして返す
+    return {
+      ...token,
+      error: "RefreshAccessTokenError",
+    };
   }
+
   return {
     ...token,
     accessToken: refreshedTokens.access_token,
@@ -52,75 +45,49 @@ export const authOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          access_type: "offline",
-          prompt: "consent",
-          scope: "openid email profile https://www.googleapis.com/auth/drive.file",
+          access_type: "offline",  // リフレッシュトークン取得必須
+          prompt: "consent",       // 毎回同意を得る
+          scope:
+            "openid email profile https://www.googleapis.com/auth/drive.file",
         },
       },
     }),
   ],
+
   secret: process.env.NEXTAUTH_SECRET,
 
   callbacks: {
-    async signIn({ user }: { user: AdapterUser }) {
-      if (!user.id) return false;
-      const userRef = firestore.collection("users").doc(user.id);
-      await userRef.set(
-        {
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          lastLogin: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-      return true;
-    },
-
-    async jwt({
-      token,
-      account,
-      user,
-    }: {
-      token: JWT & { userId?: string };
-      account?: any | null;
-      user?: AdapterUser | null;
-    }): Promise<JWT & { userId?: string }> {
-      if (account && user) {
-        // Google の sub は token.sub に入る。安全のため userId にもコピー
+    async jwt({ token, account, user }: { token: JWT; account?: any | null; user?: AdapterUser | null }): Promise<JWT> {
+      // 初回ログイン時
+      if (account) {
         return {
           ...token,
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           accessTokenExpires: (account.expires_at ?? 0) * 1000,
-          userId: (user as any).id ?? token.sub, // ★ ここが後続の custom-token で必要
+          user,
         };
       }
 
-      const expires =
-        typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
+      // トークン有効期限内ならそのまま返す
+      const expires = typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
       if (Date.now() < expires) {
         return token;
       }
 
+      // 期限切れなら更新試行
       return await refreshAccessToken(token);
     },
 
-    async session({
-      session,
-      token,
-    }: {
-      session: Session & { userId?: string; error?: string; accessToken?: string };
-      token: JWT & { userId?: string; accessToken?: string; error?: string };
-    }): Promise<Session> {
-      session.accessToken = token.accessToken as any;
+    async session({ session, token }: { session: Session; token: JWT }): Promise<Session> {
+      (session as any).accessToken = token.accessToken;
       (session as any).error = (token as any).error;
-      (session as any).userId = token.userId ?? token.sub; // ★ custom-token で参照
       return session;
     },
   },
 };
 
+// 動的にNextAuthをimportしてハンドラ返却
 async function getHandler() {
   if (!NextAuthHandler) {
     const mod = await import("next-auth");
@@ -129,12 +96,12 @@ async function getHandler() {
   return NextAuthHandler(authOptions);
 }
 
-export async function GET(req: Request) {
+export async function GET(req: Request, res: Response) {
   const handler = await getHandler();
-  return handler(req);
+  return handler(req, res);
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request, res: Response) {
   const handler = await getHandler();
-  return handler(req);
+  return handler(req, res);
 }

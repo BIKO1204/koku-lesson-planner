@@ -1,18 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, CSSProperties } from "react";
+import { useEffect, useState, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
-import { db } from "../../firebaseConfig";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  doc,
-  deleteDoc,
-} from "firebase/firestore";
+import { db } from "../../firebaseConfig.js";
+import { doc, deleteDoc } from "firebase/firestore";
+import { signOut } from "next-auth/react";
 
 type ParsedResult = { [key: string]: any };
 
@@ -29,134 +22,49 @@ type LessonPlan = {
   result?: ParsedResult;
 };
 
-const LESSON_PLAN_COLLECTIONS = [
-  "lesson_plans_reading",
-  "lesson_plans_writing",
-  "lesson_plans_discussion",
-  "lesson_plans_language_activity",
-];
-
 export default function HistoryPage() {
-  const { data: session } = useSession();
-  const userEmail = session?.user?.email || "";
-
   const [plans, setPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">(
-    "timestamp"
-  );
+  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">("timestamp");
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
-
-  // Firestore から自分の授業案を集約して取得
-  async function fetchMyPlansFromFirestore(): Promise<LessonPlan[]> {
-    if (!userEmail) return [];
-    const all: LessonPlan[] = [];
-    for (const coll of LESSON_PLAN_COLLECTIONS) {
-      const q = query(collection(db, coll), where("author", "==", userEmail));
-      const snap = await getDocs(q);
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        all.push({
-          id: d.id,
-          timestamp: data.timestamp || "",
-          subject: data.subject || "",
-          grade: data.grade || "",
-          genre: data.genre || "",
-          unit: data.unit || "",
-          hours: data.hours ?? "",
-          languageActivities: data.languageActivities || "",
-          usedStyleName: data.usedStyleName ?? null,
-          result: data.result,
-        });
-      });
-    }
-    return all;
-  }
-
   useEffect(() => {
-    // ローカル保存分
-    let local: LessonPlan[] = [];
     const stored = localStorage.getItem("lessonPlans");
     if (stored) {
       try {
-        local = JSON.parse(stored) as LessonPlan[];
+        setPlans(JSON.parse(stored));
       } catch {
-        local = [];
+        setPlans([]);
       }
     }
+  }, []);
 
-    // Firestore 分
-    (async () => {
-      const remote = await fetchMyPlansFromFirestore();
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-      // id で重複排除（優先度：リモート > ローカル）
-      const map = new Map<string, LessonPlan>();
-      for (const r of local) map.set(r.id, r);
-      for (const r of remote) map.set(r.id, r);
+  const sortedPlans = [...plans].sort((a, b) => {
+    if (sortKey === "grade") {
+      return String(a.grade).localeCompare(String(b.grade));
+    }
+    if (sortKey === "subject") {
+      return String(a.subject).localeCompare(String(b.subject));
+    }
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
 
-      const merged = Array.from(map.values());
-
-      // 並び替え適用（既定：新着）
-      const sorted = [...merged].sort((a, b) => {
-        if (sortKey === "grade") {
-          return String(a.grade).localeCompare(String(b.grade));
-        }
-        if (sortKey === "subject") {
-          return String(a.subject).localeCompare(String(b.subject));
-        }
-        return (
-          new Date(b.timestamp || 0).getTime() -
-          new Date(a.timestamp || 0).getTime()
-        );
-      });
-
-      setPlans(sorted);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userEmail, sortKey]);
-
-  const sortedPlans = plans; // すでに sort 済み
-
-  // Firestore 全コレクション横断削除（存在するところだけ消す）
   const handleDeleteBoth = async (id: string) => {
     if (!confirm("この授業案を本当に削除しますか？")) return;
 
-    let remoteDeleted = false;
     try {
-      for (const coll of LESSON_PLAN_COLLECTIONS) {
-        try {
-          await deleteDoc(doc(db, coll, id));
-          remoteDeleted = true;
-        } catch {
-          // そのコレクションに無ければスルー
-        }
-      }
+      await deleteDoc(doc(db, "lesson_plans", id));
     } catch (e) {
       console.error("Firestore 削除エラー:", e);
       alert("Firestore 上の削除に失敗しました。");
       return;
     }
 
-    // ローカルも更新
     const updated = plans.filter((p) => p.id !== id);
     setPlans(updated);
-
-    const raw = localStorage.getItem("lessonPlans");
-    if (raw) {
-      try {
-        const arr: LessonPlan[] = JSON.parse(raw);
-        const next = arr.filter((p) => p.id !== id);
-        localStorage.setItem("lessonPlans", JSON.stringify(next));
-      } catch {}
-    }
-
-    alert(
-      `削除しました（${
-        remoteDeleted ? "Firestore・" : ""
-      }ローカル）。`
-    );
+    localStorage.setItem("lessonPlans", JSON.stringify(updated));
   };
 
   // --- スタイル ---
@@ -239,11 +147,31 @@ export default function HistoryPage() {
     borderRadius: 6,
     textDecoration: "none",
     marginBottom: "0.5rem",
-    textAlign: "left",
+    textAlign: "left", // ← 左揃えに変更
   };
 
   return (
     <>
+      <style>{`
+        /* スマホ向け */
+        @media (max-width: 600px) {
+          article {
+            flex-direction: column !important;
+          }
+          article > div:first-child {
+            max-width: 100% !important;
+          }
+          article > div:last-child {
+            flex-direction: row !important;
+            width: 100% !important;
+            gap: 8px !important;
+          }
+          article > div:last-child > button {
+            flex: 1 1 auto !important;
+          }
+        }
+      `}</style>
+
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
@@ -348,9 +276,7 @@ export default function HistoryPage() {
         </label>
 
         {sortedPlans.length === 0 ? (
-          <p style={{ textAlign: "center", fontSize: 18 }}>
-            まだ授業案が保存されていません。
-          </p>
+          <p style={{ textAlign: "center", fontSize: 18 }}>まだ授業案が保存されていません。</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {sortedPlans.map((plan) => (
@@ -392,7 +318,7 @@ export default function HistoryPage() {
                     {plan.hours}時間
                   </p>
                   <p style={{ fontSize: "0.9rem", color: "#555" }}>
-                    {plan.timestamp ? new Date(plan.timestamp).toLocaleString() : ""}
+                    {new Date(plan.timestamp).toLocaleString()}
                   </p>
 
                   {plan.result && (
@@ -483,6 +409,7 @@ export default function HistoryPage() {
                         </ul>
                       </div>
 
+                      {/* 育てたい子どもの姿を評価の観点の下、言語活動の工夫の上に移動 */}
                       <div
                         style={{
                           backgroundColor: "#fafafa",

@@ -4,8 +4,8 @@ import { useState, useEffect, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
-import { db, auth } from "../firebaseConfig";
-import { doc, setDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebaseConfig";
+import { doc, setDoc, collection, getDocs } from "firebase/firestore";
 import { useSession } from "next-auth/react";
 
 const EDIT_KEY = "editLessonPlan";
@@ -356,16 +356,9 @@ ${languageActivities}
       return;
     }
 
-    // ★ Firebase Auth のユーザーを確認（Firestore ルール: request.auth != null）
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      alert("認証中です。数秒後に再度お試しください。");
-      return;
-    }
-
     const isEdit = Boolean(editId);
     const idToUse = isEdit ? editId! : Date.now().toString();
-    const timestamp = new Date().toISOString(); // ローカル保存用の表示時刻
+    const timestamp = new Date().toISOString();
 
     const author = authors.find((a) => a.id === selectedAuthorId);
     if (!author) {
@@ -374,7 +367,6 @@ ${languageActivities}
     }
     const collectionName = author.collection;
 
-    // --- ローカルにもミラー保存（オフライン/復元用）
     const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     if (isEdit) {
       const newArr = existingArr.map((p) =>
@@ -421,12 +413,10 @@ ${languageActivities}
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
-    // --- Firestore へ保存（端末間同期の正本）
     try {
       await setDoc(
         doc(db, collectionName, idToUse),
         {
-          ownerUid: uid,                 // ★ 同一アカウントの識別キー
           subject,
           grade,
           genre,
@@ -439,9 +429,8 @@ ${languageActivities}
           languageActivities,
           selectedStyleId,
           result: parsedResult,
-          timestamp: serverTimestamp(),  // ★ サーバー時刻で統一
+          timestamp,
           usedStyleName: selectedStyleName || author.label,
-          author: session?.user?.email || "", 
         },
         { merge: true }
       );
@@ -473,7 +462,7 @@ ${languageActivities}
     padding: "0.8rem",
     fontSize: "1.1rem",
     borderRadius: 8,
-    border: "1px solid " + "#ccc",
+    border: "1px solid #ccc",
     marginBottom: "1rem",
   };
 
