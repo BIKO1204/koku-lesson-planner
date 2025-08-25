@@ -5,13 +5,21 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 
-import { collection, query, orderBy, where, getDocs, deleteDoc, doc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  orderBy,
+  where,
+  onSnapshot,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type EducationHistory = {
   id: string;
   modelId: string;
-  updatedAt: string;
+  updatedAt: any; // Firestore Timestamp | string を許容
   name: string;
   philosophy: string;
   evaluationFocus: string;
@@ -128,52 +136,48 @@ export default function GroupedHistoryPage() {
     localStorage.setItem("expandedIds", JSON.stringify(Array.from(expandedIds)));
   }, [expandedIds]);
 
-  // Firestoreから履歴を取得・グループ化
+  // Firestoreから履歴をリアルタイム購読してグループ化
   useEffect(() => {
-    async function fetchAndGroup() {
-      if (!userId) {
-        setGroupedHistories([]);
-        return;
-      }
-      try {
-        const colRef = collection(db, "educationModelsHistory");
-        const q = query(colRef, where("creatorId", "==", userId), orderBy("updatedAt", "desc"));
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<EducationHistory, "id">),
-        }));
+    if (!userId) {
+      setGroupedHistories([]);
+      return;
+    }
+    const colRef = collection(db, "educationModelsHistory");
+    const qy = query(colRef, where("creatorId", "==", userId), orderBy("updatedAt", "desc"));
+
+    const unsub = onSnapshot(
+      qy,
+      (snapshot) => {
+        const rows = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<EducationHistory, "id">),
+        })) as EducationHistory[];
 
         // グループ化
         const map = new Map<string, GroupedHistory>();
-        data.forEach((h) => {
+        rows.forEach((h) => {
           if (!map.has(h.modelId)) {
-            map.set(h.modelId, {
-              modelId: h.modelId,
-              modelName: h.name,
-              histories: [],
-            });
+            map.set(h.modelId, { modelId: h.modelId, modelName: h.name, histories: [] });
           }
           map.get(h.modelId)!.histories.push(h);
         });
-        const grouped = Array.from(map.values());
-        setGroupedHistories(grouped);
-      } catch (e) {
-        console.error("Firestore読み込み・グルーピングエラー", e);
+
+        setGroupedHistories(Array.from(map.values()));
+      },
+      (e) => {
+        console.error("Firestore購読エラー", e);
         setGroupedHistories([]);
       }
-    }
-    fetchAndGroup();
+    );
+
+    return () => unsub();
   }, [userId]);
 
   const toggleExpand = (modelId: string) => {
     setExpandedIds((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(modelId)) {
-        newSet.delete(modelId);
-      } else {
-        newSet.add(modelId);
-      }
+      if (newSet.has(modelId)) newSet.delete(modelId);
+      else newSet.add(modelId);
       return newSet;
     });
   };
@@ -188,7 +192,7 @@ export default function GroupedHistoryPage() {
             ...group,
             histories: group.histories.filter((h) => h.id !== id),
           }))
-          .filter((group) => group.histories.length > 0) // 履歴0のグループは削除
+          .filter((group) => group.histories.length > 0)
       );
       alert("削除しました");
     } catch (error) {
@@ -197,8 +201,17 @@ export default function GroupedHistoryPage() {
     }
   };
 
-  function formatDateTime(dateString: string): string {
-    const d = new Date(dateString);
+  function formatDateTime(anyDate: any): string {
+    // Firestore Timestamp/Date/string を安全に扱う
+    const d: Date =
+      anyDate?.toDate?.() instanceof Date
+        ? anyDate.toDate()
+        : typeof anyDate === "string"
+        ? new Date(anyDate)
+        : anyDate instanceof Date
+        ? anyDate
+        : new Date(NaN);
+    if (isNaN(d.getTime())) return "—";
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -283,6 +296,7 @@ export default function GroupedHistoryPage() {
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
+            // 最新→過去のデータ rows を受け取り、表示は時系列で見やすいように昇順
             const historiesAsc = [...histories].reverse();
 
             return (
@@ -304,11 +318,7 @@ export default function GroupedHistoryPage() {
                         <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
                           <h2 style={cardTitleStyle}>{h.name}</h2>
                           <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
-                          <FieldWithDiff
-                            current={h.evaluationFocus}
-                            previous={prev?.evaluationFocus}
-                            label="評価観点"
-                          />
+                          <FieldWithDiff current={h.evaluationFocus} previous={prev?.evaluationFocus} label="評価観点" />
                           <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
                           <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
                           <button
