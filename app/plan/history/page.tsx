@@ -14,11 +14,46 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 
+// Firestore Timestamp / 文字列 / 数値 / null を「ms」へ正規化
+function normalizeTimestamp(input: any): number {
+  if (!input) return 0;
+  // Firestore Timestamp の典型（toDate を持つ）
+  if (typeof input === "object" && typeof input.toDate === "function") {
+    try {
+      return input.toDate().getTime();
+    } catch {
+      return 0;
+    }
+  }
+  // seconds / nanoseconds を持つ素の形
+  if (
+    typeof input === "object" &&
+    typeof input.seconds === "number" &&
+    typeof input.nanoseconds === "number"
+  ) {
+    return input.seconds * 1000 + Math.floor(input.nanoseconds / 1e6);
+  }
+  // 既に number（ms or sec）想定
+  if (typeof input === "number") {
+    // 13桁なら ms、10桁なら sec
+    if (input > 1e12) return input;
+    if (input > 1e9) return input * 1000;
+    return input;
+  }
+  // 文字列（ISO等）
+  if (typeof input === "string") {
+    const t = Date.parse(input);
+    return Number.isNaN(t) ? 0 : t;
+  }
+  return 0;
+}
+
 type ParsedResult = { [key: string]: any };
 
 type LessonPlan = {
   id: string;
-  timestamp: string;
+  timestamp?: any;       // 元の値（任意）
+  timestampMs: number;   // 並べ替え用の一貫した ms 値
   subject: string;
   grade: string;
   genre: string;
@@ -49,7 +84,7 @@ export default function HistoryPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // Firestore から自分の授業案を集約して取得
+  // Firestore から自分の授業案を集約して取得（型正規化済みで返す）
   async function fetchMyPlansFromFirestore(): Promise<LessonPlan[]> {
     if (!userEmail) return [];
     const all: LessonPlan[] = [];
@@ -58,9 +93,12 @@ export default function HistoryPage() {
       const snap = await getDocs(q);
       snap.forEach((d) => {
         const data = d.data() as any;
+        const rawTs = data.timestamp ?? data.updatedAt ?? data.createdAt ?? null;
+        const tsMs = normalizeTimestamp(rawTs);
         all.push({
           id: d.id,
-          timestamp: data.timestamp || "",
+          timestamp: rawTs,
+          timestampMs: tsMs,
           subject: data.subject || "",
           grade: data.grade || "",
           genre: data.genre || "",
@@ -76,18 +114,33 @@ export default function HistoryPage() {
   }
 
   useEffect(() => {
-    // ローカル保存分
+    // ローカル保存分（timestamp を正規化して timestampMs に）
     let local: LessonPlan[] = [];
     const stored = localStorage.getItem("lessonPlans");
     if (stored) {
       try {
-        local = JSON.parse(stored) as LessonPlan[];
+        const arr = JSON.parse(stored) as any[];
+        local = (arr || []).map((p) => {
+          const tsRaw = p?.timestamp ?? p?.updatedAt ?? p?.createdAt ?? null;
+          return {
+            id: String(p.id),
+            timestamp: tsRaw,
+            timestampMs: normalizeTimestamp(tsRaw),
+            subject: String(p.subject ?? ""),
+            grade: String(p.grade ?? ""),
+            genre: String(p.genre ?? ""),
+            unit: String(p.unit ?? ""),
+            hours: p.hours ?? "",
+            languageActivities: String(p.languageActivities ?? ""),
+            usedStyleName: p.usedStyleName ?? null,
+            result: p.result,
+          } as LessonPlan;
+        });
       } catch {
         local = [];
       }
     }
 
-    // Firestore 分
     (async () => {
       const remote = await fetchMyPlansFromFirestore();
 
@@ -101,15 +154,13 @@ export default function HistoryPage() {
       // 並び替え適用（既定：新着）
       const sorted = [...merged].sort((a, b) => {
         if (sortKey === "grade") {
-          return String(a.grade).localeCompare(String(b.grade));
+          return String(a.grade).localeCompare(String(b.grade), "ja");
         }
         if (sortKey === "subject") {
-          return String(a.subject).localeCompare(String(b.subject));
+          return String(a.subject).localeCompare(String(b.subject), "ja");
         }
-        return (
-          new Date(b.timestamp || 0).getTime() -
-          new Date(a.timestamp || 0).getTime()
-        );
+        // 新着順（降順）
+        return (b.timestampMs || 0) - (a.timestampMs || 0);
       });
 
       setPlans(sorted);
@@ -146,17 +197,13 @@ export default function HistoryPage() {
     const raw = localStorage.getItem("lessonPlans");
     if (raw) {
       try {
-        const arr: LessonPlan[] = JSON.parse(raw);
-        const next = arr.filter((p) => p.id !== id);
+        const arr: any[] = JSON.parse(raw);
+        const next = arr.filter((p) => String(p.id) !== id);
         localStorage.setItem("lessonPlans", JSON.stringify(next));
       } catch {}
     }
 
-    alert(
-      `削除しました（${
-        remoteDeleted ? "Firestore・" : ""
-      }ローカル）。`
-    );
+    alert(`削除しました（${remoteDeleted ? "Firestore・" : ""}ローカル）。`);
   };
 
   // --- スタイル ---
@@ -392,7 +439,9 @@ export default function HistoryPage() {
                     {plan.hours}時間
                   </p>
                   <p style={{ fontSize: "0.9rem", color: "#555" }}>
-                    {plan.timestamp ? new Date(plan.timestamp).toLocaleString() : ""}
+                    {plan.timestampMs
+                      ? new Date(plan.timestampMs).toLocaleString("ja-JP")
+                      : ""}
                   </p>
 
                   {plan.result && (
