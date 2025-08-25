@@ -4,19 +4,10 @@ import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { openDB } from "idb";
 import { signOut, useSession } from "next-auth/react";
-import {
-  doc,
-  setDoc,
-  serverTimestamp,
-  runTransaction,
-  getDoc,
-} from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, storage } from "../../../firebaseConfig";
-import { ref, uploadString, getDownloadURL } from "firebase/storage";
+import { ref, uploadString, uploadBytes, getDownloadURL } from "firebase/storage";
 
-/* =========================
-   型
-========================= */
 type BoardImage = { name: string; src: string };
 
 type PracticeRecord = {
@@ -30,7 +21,7 @@ type PracticeRecord = {
   genre?: string;
   unitName?: string;
   authorName?: string;
-  modelType: string; // lesson_plans_xxx
+  modelType: string; // lesson_plans_* を想定
 };
 
 type LessonPlan = {
@@ -57,9 +48,7 @@ type ParsedResult = {
   };
 };
 
-/* =========================
-   IndexedDB
-========================= */
+// ---------------- IndexedDB ----------------
 const DB_NAME = "PracticeDB";
 const STORE_NAME = "practiceRecords";
 const DB_VERSION = 1;
@@ -79,14 +68,12 @@ async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> 
   return idb.get(STORE_NAME, lessonId);
 }
 
-async function saveRecordToIndexedDB(rec: PracticeRecord) {
+async function saveRecord(record: PracticeRecord) {
   const idb = await getDB();
-  await idb.put(STORE_NAME, rec);
+  await idb.put(STORE_NAME, record);
 }
 
-/* =========================
-   画像処理
-========================= */
+// ---------------- 画像ユーティリティ ----------------
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -141,19 +128,51 @@ function resizeAndCompressFile(
   });
 }
 
-async function uploadImageToStorage(
-  base64: string,
-  fileName: string,
-  uid: string
-): Promise<string> {
-  const storageRef = ref(storage, `practiceImages/${uid}/${fileName}`);
-  await uploadString(storageRef, base64, "data_url");
-  return getDownloadURL(storageRef);
+// ----------- 画像URL 判定ヘルパー & 汎用アップローダ -----------
+function isDataUrl(s: string) {
+  return typeof s === "string" && s.startsWith("data:");
+}
+function isBlobUrl(s: string) {
+  return typeof s === "string" && s.startsWith("blob:");
+}
+function isHttpUrl(s: string) {
+  return typeof s === "string" && /^https?:\/\//.test(s);
+}
+function isFirebaseStorageUrl(s: string) {
+  return isHttpUrl(s) && /firebasestorage\.googleapis\.com/.test(s);
 }
 
-/* =========================
-   モデル・コレクション変換
-========================= */
+// src が data:/blob:/http(s):/素のbase64 いずれでもOK
+async function uploadImageToStorageFromAny(src: string, fileName: string, uid: string): Promise<string> {
+  const path = `practiceImages/${uid}/${fileName}`;
+  const imgRef = ref(storage, path);
+
+  // すでに Firebase Storage のURLなら再アップロード不要
+  if (isFirebaseStorageUrl(src)) {
+    return src;
+  }
+
+  // data: URL
+  if (isDataUrl(src)) {
+    await uploadString(imgRef, src, "data_url");
+    return getDownloadURL(imgRef);
+  }
+
+  // blob: or http(s):
+  if (isBlobUrl(src) || isHttpUrl(src)) {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    await uploadBytes(imgRef, blob);
+    return getDownloadURL(imgRef);
+  }
+
+  // 素のbase64（保険）
+  const maybeDataUrl = `data:image/jpeg;base64,${src}`;
+  await uploadString(imgRef, maybeDataUrl, "data_url");
+  return getDownloadURL(imgRef);
+}
+
+// ---------------- モデルタイプ選択 ----------------
 const modelTypes = [
   { label: "読解モデル", value: "lesson_plans_reading" },
   { label: "話し合いモデル", value: "lesson_plans_discussion" },
@@ -161,43 +180,12 @@ const modelTypes = [
   { label: "言語活動モデル", value: "lesson_plans_language_activity" },
 ];
 
-function modelTypeToSlug(modelType: string) {
-  return modelType.replace(/^lesson_plans_/, "");
-}
-function slugToPractice(slug: string) {
-  return `practiceRecords_${slug}`;
-}
-
-/* =========================
-   Firestore 読み出し（既存レコード確認）
-========================= */
-const PRACTICE_COLLECTIONS = [
-  "practiceRecords_reading",
-  "practiceRecords_discussion",
-  "practiceRecords_writing",
-  "practiceRecords_language_activity",
-];
-
-async function findRemotePracticeDocument(lessonId: string) {
-  for (const coll of PRACTICE_COLLECTIONS) {
-    const ref = doc(db, coll, lessonId);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      return { data: snap.data(), collectionName: coll };
-    }
-  }
-  return null;
-}
-
-/* =========================
-   コンポーネント
-========================= */
+// ---------------- コンポーネント ----------------
 export default function PracticeAddPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
   const { data: session } = useSession();
 
-  // 入力系
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
@@ -209,38 +197,15 @@ export default function PracticeAddPage() {
   const [unitName, setUnitName] = useState("");
   const [modelType, setModelType] = useState(modelTypes[0].value);
 
-  // 補助
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // 競合対策
-  const [lastSeenVersion, setLastSeenVersion] = useState<number>(0);
-  const [dirty, setDirty] = useState<boolean>(false);
-
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 変更監視（離脱警告）
+  // 既存の授業案/下書きをロード
   useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirty) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
-
-  // 値の変更で dirty にする
-  useEffect(() => {
-    setDirty(true);
-  }, [practiceDate, reflection, boardImages, compressedImages, lessonTitle, authorName, grade, genre, unitName, modelType]);
-
-  // 初期ロード（授業案・ローカル実践案、そしてリモート確認）
-  useEffect(() => {
-    // 授業案（ローカル保管分から）
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[];
     try {
@@ -265,7 +230,6 @@ export default function PracticeAddPage() {
       setLessonTitle("");
     }
 
-    // ローカル実践案
     getRecord(id).then((existing) => {
       if (existing) {
         setPracticeDate(existing.practiceDate);
@@ -284,58 +248,9 @@ export default function PracticeAddPage() {
         setModelType(existing.modelType || modelTypes[0].value);
       }
     });
-
-    // リモートに既存ドキュメントがあるか確認（別端末編集の同期）
-    (async () => {
-      const remote = await findRemotePracticeDocument(id);
-      if (remote?.data) {
-        // version 管理
-        const ver = typeof remote.data.version === "number" ? remote.data.version : 0;
-        setLastSeenVersion(ver);
-
-        // ローカルが空っぽなら、リモート値を反映して編集再開できるようにする
-        if (!record) {
-          setPracticeDate(remote.data.practiceDate ?? "");
-          setReflection(remote.data.reflection ?? "");
-          setBoardImages(Array.isArray(remote.data.boardImages) ? remote.data.boardImages : []);
-          setCompressedImages(Array.isArray(remote.data.boardImages) ? remote.data.boardImages : []);
-          setLessonTitle(remote.data.lessonTitle ?? "");
-          setAuthorName(remote.data.authorName ?? "");
-          setGrade(remote.data.grade ?? "");
-          setGenre(remote.data.genre ?? "");
-          setUnitName(remote.data.unitName ?? "");
-          // remote.data.modelType は practiceRecords_xxx の場合があるため補正
-          const mt =
-            typeof remote.data.modelType === "string" &&
-            remote.data.modelType.startsWith("lesson_plans_")
-              ? remote.data.modelType
-              : `lesson_plans_${(remote.data.modelType || "")
-                  .toString()
-                  .replace(/^practiceRecords_/, "")}`;
-          setModelType(mt);
-          setRecord({
-            lessonId: id,
-            practiceDate: remote.data.practiceDate ?? "",
-            reflection: remote.data.reflection ?? "",
-            boardImages: Array.isArray(remote.data.boardImages) ? remote.data.boardImages : [],
-            compressedImages: Array.isArray(remote.data.boardImages) ? remote.data.boardImages : [],
-            lessonTitle: remote.data.lessonTitle ?? "",
-            authorName: remote.data.authorName ?? "",
-            grade: remote.data.grade ?? "",
-            genre: remote.data.genre ?? "",
-            unitName: remote.data.unitName ?? "",
-            modelType: mt,
-          });
-          setDirty(false);
-        }
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  /* =========================
-     ハンドラ
-  ========================= */
+  // 画像選択
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -365,6 +280,7 @@ export default function PracticeAddPage() {
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
   };
 
+  // プレビュー生成
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
     setRecord({
@@ -380,71 +296,57 @@ export default function PracticeAddPage() {
       unitName,
       modelType,
     });
-    setDirty(true);
   };
 
-  /* =========================
-     Firestore 保存（楽観ロック/バージョン）
-  ========================= */
-  async function saveRecordToFirestoreWithVersion(
-    rec: PracticeRecord & { compressedImages: BoardImage[] }
-  ) {
-    const uid = auth.currentUser?.uid ?? null;
-    const userEmail = session?.user?.email ?? null;
+  async function saveRecordToIndexedDB(rec: PracticeRecord) {
+    const idb = await getDB();
+    await idb.put(STORE_NAME, rec);
+  }
 
+  // Firestore 保存（画像は data:/blob:/http(s) どれでもOK）
+  async function saveRecordToFirestore(rec: PracticeRecord & { compressedImages: BoardImage[] }) {
+    const uid = auth.currentUser?.uid;
+    const userEmail = session?.user?.email;
     if (!uid || !userEmail) {
       alert("ログインが必要です。");
       throw new Error("Not logged in");
     }
 
-    // 画像アップロード（圧縮版を使用）
+    // 画像ソースは compressedImages があればそちら優先、なければ boardImages
+    const sourceImages = (rec.compressedImages?.length ? rec.compressedImages : rec.boardImages) || [];
+
     const uploadedUrls: BoardImage[] = await Promise.all(
-      (rec.compressedImages || []).map(async (img) => {
-        const url = await uploadImageToStorage(img.src, `${rec.lessonId}_${img.name}`, uid);
+      sourceImages.map(async (img, idx) => {
+        // すでに Firebase のURLなら再アップロードしない
+        if (isFirebaseStorageUrl(img.src)) {
+          return { name: img.name, src: img.src };
+        }
+        const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const url = await uploadImageToStorageFromAny(img.src, safeName, uid);
         return { name: img.name, src: url };
       })
     );
 
-    const slug = modelTypeToSlug(rec.modelType);
-    const collectionName = slugToPractice(slug);
-    const ref = doc(db, collectionName, rec.lessonId);
+    const practiceRecordCollection = rec.modelType.replace("lesson_plans_", "practiceRecords_");
+    const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      const remoteVer = snap.exists() ? (snap.data()?.version ?? 0) : 0;
-
-      // 直近で見た version と違うなら、他端末更新の可能性を警告
-      if (remoteVer !== lastSeenVersion) {
-        const ok = confirm(
-          "他の端末で更新されています。現在の編集内容で上書きしますか？（キャンセルすると保存を中止します）"
-        );
-        if (!ok) throw new Error("ABORTED_BY_USER");
-      }
-
-      const nowData = {
-        ownerUid: uid,
-        practiceDate: rec.practiceDate,
-        reflection: rec.reflection,
-        boardImages: uploadedUrls,
-        lessonTitle: rec.lessonTitle,
-        author: userEmail,
-        authorName: rec.authorName,
-        grade: rec.grade || "",
-        genre: rec.genre || "",
-        unitName: rec.unitName || "",
-        modelType: rec.modelType, // lesson_plans_xxx のまま保存（既存仕様踏襲）
-        version: remoteVer + 1,
-        updatedAt: serverTimestamp(),
-        createdAt: snap.exists()
-          ? snap.data()?.createdAt ?? serverTimestamp()
-          : serverTimestamp(),
-      };
-
-      tx.set(ref, nowData, { merge: true });
-      setLastSeenVersion(remoteVer + 1);
-    });
+    await setDoc(docRef, {
+      ownerUid: uid,
+      practiceDate: rec.practiceDate,
+      reflection: rec.reflection,
+      boardImages: uploadedUrls,
+      lessonTitle: rec.lessonTitle,
+      author: userEmail,
+      authorName: rec.authorName,
+      grade: rec.grade || "",
+      genre: rec.genre || "",
+      unitName: rec.unitName || "",
+      modelType: rec.modelType,
+      createdAt: serverTimestamp(),
+    }, { merge: true });
   }
 
+  // ローカル + Firestore 保存
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -452,41 +354,28 @@ export default function PracticeAddPage() {
     }
     setUploading(true);
     try {
-      // 1) ローカル保存
       await saveRecordToIndexedDB(record);
-
-      // 2) Firestore 保存（バージョン管理）
-      await saveRecordToFirestoreWithVersion({ ...record, compressedImages });
-
-      setDirty(false);
+      await saveRecordToFirestore({ ...record, compressedImages });
       alert("ローカルとFirebaseに保存しました");
       router.push("/practice/history");
-    } catch (e: any) {
-      if (e?.message === "ABORTED_BY_USER") {
-        // ユーザーが上書きを拒否
-        alert("保存を中止しました。最新の内容を読み込み直すか、内容を見直してください。");
-      } else {
-        alert("保存に失敗しました");
-        console.error(e);
-      }
+    } catch (e) {
+      alert("保存に失敗しました");
+      console.error(e);
     } finally {
       setUploading(false);
     }
   };
 
-  /* =========================
-     UI
-  ========================= */
   return (
     <>
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
-          onClick={() => setMenuOpen((p) => !p)}
+          onClick={toggleMenu}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && setMenuOpen((p) => !p)}
+          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
         >
           <span style={barStyle}></span>
           <span style={barStyle}></span>
@@ -598,7 +487,14 @@ export default function PracticeAddPage() {
         </p>
 
         <form onSubmit={handlePreview}>
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               実践開始日：<br />
               <input
@@ -611,7 +507,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               作成者名：
               <input
@@ -624,7 +527,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               学年：
               <select
@@ -644,7 +554,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               ジャンル：
               <select
@@ -661,7 +578,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               単元名：
               <input
@@ -674,7 +598,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               モデルタイプ：
               <select
@@ -692,7 +623,14 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={fieldGroupStyle}>
+          <div
+            style={{
+              border: "2px solid #1976d2",
+              borderRadius: 6,
+              padding: 12,
+              marginBottom: 16,
+            }}
+          >
             <label>
               振り返り：
               <textarea
@@ -748,7 +686,17 @@ export default function PracticeAddPage() {
                   type="button"
                   aria-label="画像を削除"
                   onClick={() => handleRemoveImage(i)}
-                  style={removeImgBtnStyle}
+                  style={{
+                    backgroundColor: "rgba(229, 57, 53, 0.85)",
+                    border: "none",
+                    borderRadius: 4,
+                    color: "white",
+                    width: 24,
+                    height: 24,
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                    marginTop: 4,
+                  }}
                 >
                   ×
                 </button>
@@ -758,7 +706,16 @@ export default function PracticeAddPage() {
 
           <button
             type="submit"
-            style={primaryBtnStyle}
+            style={{
+              padding: 12,
+              backgroundColor: "#4caf50",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              width: "100%",
+              cursor: "pointer",
+              marginTop: 16,
+            }}
             disabled={uploading}
           >
             {uploading ? "アップロード中..." : "プレビューを生成"}
@@ -768,12 +725,29 @@ export default function PracticeAddPage() {
         {record && (
           <section
             id="practice-preview"
-            style={previewWrapperStyle}
+            style={{
+              marginTop: 24,
+              padding: 24,
+              border: "1px solid #ccc",
+              borderRadius: 6,
+              backgroundColor: "#fff",
+              fontSize: 14,
+              lineHeight: 1.6,
+              fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif",
+            }}
           >
             <h2>{lessonTitle}</h2>
 
             {lessonPlan?.result && typeof lessonPlan.result === "object" && (
-              <section style={planPreviewStyle}>
+              <section
+                style={{
+                  border: "2px solid #2196F3",
+                  borderRadius: 6,
+                  padding: 12,
+                  marginBottom: 16,
+                  backgroundColor: "#e3f2fd",
+                }}
+              >
                 <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>
                   授業案詳細（プレビュー）
                 </h3>
@@ -807,9 +781,9 @@ export default function PracticeAddPage() {
                       {Array.isArray(
                         (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]
                       )
-                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                            "知識・技能"
-                          ]!.map((v, i) => <li key={`knowledge-${i}`}>{v}</li>)
+                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]!.map(
+                            (v, i) => <li key={`knowledge-${i}`}>{v}</li>
+                          )
                         : null}
                     </ul>
                   </div>
@@ -819,9 +793,11 @@ export default function PracticeAddPage() {
                       {Array.isArray(
                         (lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]
                       )
-                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                            "思考・判断・表現"
-                          ]!.map((v, i) => <li key={`thinking-${i}`}>{v}</li>)
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["思考・判断・表現"]!.map((v, i) => (
+                            <li key={`thinking-${i}`}>{v}</li>
+                          ))
                         : null}
                     </ul>
                   </div>
@@ -833,9 +809,11 @@ export default function PracticeAddPage() {
                           "主体的に学習に取り組む態度"
                         ]
                       )
-                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                            "主体的に学習に取り組む態度"
-                          ]!.map((v, i) => <li key={`attitude-${i}`}>{v}</li>)
+                        ? (lessonPlan.result as ParsedResult)[
+                            "評価の観点"
+                          ]?.["主体的に学習に取り組む態度"]!.map((v, i) => (
+                            <li key={`attitude-${i}`}>{v}</li>
+                          ))
                         : Array.isArray(
                             (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]
                           )
@@ -926,7 +904,16 @@ export default function PracticeAddPage() {
 
         <button
           onClick={handleSaveBoth}
-          style={saveBtnStyle}
+          style={{
+            padding: 12,
+            backgroundColor: "#4caf50",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            width: "100%",
+            cursor: "pointer",
+            marginTop: 16,
+          }}
           disabled={uploading}
         >
           {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
@@ -936,9 +923,7 @@ export default function PracticeAddPage() {
   );
 }
 
-/* =========================
-   スタイル
-========================= */
+// ---------------- Styles ----------------
 const navBarStyle: React.CSSProperties = {
   position: "fixed",
   top: 0,
@@ -1024,58 +1009,4 @@ const containerStyle: React.CSSProperties = {
   margin: "auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
-};
-const fieldGroupStyle: React.CSSProperties = {
-  border: "2px solid #1976d2",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
-};
-const removeImgBtnStyle: React.CSSProperties = {
-  backgroundColor: "rgba(229, 57, 53, 0.85)",
-  border: "none",
-  borderRadius: 4,
-  color: "white",
-  width: 24,
-  height: 24,
-  cursor: "pointer",
-  fontWeight: "bold",
-  marginTop: 4,
-};
-const primaryBtnStyle: React.CSSProperties = {
-  padding: 12,
-  backgroundColor: "#4caf50",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  width: "100%",
-  cursor: "pointer",
-  marginTop: 16,
-};
-const previewWrapperStyle: React.CSSProperties = {
-  marginTop: 24,
-  padding: 24,
-  border: "1px solid #ccc",
-  borderRadius: 6,
-  backgroundColor: "#fff",
-  fontSize: 14,
-  lineHeight: 1.6,
-  fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif",
-};
-const planPreviewStyle: React.CSSProperties = {
-  border: "2px solid #2196F3",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
-  backgroundColor: "#e3f2fd",
-};
-const saveBtnStyle: React.CSSProperties = {
-  padding: 12,
-  backgroundColor: "#4caf50",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  width: "100%",
-  cursor: "pointer",
-  marginTop: 16,
 };
