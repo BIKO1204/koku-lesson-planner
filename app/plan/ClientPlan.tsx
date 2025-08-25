@@ -26,9 +26,9 @@ type StyleModel = {
 type ParsedResult = {
   [key: string]: any;
   評価の観点: {
-    "知識・技能": string[];
-    "思考・判断・表現": string[];
-    "主体的に学習に取り組む態度": string[];
+    "知識・技能": string[] | string;
+    "思考・判断・表現": string[] | string;
+    "主体的に学習に取り組む態度": string[] | string;
     態度?: string[]; // 任意キー対応
   };
 };
@@ -57,10 +57,105 @@ type LessonPlanStored = {
   usedStyleName?: string | null;
 };
 
+// ===================== 追加: 学習用のMarkdown構築ヘルパ =====================
+function toAssistantPlanMarkdown(r: ParsedResult): string {
+  const getA = (arrLike: any): string[] => {
+    if (!arrLike) return [];
+    return Array.isArray(arrLike) ? arrLike : [String(arrLike)];
+  };
+
+  const goal = (r["単元の目標"] ?? "").toString().trim();
+  const evalObj = r["評価の観点"] ?? {};
+  const evalKnow = getA(evalObj["知識・技能"]);
+  const evalThink = getA(evalObj["思考・判断・表現"]);
+  const evalAtt = getA(evalObj["主体的に学習に取り組む態度"]);
+  const langAct = (r["言語活動の工夫"] ?? "").toString().trim();
+
+  const flow = r["授業の流れ"] ?? {};
+  const flowLines = Object.keys(flow)
+    .sort((a, b) => {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b, "ja");
+    })
+    .map((k) => `- ${k}：\n${String(flow[k] ?? "").trim()}`)
+    .join("\n");
+
+  const parts: string[] = [];
+  parts.push("## 授業案");
+  if (goal) parts.push(`### ねらい\n${goal}`);
+  if (evalKnow.length || evalThink.length || evalAtt.length) {
+    parts.push("### 評価");
+    if (evalKnow.length) parts.push(`- 知識・技能\n${evalKnow.map((x) => `  - ${x}`).join("\n")}`);
+    if (evalThink.length) parts.push(`- 思考・判断・表現\n${evalThink.map((x) => `  - ${x}`).join("\n")}`);
+    if (evalAtt.length) parts.push(`- 主体的に学習に取り組む態度\n${evalAtt.map((x) => `  - ${x}`).join("\n")}`);
+  }
+  if (langAct) parts.push(`### 言語活動の工夫\n${langAct}`);
+  if (flowLines) parts.push(`### 流れ\n${flowLines}`);
+
+  return parts.join("\n\n").trim();
+}
+
+// 入力値からユーザープロンプト（学習用）を組み立てる
+function buildUserPromptFromInputs(args: {
+  styleName: string;
+  subject: string;
+  grade: string;
+  genre: string;
+  unit: string;
+  hours: number;
+  unitGoal: string;
+  evaluationPoints: EvaluationPoints;
+  childVision: string;
+  languageActivities: string;
+  lessonPlanList: string[];
+}): string {
+  const { styleName, subject, grade, genre, unit, hours, unitGoal, evaluationPoints, childVision, languageActivities, lessonPlanList } = args;
+
+  const flowLines = Array.from({ length: hours }, (_, i) => {
+    const step = lessonPlanList[i] || "";
+    return `${i + 1}時間目: ${step}`;
+  }).join("\n");
+
+  return [
+    "あなたは小学校の国語授業プランナーのアシスタントです。",
+    styleName ? `モデル:${styleName}` : "",
+    `【教科書名】${subject}`,
+    `【学年】${grade}`,
+    `【ジャンル】${genre}`,
+    `【単元名】${unit}`,
+    `【授業時間数】${hours}`,
+    "",
+    "■ 単元の目標:",
+    unitGoal,
+    "",
+    "■ 評価の観点 (JSON 配列形式):",
+    `知識・技能=${evaluationPoints.knowledge.join("、")};`,
+    `思考・判断・表現=${evaluationPoints.thinking.join("、")};`,
+    `主体的に学習に取り組む態度=${evaluationPoints.attitude.join("、")}`,
+    "",
+    "■ 育てたい子どもの姿:",
+    childVision,
+    "",
+    "■ 授業の流れ:",
+    flowLines,
+    "",
+    "※空欄の時間はAIが補完してください。",
+    "",
+    "■ 言語活動の工夫:",
+    languageActivities,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// ========================================================================
+
 export default function ClientPlan() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const router = useRouter();
-  const searchParams = useSearchParams() as URLSearchParams;
+  const searchParams = useSearchParams() as unknown as URLSearchParams;
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
@@ -96,6 +191,10 @@ export default function ClientPlan() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
+  // ★ 追加：学習用に保存するユーザープロンプト
+  const [lastPrompt, setLastPrompt] = useState<string>("");
+
+  // 教育観モデルの取得
   useEffect(() => {
     async function fetchStyleModels() {
       try {
@@ -115,8 +214,9 @@ export default function ClientPlan() {
     fetchStyleModels();
   }, []);
 
+  // 編集復元 & URLパラメータ反映
   useEffect(() => {
-    const storedEdit = localStorage.getItem(EDIT_KEY);
+    const storedEdit = typeof window !== "undefined" ? localStorage.getItem(EDIT_KEY) : null;
     if (storedEdit) {
       try {
         const plan = JSON.parse(storedEdit) as LessonPlanStored;
@@ -148,60 +248,42 @@ export default function ClientPlan() {
       } catch {
         setEditId(null);
         setInitialData(null);
-        localStorage.removeItem(EDIT_KEY);
+        if (typeof window !== "undefined") localStorage.removeItem(EDIT_KEY);
       }
     }
-    const styleIdParam = searchParams.get("styleId");
+    const styleIdParam = searchParams?.get?.("styleId");
     if (styleIdParam) {
       setSelectedStyleId(styleIdParam);
     }
   }, [searchParams, styleModels]);
 
+  // 学年×ジャンルの評価観点テンプレを CSV から自動補完
   useEffect(() => {
     fetch("/templates.csv")
       .then((res) => res.text())
       .then((text) => {
         const data = Papa.parse(text, { header: true }).data as any[];
-        const matched = data.filter(
-          (r) => r.学年 === grade && r.ジャンル === genre
-        );
+        const matched = data.filter((r) => r.学年 === grade && r.ジャンル === genre);
         const grouped: EvaluationPoints = {
-          knowledge: matched
-            .filter((r) => r.観点 === "knowledge")
-            .map((r) => r.内容),
-          thinking: matched
-            .filter((r) => r.観点 === "thinking")
-            .map((r) => r.内容),
-          attitude: matched
-            .filter((r) => r.観点 === "attitude")
-            .map((r) => r.内容),
+          knowledge: matched.filter((r) => r.観点 === "knowledge").map((r) => r.内容),
+          thinking: matched.filter((r) => r.観点 === "thinking").map((r) => r.内容),
+          attitude: matched.filter((r) => r.観点 === "attitude").map((r) => r.内容),
         };
-        if (
-          grouped.knowledge.length ||
-          grouped.thinking.length ||
-          grouped.attitude.length
-        ) {
+        if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
         }
       })
       .catch(() => {});
   }, [grade, genre]);
 
-  const handleAddPoint = (f: keyof EvaluationPoints) =>
-    setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
-
+  const handleAddPoint = (f: keyof EvaluationPoints) => setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
   const handleRemovePoint = (f: keyof EvaluationPoints, i: number) =>
-    setEvaluationPoints((p) => ({
-      ...p,
-      [f]: p[f].filter((_, idx) => idx !== i),
-    }));
-
+    setEvaluationPoints((p) => ({ ...p, [f]: p[f].filter((_, idx) => idx !== i) }));
   const handleChangePoint = (f: keyof EvaluationPoints, i: number, v: string) => {
     const arr = [...evaluationPoints[f]];
     arr[i] = v;
     setEvaluationPoints((p) => ({ ...p, [f]: arr }));
   };
-
   const handleLessonChange = (i: number, v: string) => {
     const arr = [...lessonPlanList];
     arr[i] = v;
@@ -222,6 +304,21 @@ export default function ClientPlan() {
     const count = Number(hours) || 0;
     const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
     setLessonPlanList(newList);
+
+    // 入力値から学習用プロンプトを先に作っておく（手動/AI共通で保存できるように）
+    const userPromptFromInputs = buildUserPromptFromInputs({
+      styleName: selectedStyleName,
+      subject,
+      grade,
+      genre,
+      unit,
+      hours: count,
+      unitGoal,
+      evaluationPoints,
+      childVision,
+      languageActivities,
+      lessonPlanList: newList,
+    });
 
     if (mode === "manual") {
       const manualFlow: Record<string, string> = {};
@@ -247,6 +344,9 @@ export default function ClientPlan() {
         "結果": "",
       };
 
+      // 手動モードでも学習用にユーザープロンプトを保存できるように
+      setLastPrompt(userPromptFromInputs);
+
       setParsedResult(manualResult);
       setLoading(false);
       return;
@@ -257,13 +357,7 @@ export default function ClientPlan() {
       const modelContent = selectedModel ? selectedModel.content : "";
 
       const flowLines = newList
-        .map((step, idx) => {
-          if (step.trim()) {
-            return `${idx + 1}時間目: ${step}`;
-          } else {
-            return `${idx + 1}時間目: `;
-          }
-        })
+        .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
         .join("\n");
 
       const prompt = `
@@ -318,15 +412,19 @@ ${languageActivities}
   "言語活動の工夫": string,
   "結果": string
 }
-      `;
+      `.trim();
+
+      // ★ 保存用：このプロンプトも持っておく
+      setLastPrompt(prompt);
 
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      const text = await res.text();
 
+      // API が JSON を返すなら： const data = await res.json();
+      const text = await res.text();
       if (!res.ok) {
         throw new Error(text || res.statusText);
       }
@@ -365,7 +463,7 @@ ${languageActivities}
 
     const isEdit = Boolean(editId);
     const idToUse = isEdit ? editId! : Date.now().toString();
-    const timestamp = new Date().toISOString(); // ローカル保存用の表示時刻
+    const timestamp = new Date().toISOString();
 
     const author = authors.find((a) => a.id === selectedAuthorId);
     if (!author) {
@@ -374,7 +472,10 @@ ${languageActivities}
     }
     const collectionName = author.collection;
 
-    // --- ローカルにもミラー保存（オフライン/復元用）
+    // ★ 学習用：assistantの“完成テキスト”を用意
+    const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
+
+    // --- ローカルにもミラー保存
     const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     if (isEdit) {
       const newArr = existingArr.map((p) =>
@@ -421,12 +522,12 @@ ${languageActivities}
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
-    // --- Firestore へ保存（端末間同期の正本）
+    // --- Firestore へ保存（正本）
     try {
       await setDoc(
         doc(db, collectionName, idToUse),
         {
-          ownerUid: uid,                 // ★ 同一アカウントの識別キー
+          ownerUid: uid, // 認可に使う
           subject,
           grade,
           genre,
@@ -439,9 +540,12 @@ ${languageActivities}
           languageActivities,
           selectedStyleId,
           result: parsedResult,
-          timestamp: serverTimestamp(),  // ★ サーバー時刻で統一
+          // ★ 追加フィールド（学習で使う）
+          assistantPlanMarkdown,      // 教師データ: assistant 側
+          userPromptText: lastPrompt, // 教師データ: user 側
+          timestamp: serverTimestamp(), // サーバー時刻
           usedStyleName: selectedStyleName || author.label,
-          author: session?.user?.email || "", 
+          author: session?.user?.email || "",
         },
         { merge: true }
       );
@@ -579,11 +683,7 @@ ${languageActivities}
         </h1>
       </nav>
 
-      <div
-        style={overlayStyle}
-        onClick={() => setMenuOpen(false)}
-        aria-hidden={!menuOpen}
-      />
+      <div style={overlayStyle} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
 
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         <button
@@ -627,21 +727,11 @@ ${languageActivities}
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "1rem" }}>
             <label style={{ marginRight: "1rem" }}>
-              <input
-                type="radio"
-                value="ai"
-                checked={mode === "ai"}
-                onChange={() => setMode("ai")}
-              />{" "}
+              <input type="radio" value="ai" checked={mode === "ai"} onChange={() => setMode("ai")} />{" "}
               AIモード
             </label>
             <label>
-              <input
-                type="radio"
-                value="manual"
-                checked={mode === "manual"}
-                onChange={() => setMode("manual")}
-              />{" "}
+              <input type="radio" value="manual" checked={mode === "manual"} onChange={() => setMode("manual")} />{" "}
               手動モード
             </label>
           </div>
@@ -686,11 +776,7 @@ ${languageActivities}
 
           <label>
             教科書名：<br />
-            <select
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              style={inputStyle}
-            >
+            <select value={subject} onChange={(e) => setSubject(e.target.value)} style={inputStyle}>
               <option>東京書籍</option>
               <option>光村図書</option>
               <option>教育出版</option>
@@ -699,11 +785,7 @@ ${languageActivities}
 
           <label>
             学年：<br />
-            <select
-              value={grade}
-              onChange={(e) => setGrade(e.target.value)}
-              style={inputStyle}
-            >
+            <select value={grade} onChange={(e) => setGrade(e.target.value)} style={inputStyle}>
               <option>1年</option>
               <option>2年</option>
               <option>3年</option>
@@ -715,11 +797,7 @@ ${languageActivities}
 
           <label>
             ジャンル：<br />
-            <select
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-              style={inputStyle}
-            >
+            <select value={genre} onChange={(e) => setGenre(e.target.value)} style={inputStyle}>
               <option>物語文</option>
               <option>説明文</option>
               <option>詩</option>
@@ -728,12 +806,7 @@ ${languageActivities}
 
           <label>
             単元名：<br />
-            <input
-              type="text"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              style={inputStyle}
-            />
+            <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle} />
           </label>
 
           <label>
@@ -749,28 +822,16 @@ ${languageActivities}
 
           <label>
             ■ 単元の目標：<br />
-            <textarea
-              value={unitGoal}
-              onChange={(e) => setUnitGoal(e.target.value)}
-              rows={2}
-              style={inputStyle}
-            />
+            <textarea value={unitGoal} onChange={(e) => setUnitGoal(e.target.value)} rows={2} style={inputStyle} />
           </label>
 
           {(["knowledge", "thinking", "attitude"] as const).map((f) => (
             <div key={f} style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                {f === "knowledge"
-                  ? "① 知識・技能："
-                  : f === "thinking"
-                  ? "② 思考・判断・表現："
-                  : "③ 主体的に学習に取り組む態度："}
+                {f === "knowledge" ? "① 知識・技能：" : f === "thinking" ? "② 思考・判断・表現：" : "③ 主体的に学習に取り組む態度："}
               </label>
               {evaluationPoints[f].map((v, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}
-                >
+                <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <textarea
                     value={v}
                     onChange={(e) => handleChangePoint(f, i, e.target.value)}
@@ -793,12 +854,7 @@ ${languageActivities}
 
           <label>
             ■ 育てたい子どもの姿：<br />
-            <textarea
-              value={childVision}
-              onChange={(e) => setChildVision(e.target.value)}
-              rows={2}
-              style={inputStyle}
-            />
+            <textarea value={childVision} onChange={(e) => setChildVision(e.target.value)} rows={2} style={inputStyle} />
           </label>
 
           <label>
@@ -813,14 +869,9 @@ ${languageActivities}
 
           {hours && (
             <div style={{ marginBottom: "1rem" }}>
-              <div style={{ marginBottom: "0.5rem" }}>
-                ■ 授業の展開（手動で入力／空欄はAIが生成）
-              </div>
+              <div style={{ marginBottom: "0.5rem" }}>■ 授業の展開（手動で入力／空欄はAIが生成）</div>
               {Array.from({ length: Number(hours) }, (_, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}
-                >
+                <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <span style={{ width: "4rem", lineHeight: "2rem" }}>{i + 1}時間目:</span>
                   <textarea
                     value={lessonPlanList[i] || ""}
@@ -833,23 +884,24 @@ ${languageActivities}
           )}
 
           <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
-            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>
-              作成モデルを選択してください（必須）
-            </div>
+            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>作成モデルを選択してください（必須）</div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               {authors.map((author) => (
                 <button
                   key={author.id}
                   type="button"
-                  onClick={() => setSelectedAuthorId(author.id)}
+                  onClick={() => {
+                    setSelectedAuthorId(author.id);
+                    setSelectedStyleId(author.id); // 固定モデルは styleId と同一にしておくと一貫
+                    setSelectedStyleName(author.label);
+                  }}
                   style={{
                     flex: 1,
                     padding: "0.8rem 1rem",
                     borderRadius: 6,
                     border: "none",
                     cursor: "pointer",
-                    backgroundColor:
-                      selectedAuthorId === author.id ? "#1976d2" : "#ccc",
+                    backgroundColor: selectedAuthorId === author.id ? "#1976d2" : "#ccc",
                     color: selectedAuthorId === author.id ? "white" : "black",
                     fontWeight: "bold",
                   }}
@@ -878,14 +930,7 @@ ${languageActivities}
 
         {parsedResult && (
           <>
-            <div
-              style={{
-                marginTop: 16,
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               <button
                 onClick={handleSave}
                 style={{
@@ -937,15 +982,7 @@ ${languageActivities}
               </button>
             </div>
 
-            <div
-              id="result-content"
-              style={{
-                ...cardStyle,
-                backgroundColor: "white",
-                minHeight: "500px",
-                padding: "16px",
-              }}
-            >
+            <div id="result-content" style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}>
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
