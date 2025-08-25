@@ -14,10 +14,21 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 
-// Firestore Timestamp / 文字列 / 数値 / null を「ms」へ正規化
+/* ---------- レスポンシブ判定 ---------- */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
+/* ---------- Timestamp 正規化 ---------- */
 function normalizeTimestamp(input: any): number {
   if (!input) return 0;
-  // Firestore Timestamp の典型（toDate を持つ）
   if (typeof input === "object" && typeof input.toDate === "function") {
     try {
       return input.toDate().getTime();
@@ -25,7 +36,6 @@ function normalizeTimestamp(input: any): number {
       return 0;
     }
   }
-  // seconds / nanoseconds を持つ素の形
   if (
     typeof input === "object" &&
     typeof input.seconds === "number" &&
@@ -33,14 +43,11 @@ function normalizeTimestamp(input: any): number {
   ) {
     return input.seconds * 1000 + Math.floor(input.nanoseconds / 1e6);
   }
-  // 既に number（ms or sec）想定
   if (typeof input === "number") {
-    // 13桁なら ms、10桁なら sec
-    if (input > 1e12) return input;
-    if (input > 1e9) return input * 1000;
+    if (input > 1e12) return input; // ms
+    if (input > 1e9) return input * 1000; // sec
     return input;
   }
-  // 文字列（ISO等）
   if (typeof input === "string") {
     const t = Date.parse(input);
     return Number.isNaN(t) ? 0 : t;
@@ -52,8 +59,8 @@ type ParsedResult = { [key: string]: any };
 
 type LessonPlan = {
   id: string;
-  timestamp?: any;       // 元の値（任意）
-  timestampMs: number;   // 並べ替え用の一貫した ms 値
+  timestamp?: any;
+  timestampMs: number;
   subject: string;
   grade: string;
   genre: string;
@@ -76,15 +83,14 @@ export default function HistoryPage() {
   const userEmail = session?.user?.email || "";
 
   const [plans, setPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">(
-    "timestamp"
-  );
+  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">("timestamp");
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
+  const isMobile = useIsMobile();
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // Firestore から自分の授業案を集約して取得（型正規化済みで返す）
+  // Firestore から取得
   async function fetchMyPlansFromFirestore(): Promise<LessonPlan[]> {
     if (!userEmail) return [];
     const all: LessonPlan[] = [];
@@ -114,7 +120,7 @@ export default function HistoryPage() {
   }
 
   useEffect(() => {
-    // ローカル保存分（timestamp を正規化して timestampMs に）
+    // ローカル保存分（timestamp を正規化）
     let local: LessonPlan[] = [];
     const stored = localStorage.getItem("lessonPlans");
     if (stored) {
@@ -144,14 +150,14 @@ export default function HistoryPage() {
     (async () => {
       const remote = await fetchMyPlansFromFirestore();
 
-      // id で重複排除（優先度：リモート > ローカル）
+      // id で重複排除（優先：リモート > ローカル）
       const map = new Map<string, LessonPlan>();
       for (const r of local) map.set(r.id, r);
       for (const r of remote) map.set(r.id, r);
 
       const merged = Array.from(map.values());
 
-      // 並び替え適用（既定：新着）
+      // 並び替え（既定：新着）
       const sorted = [...merged].sort((a, b) => {
         if (sortKey === "grade") {
           return String(a.grade).localeCompare(String(b.grade), "ja");
@@ -159,7 +165,6 @@ export default function HistoryPage() {
         if (sortKey === "subject") {
           return String(a.subject).localeCompare(String(b.subject), "ja");
         }
-        // 新着順（降順）
         return (b.timestampMs || 0) - (a.timestampMs || 0);
       });
 
@@ -170,7 +175,7 @@ export default function HistoryPage() {
 
   const sortedPlans = plans; // すでに sort 済み
 
-  // Firestore 全コレクション横断削除（存在するところだけ消す）
+  // Firestore 横断削除
   const handleDeleteBoth = async (id: string) => {
     if (!confirm("この授業案を本当に削除しますか？")) return;
 
@@ -181,7 +186,7 @@ export default function HistoryPage() {
           await deleteDoc(doc(db, coll, id));
           remoteDeleted = true;
         } catch {
-          // そのコレクションに無ければスルー
+          /* そのコレクションに無ければ無視 */
         }
       }
     } catch (e) {
@@ -206,7 +211,21 @@ export default function HistoryPage() {
     alert(`削除しました（${remoteDeleted ? "Firestore・" : ""}ローカル）。`);
   };
 
-  // --- スタイル ---
+  /* ---------- 共通ボタンスタイル ---------- */
+  const buttonStyle = (bg: string): CSSProperties => ({
+    flex: isMobile ? 1 : undefined,
+    width: isMobile ? "auto" : "100%",
+    padding: "10px 16px",
+    borderRadius: 6,
+    fontSize: "1rem",
+    cursor: "pointer",
+    color: "white",
+    border: "none",
+    textAlign: "center",
+    backgroundColor: bg,
+  });
+
+  /* ---------- スタイル ---------- */
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -332,54 +351,38 @@ export default function HistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
           </Link>
-          <Link
-            href="/models/create"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
-          <Link
-            href="/models"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
       {/* メインコンテンツ */}
-      <main style={{ padding: "72px 24px 24px 24px", maxWidth: 960, margin: "auto" }}>
-        <h2 style={{ fontSize: "2rem", marginBottom: 16 }}>保存された授業案一覧</h2>
+      <main
+        style={{
+          padding: isMobile ? "72px 16px 24px" : "72px 24px 24px",
+          maxWidth: 960,
+          margin: "auto",
+        }}
+      >
+        <h2 style={{ fontSize: isMobile ? "1.6rem" : "2rem", marginBottom: 16 }}>
+          保存された授業案一覧
+        </h2>
 
         <label style={{ display: "block", marginBottom: 16, textAlign: "right" }}>
           並び替え：
@@ -399,33 +402,31 @@ export default function HistoryPage() {
             まだ授業案が保存されていません。
           </p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {sortedPlans.map((plan) => (
               <article
                 key={plan.id}
                 style={{
                   display: "flex",
-                  flexWrap: "wrap",
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
+                  flexDirection: isMobile ? "column" : "row",
+                  gap: 16,
                   backgroundColor: "#fdfdfd",
                   border: "2px solid #ddd",
                   borderRadius: 12,
                   padding: 16,
                   boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-                  gap: 16,
                 }}
               >
-                <div
-                  style={{
-                    flex: "1 1 auto",
-                    minWidth: 0,
-                    maxWidth: "calc(100% - 160px)",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <h3 style={{ margin: "0 0 8px 0", fontSize: "1.4rem" }}>{plan.unit}</h3>
+                {/* 詳細 */}
+                <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                  <h3
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: isMobile ? "1.1rem" : "1.4rem",
+                    }}
+                  >
+                    {plan.unit}
+                  </h3>
                   <p>
                     <strong>学年・ジャンル：</strong>
                     {plan.grade}・{plan.genre}
@@ -519,10 +520,10 @@ export default function HistoryPage() {
 
                         <strong>主体的に学習に取り組む態度</strong>
                         <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-                          {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
+                          {(Array.isArray(
+                            plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                          )
                             ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                            : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                            ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
                             : plan.result["評価の観点"]?.["態度"]
                             ? [plan.result["評価の観点"]["態度"]]
                             : []
@@ -550,7 +551,7 @@ export default function HistoryPage() {
                       <div
                         style={{
                           backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
+                          border: "1px solid #ddd",  // ← 修正：文字列を正しく
                           borderRadius: 8,
                           padding: 12,
                           marginTop: 12,
@@ -577,42 +578,31 @@ export default function HistoryPage() {
                         <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {plan.result["授業の流れ"] &&
                             typeof plan.result["授業の流れ"] === "object" &&
-                            Object.entries(plan.result["授業の流れ"]).map(
-                              ([key, val], i) => (
-                                <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
-                                  <strong>{key}：</strong> {String(val)}
-                                </li>
-                              )
-                            )}
+                            Object.entries(plan.result["授業の流れ"]).map(([key, val], i) => (
+                              <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
+                                <strong>{key}：</strong> {String(val)}
+                              </li>
+                            ))}
                         </ul>
                       </div>
                     </>
                   )}
                 </div>
 
+                {/* ボタン列：PC=縦／スマホ=横 */}
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
+                    flexDirection: isMobile ? "row" : "column",
                     gap: 12,
-                    width: 140,
+                    width: isMobile ? "100%" : 140,
                     flexShrink: 0,
                     boxSizing: "border-box",
                   }}
                 >
                   <button
                     onClick={() => router.push(`/practice/add/${plan.id}`)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 16px",
-                      borderRadius: 6,
-                      fontSize: "1rem",
-                      cursor: "pointer",
-                      color: "white",
-                      border: "none",
-                      textAlign: "center",
-                      backgroundColor: "#4caf50",
-                    }}
+                    style={buttonStyle("#4caf50")}
                   >
                     ✍️ 実践記録
                   </button>
@@ -622,34 +612,14 @@ export default function HistoryPage() {
                       localStorage.setItem("editLessonPlan", JSON.stringify(plan));
                       router.push("/plan");
                     }}
-                    style={{
-                      width: "100%",
-                      padding: "10px 16px",
-                      borderRadius: 6,
-                      fontSize: "1rem",
-                      cursor: "pointer",
-                      color: "white",
-                      border: "none",
-                      textAlign: "center",
-                      backgroundColor: "#ffb300",
-                    }}
+                    style={buttonStyle("#ffb300")}
                   >
                     ✏️ 編集
                   </button>
 
                   <button
                     onClick={() => handleDeleteBoth(plan.id)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 16px",
-                      borderRadius: 6,
-                      fontSize: "1rem",
-                      cursor: "pointer",
-                      color: "white",
-                      border: "none",
-                      textAlign: "center",
-                      backgroundColor: "#f44336",
-                    }}
+                    style={buttonStyle("#f44336")}
                   >
                     🗑 削除
                   </button>
