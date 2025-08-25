@@ -441,6 +441,7 @@ ${languageActivities}
           result: parsedResult,
           timestamp: serverTimestamp(),  // ★ サーバー時刻で統一
           usedStyleName: selectedStyleName || author.label,
+          author: session?.user?.email || "", 
         },
         { merge: true }
       );

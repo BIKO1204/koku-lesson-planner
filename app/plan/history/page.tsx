@@ -1,38 +1,32 @@
-// app/plan/history/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState, CSSProperties } from "react";
+import React, { useEffect, useState, CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
+import { signOut, useSession } from "next-auth/react";
+import { db } from "../../firebaseConfig";
 import {
   collection,
   getDocs,
   query,
   where,
-  orderBy,
-  deleteDoc,
   doc,
+  deleteDoc,
 } from "firebase/firestore";
-import { signOut } from "next-auth/react";
 
-type ParsedResult = Record<string, any>;
+type ParsedResult = { [key: string]: any };
 
 type LessonPlan = {
-  // 共通表示用
   id: string;
-  timestamp?: string;
-  subject?: string;
-  grade?: string;
-  genre?: string;
-  unit?: string;
-  hours?: number | string;
-  languageActivities?: string;
+  timestamp: string;
+  subject: string;
+  grade: string;
+  genre: string;
+  unit: string;
+  hours: number | string;
+  languageActivities: string;
   usedStyleName?: string | null;
   result?: ParsedResult;
-
-  // 内部制御用
-  _collection: string; // 削除等のため、どのコレクションから来たかを保持
 };
 
 const LESSON_PLAN_COLLECTIONS = [
@@ -43,113 +37,126 @@ const LESSON_PLAN_COLLECTIONS = [
 ];
 
 export default function HistoryPage() {
-  const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { data: session } = useSession();
+  const userEmail = session?.user?.email || "";
+
   const [plans, setPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">("timestamp");
-  const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">(
+    "timestamp"
+  );
+  const [menuOpen, setMenuOpen] = useState(false);
+  const router = useRouter();
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // 現在ユーザー UID
-  const uid = auth.currentUser?.uid ?? null;
+  // Firestore から自分の授業案を集約して取得
+  async function fetchMyPlansFromFirestore(): Promise<LessonPlan[]> {
+    if (!userEmail) return [];
+    const all: LessonPlan[] = [];
+    for (const coll of LESSON_PLAN_COLLECTIONS) {
+      const q = query(collection(db, coll), where("author", "==", userEmail));
+      const snap = await getDocs(q);
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        all.push({
+          id: d.id,
+          timestamp: data.timestamp || "",
+          subject: data.subject || "",
+          grade: data.grade || "",
+          genre: data.genre || "",
+          unit: data.unit || "",
+          hours: data.hours ?? "",
+          languageActivities: data.languageActivities || "",
+          usedStyleName: data.usedStyleName ?? null,
+          result: data.result,
+        });
+      });
+    }
+    return all;
+  }
 
-  // Firestore から現在ユーザーの授業案だけ取得
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
+    // ローカル保存分
+    let local: LessonPlan[] = [];
+    const stored = localStorage.getItem("lessonPlans");
+    if (stored) {
       try {
-        setLoading(true);
-
-        // Firebase Auth がまだ確立していない場合は待機
-        // BridgeAuthProvider により起動直後に custom token でログインされます
-        // uid が取れない間はポーリング（簡易）
-        let guard = 0;
-        while (!auth.currentUser && guard < 50) {
-          await new Promise((r) => setTimeout(r, 100));
-          guard++;
-        }
-        const currentUid = auth.currentUser?.uid;
-        if (!currentUid) {
-          setPlans([]);
-          setLoading(false);
-          return;
-        }
-
-        // 各コレクションを where("ownerUid","==",uid) で取得
-        const all: LessonPlan[] = [];
-
-        for (const colName of LESSON_PLAN_COLLECTIONS) {
-          const colRef = collection(db, colName);
-          const q = query(
-            colRef,
-            where("ownerUid", "==", currentUid),
-            orderBy("timestamp", "desc")
-          );
-          const snap = await getDocs(q);
-          for (const d of snap.docs) {
-            const data = d.data() as any;
-            all.push({
-              id: d.id,
-              timestamp: data.timestamp ?? null,
-              subject: data.subject ?? data.result?.["教科書名"] ?? "",
-              grade: data.grade ?? data.result?.["学年"] ?? "",
-              genre: data.genre ?? data.result?.["ジャンル"] ?? "",
-              unit: data.unit ?? data.result?.["単元名"] ?? "",
-              hours: data.hours ?? data.result?.["授業時間数"] ?? "",
-              languageActivities: data.languageActivities ?? data.result?.["言語活動の工夫"] ?? "",
-              usedStyleName: data.usedStyleName ?? null,
-              result: data.result ?? undefined,
-              _collection: colName,
-            });
-          }
-        }
-
-        if (!cancelled) {
-          setPlans(all);
-          setLoading(false);
-        }
-      } catch (e) {
-        console.error("history load error:", e);
-        if (!cancelled) {
-          setPlans([]);
-          setLoading(false);
-        }
+        local = JSON.parse(stored) as LessonPlan[];
+      } catch {
+        local = [];
       }
     }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [uid]); // uid が切り替わったら再取得
+    // Firestore 分
+    (async () => {
+      const remote = await fetchMyPlansFromFirestore();
 
-  const sortedPlans = useMemo(() => {
-    const arr = [...plans];
-    if (sortKey === "grade") {
-      return arr.sort((a, b) => String(a.grade ?? "").localeCompare(String(b.grade ?? "")));
-    }
-    if (sortKey === "subject") {
-      return arr.sort((a, b) => String(a.subject ?? "").localeCompare(String(b.subject ?? "")));
-    }
-    // timestamp（新着順）
-    return arr.sort((a, b) => {
-      const at = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const bt = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return bt - at;
-    });
-  }, [plans, sortKey]);
+      // id で重複排除（優先度：リモート > ローカル）
+      const map = new Map<string, LessonPlan>();
+      for (const r of local) map.set(r.id, r);
+      for (const r of remote) map.set(r.id, r);
 
-  const handleDelete = async (plan: LessonPlan) => {
-    if (!confirm("この授業案を削除しますか？")) return;
+      const merged = Array.from(map.values());
+
+      // 並び替え適用（既定：新着）
+      const sorted = [...merged].sort((a, b) => {
+        if (sortKey === "grade") {
+          return String(a.grade).localeCompare(String(b.grade));
+        }
+        if (sortKey === "subject") {
+          return String(a.subject).localeCompare(String(b.subject));
+        }
+        return (
+          new Date(b.timestamp || 0).getTime() -
+          new Date(a.timestamp || 0).getTime()
+        );
+      });
+
+      setPlans(sorted);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail, sortKey]);
+
+  const sortedPlans = plans; // すでに sort 済み
+
+  // Firestore 全コレクション横断削除（存在するところだけ消す）
+  const handleDeleteBoth = async (id: string) => {
+    if (!confirm("この授業案を本当に削除しますか？")) return;
+
+    let remoteDeleted = false;
     try {
-      await deleteDoc(doc(db, plan._collection, plan.id));
-      setPlans((prev) => prev.filter((p) => !(p.id === plan.id && p._collection === plan._collection)));
+      for (const coll of LESSON_PLAN_COLLECTIONS) {
+        try {
+          await deleteDoc(doc(db, coll, id));
+          remoteDeleted = true;
+        } catch {
+          // そのコレクションに無ければスルー
+        }
+      }
     } catch (e) {
-      console.error("delete error:", e);
+      console.error("Firestore 削除エラー:", e);
       alert("Firestore 上の削除に失敗しました。");
+      return;
     }
+
+    // ローカルも更新
+    const updated = plans.filter((p) => p.id !== id);
+    setPlans(updated);
+
+    const raw = localStorage.getItem("lessonPlans");
+    if (raw) {
+      try {
+        const arr: LessonPlan[] = JSON.parse(raw);
+        const next = arr.filter((p) => p.id !== id);
+        localStorage.setItem("lessonPlans", JSON.stringify(next));
+      } catch {}
+    }
+
+    alert(
+      `削除しました（${
+        remoteDeleted ? "Firestore・" : ""
+      }ローカル）。`
+    );
   };
 
   // --- スタイル ---
@@ -237,25 +244,6 @@ export default function HistoryPage() {
 
   return (
     <>
-      <style>{`
-        @media (max-width: 600px) {
-          article {
-            flex-direction: column !important;
-          }
-          article > div:first-child {
-            max-width: 100% !important;
-          }
-          article > div:last-child {
-            flex-direction: row !important;
-            width: 100% !important;
-            gap: 8px !important;
-          }
-          article > div:last-child > button {
-            flex: 1 1 auto !important;
-          }
-        }
-      `}</style>
-
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
@@ -284,7 +272,7 @@ export default function HistoryPage() {
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
-        {/* ログアウトボタン（NextAuthサインアウト） */}
+        {/* ログアウトボタン */}
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
@@ -297,28 +285,52 @@ export default function HistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📖 計画履歴
           </Link>
-          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📷 実践履歴
           </Link>
-          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/practice/share"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🌐 共有版実践記録
           </Link>
-          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             ✏️ 教育観作成
           </Link>
-          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             📚 教育観一覧
           </Link>
-          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
+          >
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
-      {/* メイン */}
+      {/* メインコンテンツ */}
       <main style={{ padding: "72px 24px 24px 24px", maxWidth: 960, margin: "auto" }}>
         <h2 style={{ fontSize: "2rem", marginBottom: 16 }}>保存された授業案一覧</h2>
 
@@ -335,15 +347,15 @@ export default function HistoryPage() {
           </select>
         </label>
 
-        {loading ? (
-          <p style={{ textAlign: "center", fontSize: 18 }}>読み込み中…</p>
-        ) : sortedPlans.length === 0 ? (
-          <p style={{ textAlign: "center", fontSize: 18 }}>まだ授業案がありません。</p>
+        {sortedPlans.length === 0 ? (
+          <p style={{ textAlign: "center", fontSize: 18 }}>
+            まだ授業案が保存されていません。
+          </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {sortedPlans.map((plan) => (
               <article
-                key={`${plan._collection}-${plan.id}`}
+                key={plan.id}
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
@@ -372,11 +384,15 @@ export default function HistoryPage() {
                     {plan.grade}・{plan.genre}
                   </p>
                   <p>
+                    <strong>モデル：</strong>
+                    {plan.usedStyleName ?? "（未設定）"}
+                  </p>
+                  <p>
                     <strong>時間数：</strong>
                     {plan.hours}時間
                   </p>
                   <p style={{ fontSize: "0.9rem", color: "#555" }}>
-                    {plan.timestamp ? new Date(plan.timestamp).toLocaleString() : "—"}
+                    {plan.timestamp ? new Date(plan.timestamp).toLocaleString() : ""}
                   </p>
 
                   {plan.result && (
@@ -512,11 +528,13 @@ export default function HistoryPage() {
                         <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
                           {plan.result["授業の流れ"] &&
                             typeof plan.result["授業の流れ"] === "object" &&
-                            Object.entries(plan.result["授業の流れ"]).map(([key, val], i) => (
-                              <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
-                                <strong>{key}：</strong> {String(val)}
-                              </li>
-                            ))}
+                            Object.entries(plan.result["授業の流れ"]).map(
+                              ([key, val], i) => (
+                                <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
+                                  <strong>{key}：</strong> {String(val)}
+                                </li>
+                              )
+                            )}
                         </ul>
                       </div>
                     </>
@@ -550,28 +568,28 @@ export default function HistoryPage() {
                     ✍️ 実践記録
                   </button>
 
-                    <button
-                      onClick={() => {
-                        localStorage.setItem("editLessonPlan", JSON.stringify(plan));
-                        router.push("/plan");
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "10px 16px",
-                        borderRadius: 6,
-                        fontSize: "1rem",
-                        cursor: "pointer",
-                        color: "white",
-                        border: "none",
-                        textAlign: "center",
-                        backgroundColor: "#ffb300",
-                      }}
-                    >
-                      ✏️ 編集
-                    </button>
+                  <button
+                    onClick={() => {
+                      localStorage.setItem("editLessonPlan", JSON.stringify(plan));
+                      router.push("/plan");
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      borderRadius: 6,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                      color: "white",
+                      border: "none",
+                      textAlign: "center",
+                      backgroundColor: "#ffb300",
+                    }}
+                  >
+                    ✏️ 編集
+                  </button>
 
                   <button
-                    onClick={() => handleDelete(plan)}
+                    onClick={() => handleDeleteBoth(plan.id)}
                     style={{
                       width: "100%",
                       padding: "10px 16px",

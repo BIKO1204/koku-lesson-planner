@@ -9,23 +9,20 @@ import type { Session } from "next-auth";
 
 export async function GET() {
   try {
-    // 型を明示
-    const session = (await getServerSession(authOptions)) as Session & {
-      accessToken?: string;
-      error?: string;
-      userId?: string;
-    };
+    const session = (await getServerSession(authOptions as any)) as Session | null;
 
-    if (!session || !session.userId) {
+    // NextAuth の標準セッションは userId を含まないため、email を必須にします
+    const email = session?.user?.email;
+    if (!email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Google の sub を UID として統一
-    const uid = `nextauth:${session.userId}`;
+    // email を UID として利用（端末間で同一アカウントを同一UIDに統一）
+    const uid = email;
 
     const claims: Record<string, any> = {
       provider: "google",
-      email: session.user?.email ?? null,
+      email: email,
       name: session.user?.name ?? null,
     };
 
