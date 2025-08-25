@@ -1,10 +1,12 @@
+// app/layout.tsx
 import "./globals.css";
 import { Providers } from "./providers";
 import { AuthProvider } from "./contexts/AuthContext";
 import AuthWrapper from "../components/AuthWrapper";
 import Link from "next/link";
 import AdminLink from "../components/AdminLink";
-import NotificationBanner from "../components/NotificationBanner"; // ← 通知バナーを追加
+import NotificationBanner from "../components/NotificationBanner";
+import BridgeAuthProvider from "./bridge-auth-provider"; // ★ 追加：NextAuth→Firebaseブリッジ
 
 export const metadata = {
   title: "国語授業案アプリ",
@@ -25,62 +27,65 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <AuthProvider>
             <AuthWrapper>
-              {/* ★通知バナー（常に最上部に表示） */}
-              <NotificationBanner />
+              {/* ★ ブリッジ：NextAuth セッション確立後に Firebase へサインイン */}
+              <BridgeAuthProvider>
+                {/* ★通知バナー（常に最上部に表示） */}
+                <NotificationBanner />
 
-              {/* ナビゲーション */}
-              <nav style={{ padding: "1rem", borderBottom: "1px solid #ccc" }}>
-                <ul
+                {/* ナビゲーション */}
+                <nav style={{ padding: "1rem", borderBottom: "1px solid #ccc" }}>
+                  <ul
+                    style={{
+                      display: "flex",
+                      gap: "1.5rem",
+                      listStyle: "none",
+                      margin: 0,
+                      padding: 0,
+                    }}
+                  >
+                    <li>
+                      <Link href="/">ホーム</Link>
+                    </li>
+                    <li>
+                      <Link href="/contact">お問い合わせ</Link>
+                    </li>
+                    <AdminLink />
+                  </ul>
+                </nav>
+
+                {/* メインコンテンツ */}
+                <main>{children}</main>
+
+                {/* フッター */}
+                <footer
                   style={{
-                    display: "flex",
-                    gap: "1.5rem",
-                    listStyle: "none",
-                    margin: 0,
-                    padding: 0,
+                    padding: "1rem",
+                    borderTop: "1px solid #ccc",
+                    textAlign: "center",
+                    color: "#666",
+                    fontSize: "0.9rem",
                   }}
                 >
-                  <li>
-                    <Link href="/">ホーム</Link>
-                  </li>
-                  <li>
-                    <Link href="/contact">お問い合わせ</Link>
-                  </li>
-                  <AdminLink />
-                </ul>
-              </nav>
-
-              {/* メインコンテンツ */}
-              <main>{children}</main>
-
-              {/* フッター */}
-              <footer
-                style={{
-                  padding: "1rem",
-                  borderTop: "1px solid #ccc",
-                  textAlign: "center",
-                  color: "#666",
-                  fontSize: "0.9rem",
-                }}
-              >
-                <div style={{ marginBottom: "0.5rem" }}>
-                  <Link
-                    href="/terms"
-                    style={{ marginRight: "1rem", textDecoration: "underline" }}
-                  >
-                    利用規約
-                  </Link>
-                  <Link
-                    href="/privacy"
-                    style={{ marginRight: "1rem", textDecoration: "underline" }}
-                  >
-                    プライバシーポリシー
-                  </Link>
-                  <Link href="/faq" style={{ textDecoration: "underline" }}>
-                    よくある質問（FAQ）
-                  </Link>
-                </div>
-                © 2025 国語授業案作成アプリ
-              </footer>
+                  <div style={{ marginBottom: "0.5rem" }}>
+                    <Link
+                      href="/terms"
+                      style={{ marginRight: "1rem", textDecoration: "underline" }}
+                    >
+                      利用規約
+                    </Link>
+                    <Link
+                      href="/privacy"
+                      style={{ marginRight: "1rem", textDecoration: "underline" }}
+                    >
+                      プライバシーポリシー
+                    </Link>
+                    <Link href="/faq" style={{ textDecoration: "underline" }}>
+                      よくある質問（FAQ）
+                    </Link>
+                  </div>
+                  © 2025 国語授業案作成アプリ
+                </footer>
+              </BridgeAuthProvider>
             </AuthWrapper>
           </AuthProvider>
         </Providers>

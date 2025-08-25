@@ -4,9 +4,9 @@ import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { openDB } from "idb";
 import { signOut, useSession } from "next-auth/react";
-import { doc, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db, auth, storage } from "../../../firebaseConfig";
+import { ref, uploadString, getDownloadURL } from "firebase/storage";
 
 type BoardImage = { name: string; src: string };
 
@@ -54,22 +54,22 @@ const DB_VERSION = 1;
 
 async function getDB() {
   return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "lessonId" });
+    upgrade(idb) {
+      if (!idb.objectStoreNames.contains(STORE_NAME)) {
+        idb.createObjectStore(STORE_NAME, { keyPath: "lessonId" });
       }
     },
   });
 }
 
 async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> {
-  const db = await getDB();
-  return db.get(STORE_NAME, lessonId);
+  const idb = await getDB();
+  return idb.get(STORE_NAME, lessonId);
 }
 
 async function saveRecord(record: PracticeRecord) {
-  const db = await getDB();
-  await db.put(STORE_NAME, record);
+  const idb = await getDB();
+  await idb.put(STORE_NAME, record);
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -126,10 +126,8 @@ function resizeAndCompressFile(
   });
 }
 
-const storage = getStorage();
-
-async function uploadImageToStorage(base64: string, fileName: string): Promise<string> {
-  const storageRef = ref(storage, `practiceImages/${fileName}`);
+async function uploadImageToStorage(base64: string, fileName: string, uid: string): Promise<string> {
+  const storageRef = ref(storage, `practiceImages/${uid}/${fileName}`);
   await uploadString(storageRef, base64, "data_url");
   return getDownloadURL(storageRef);
 }
@@ -255,39 +253,41 @@ export default function PracticeAddPage() {
     });
   };
 
-  async function saveRecordToIndexedDB(record: PracticeRecord) {
-    const dbLocal = await getDB();
-    await dbLocal.put(STORE_NAME, record);
+  async function saveRecordToIndexedDB(rec: PracticeRecord) {
+    const idb = await getDB();
+    await idb.put(STORE_NAME, rec);
   }
 
-  async function saveRecordToFirestore(record: PracticeRecord & { compressedImages: BoardImage[] }) {
-    if (!session?.user?.email) {
+  async function saveRecordToFirestore(rec: PracticeRecord & { compressedImages: BoardImage[] }) {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !session?.user?.email) {
       alert("ログインが必要です。");
       throw new Error("Not logged in");
     }
 
     const uploadedUrls: BoardImage[] = await Promise.all(
-      record.compressedImages.map(async (img) => {
-        const url = await uploadImageToStorage(img.src, `${record.lessonId}_${img.name}`);
+      rec.compressedImages.map(async (img) => {
+        const url = await uploadImageToStorage(img.src, `${rec.lessonId}_${img.name}`, uid);
         return { name: img.name, src: url };
       })
     );
 
-    const practiceRecordCollection = record.modelType.replace("lesson_plans_", "practiceRecords_");
-    const docRef = doc(db, practiceRecordCollection, record.lessonId);
+    const practiceRecordCollection = rec.modelType.replace("lesson_plans_", "practiceRecords_");
+    const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
     await setDoc(docRef, {
-      practiceDate: record.practiceDate,
-      reflection: record.reflection,
+      ownerUid: uid,
+      practiceDate: rec.practiceDate,
+      reflection: rec.reflection,
       boardImages: uploadedUrls,
-      lessonTitle: record.lessonTitle,
+      lessonTitle: rec.lessonTitle,
       author: session.user.email,
-      authorName: record.authorName,
-      grade: record.grade || "",
-      genre: record.genre || "",
-      unitName: record.unitName || "",
-      modelType: record.modelType,
-      createdAt: new Date(),
+      authorName: rec.authorName,
+      grade: rec.grade || "",
+      genre: rec.genre || "",
+      unitName: rec.unitName || "",
+      modelType: rec.modelType,
+      createdAt: serverTimestamp(),
     });
   }
 
@@ -613,9 +613,7 @@ export default function PracticeAddPage() {
           <div style={{ marginTop: 12 }}>
             {boardImages.map((img, i) => (
               <div key={img.name + i} style={{ width: "100%", marginBottom: 12 }}>
-                <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                  板書{i + 1}
-                </div>
+                <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                 <img
                   src={img.src}
                   alt={img.name}
@@ -725,15 +723,11 @@ export default function PracticeAddPage() {
                     <strong>知識・技能</strong>
                     <ul>
                       {Array.isArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                          "知識・技能"
-                        ]
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]
                       )
-                        ? (lessonPlan.result as ParsedResult)[
-                            "評価の観点"
-                          ]?.["知識・技能"]!.map((v, i) => (
-                            <li key={`knowledge-${i}`}>{v}</li>
-                          ))
+                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]!.map(
+                            (v, i) => <li key={`knowledge-${i}`}>{v}</li>
+                          )
                         : null}
                     </ul>
                   </div>
@@ -741,9 +735,7 @@ export default function PracticeAddPage() {
                     <strong>思考・判断・表現</strong>
                     <ul>
                       {Array.isArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                          "思考・判断・表現"
-                        ]
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]
                       )
                         ? (lessonPlan.result as ParsedResult)[
                             "評価の観点"
@@ -757,9 +749,9 @@ export default function PracticeAddPage() {
                     <strong>主体的に学習に取り組む態度</strong>
                     <ul>
                       {Array.isArray(
-                        (lessonPlan.result as ParsedResult)[
-                          "評価の観点"
-                        ]?.["主体的に学習に取り組む態度"]
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
+                          "主体的に学習に取り組む態度"
+                        ]
                       )
                         ? (lessonPlan.result as ParsedResult)[
                             "評価の観点"
@@ -767,15 +759,11 @@ export default function PracticeAddPage() {
                             <li key={`attitude-${i}`}>{v}</li>
                           ))
                         : Array.isArray(
-                            (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                              "態度"
-                            ]
+                            (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]
                           )
-                        ? (lessonPlan.result as ParsedResult)[
-                            "評価の観点"
-                          ]?.["態度"]!.map((v, i) => (
-                            <li key={`attitude-alt-${i}`}>{v}</li>
-                          ))
+                        ? (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]!.map(
+                            (v, i) => <li key={`attitude-alt-${i}`}>{v}</li>
+                          )
                         : null}
                     </ul>
                   </div>
@@ -799,9 +787,7 @@ export default function PracticeAddPage() {
                 <div style={{ marginTop: 8 }}>
                   <strong>授業の流れ：</strong>
                   <ul>
-                    {typeof (lessonPlan.result as ParsedResult)[
-                      "授業の流れ"
-                    ] === "object"
+                    {typeof (lessonPlan.result as ParsedResult)["授業の流れ"] === "object"
                       ? Object.entries(
                           (lessonPlan.result as ParsedResult)["授業の流れ"]!
                         ).map(([key, val], i) => (
@@ -834,18 +820,11 @@ export default function PracticeAddPage() {
                 <div style={{ marginTop: 12 }}>
                   <strong>板書写真：</strong>
                   <div
-                    style={{
-                      marginTop: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                    }}
+                    style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}
                   >
                     {record.boardImages.map((img, i) => (
                       <div key={img.name + i} style={{ width: "100%" }}>
-                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                          板書{i + 1}
-                        </div>
+                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                         <img
                           src={img.src}
                           alt={img.name}

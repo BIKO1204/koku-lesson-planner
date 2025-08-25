@@ -2,11 +2,20 @@
 
 import { useState, useEffect, CSSProperties } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { openDB } from "idb";
 import { signOut, useSession } from "next-auth/react";
-import { doc, setDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import {
+  doc,
+  setDoc,
+  collection,
+  getDocs,
+  serverTimestamp,
+  query,
+  where,
+  orderBy,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "../../firebaseConfig";
 
 type BoardImage = { name: string; src: string };
 
@@ -17,14 +26,14 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   grade?: string;
-  modelType?: string;  // 正規化した短縮形
-  author?: string;     // ← メールアドレス（本人確認用）
-  authorName?: string; // ← 手動入力のユーザー名（表示用）
+  modelType?: string;
+  author?: string;
+  authorName?: string;
 };
 
 type LessonPlan = {
   id: string;
-  modelType: string;  // 正規化した短縮形
+  modelType: string;
   result: any;
 };
 
@@ -42,41 +51,18 @@ async function getDB() {
   });
 }
 
-async function getAllRecords(): Promise<PracticeRecord[]> {
-  const db = await getDB();
-  return db.getAll(STORE_NAME);
+async function getAllLocalRecords(): Promise<PracticeRecord[]> {
+  const dbLocal = await getDB();
+  return dbLocal.getAll(STORE_NAME);
 }
 
-async function deleteRecord(lessonId: string) {
-  const db = await getDB();
-  await db.delete(STORE_NAME, lessonId);
+async function deleteLocalRecord(lessonId: string) {
+  const dbLocal = await getDB();
+  await dbLocal.delete(STORE_NAME, lessonId);
 }
 
-async function uploadRecordToFirebase(
-  record: PracticeRecord,
-  authorEmail: string,
-  authorName: string
-) {
-  const practiceRecordCollection = record.modelType
-    ? `practiceRecords_${record.modelType}`
-    : "practiceRecords";
-
-  const docRef = doc(db, practiceRecordCollection, record.lessonId);
-  await setDoc(docRef, {
-    practiceDate: record.practiceDate,
-    reflection: record.reflection,
-    boardImages: record.boardImages,
-    lessonTitle: record.lessonTitle,
-    grade: record.grade || "",
-    modelType: record.modelType || "",
-    createdAt: serverTimestamp(),
-    author: authorEmail,
-    authorName: authorName,
-  });
-}
-
-function normalizeModelType(collectionName: string): string {
-  return collectionName.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
+function normalizeModelType(name: string): string {
+  return name.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
 }
 
 const LESSON_PLAN_COLLECTIONS = [
@@ -86,57 +72,151 @@ const LESSON_PLAN_COLLECTIONS = [
   "lesson_plans_language_activity",
 ];
 
-async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
-  let allPlans: LessonPlan[] = [];
+const PRACTICE_COLLECTIONS = [
+  "practiceRecords_reading",
+  "practiceRecords_writing",
+  "practiceRecords_discussion",
+  "practiceRecords_language_activity",
+];
 
-  for (const collectionName of LESSON_PLAN_COLLECTIONS) {
-    const colRef = collection(db, collectionName);
-    const snapshot = await getDocs(colRef);
-    const plans = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      modelType: normalizeModelType(collectionName),
-      result: doc.data().result,
+async function fetchAllMyLessonPlans(ownerUid: string): Promise<LessonPlan[]> {
+  let all: LessonPlan[] = [];
+  for (const colName of LESSON_PLAN_COLLECTIONS) {
+    const q = query(collection(db, colName), where("ownerUid", "==", ownerUid));
+    const snap = await getDocs(q);
+    const items = snap.docs.map((d) => ({
+      id: d.id,
+      modelType: normalizeModelType(colName),
+      result: (d.data() as any).result,
     }));
-    allPlans = allPlans.concat(plans);
+    all = all.concat(items);
   }
-  return allPlans;
+  return all;
+}
+
+async function fetchMyPracticeRecords(ownerUid: string): Promise<PracticeRecord[]> {
+  let all: PracticeRecord[] = [];
+  for (const colName of PRACTICE_COLLECTIONS) {
+    const q = query(
+      collection(db, colName),
+      where("ownerUid", "==", ownerUid),
+      orderBy("createdAt", "desc")
+    );
+    const snap = await getDocs(q);
+    const items = snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        lessonId: d.id,
+        lessonTitle: data.lessonTitle || "タイトルなし",
+        practiceDate:
+          typeof data.practiceDate === "string"
+            ? data.practiceDate
+            : data.practiceDate?.toDate?.()?.toISOString() ?? "",
+        reflection: data.reflection || "",
+        boardImages: Array.isArray(data.boardImages) ? data.boardImages : [],
+        grade: data.grade || "",
+        modelType: normalizeModelType(colName),
+        author: data.author || "",
+        authorName: data.authorName || "",
+      } as PracticeRecord;
+    });
+    all = all.concat(items);
+  }
+  return all;
+}
+
+async function uploadRecordToFirebase(
+  record: PracticeRecord,
+  ownerUid: string,
+  authorEmail: string,
+  authorName: string
+) {
+  const modelType = (record.modelType || "").trim();
+  if (!modelType) throw new Error("modelType が空です（reading / writing / discussion / language_activity）");
+  const practiceCollection = `practiceRecords_${modelType}`;
+  const docRef = doc(db, practiceCollection, record.lessonId);
+  await setDoc(
+    docRef,
+    {
+      ownerUid,
+      practiceDate: record.practiceDate || "",
+      reflection: record.reflection || "",
+      boardImages: Array.isArray(record.boardImages) ? record.boardImages : [],
+      lessonTitle: record.lessonTitle || "タイトルなし",
+      grade: record.grade || "",
+      modelType,
+      createdAt: serverTimestamp(),
+      author: authorEmail || "",
+      authorName: authorName || "",
+    },
+    { merge: true }
+  );
 }
 
 export default function PracticeHistoryPage() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
 
-  const [records, setRecords] = useState<PracticeRecord[]>([]);
+  const [localRecords, setLocalRecords] = useState<PracticeRecord[]>([]);
+  const [remoteRecords, setRemoteRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">("practiceDate");
   const [menuOpen, setMenuOpen] = useState(false);
   const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null);
 
-  const router = useRouter();
-
   useEffect(() => {
-    getAllRecords()
+    getAllLocalRecords()
       .then((recs) => {
-        const normalizedRecs = recs.map(r => ({
+        const normalized = recs.map((r) => ({
           ...r,
           modelType: r.modelType ? normalizeModelType(r.modelType) : "",
         }));
-        setRecords(normalizedRecs);
+        setLocalRecords(normalized);
       })
-      .catch(() => setRecords([]));
+      .catch(() => setLocalRecords([]));
 
-    fetchAllLessonPlans()
+    const uid = auth.currentUser?.uid || "";
+    if (!uid) return;
+
+    fetchAllMyLessonPlans(uid)
       .then(setLessonPlans)
       .catch(() => setLessonPlans([]));
+
+    fetchMyPracticeRecords(uid)
+      .then(setRemoteRecords)
+      .catch(() => setRemoteRecords([]));
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      const uid = user.uid;
+      try {
+        const [plans, remotes] = await Promise.all([
+          fetchAllMyLessonPlans(uid),
+          fetchMyPracticeRecords(uid),
+        ]);
+        setLessonPlans(plans);
+        setRemoteRecords(remotes);
+      } catch {}
+    });
+    return () => unsub();
   }, []);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   const gradeOrder = ["1年", "2年", "3年", "4年", "5年", "6年"];
 
-  const sorted = [...records].sort((a, b) => {
+  const remoteIdSet = new Set(remoteRecords.map((r) => r.lessonId));
+
+  const mergedMap = new Map<string, PracticeRecord>();
+  for (const r of localRecords) mergedMap.set(r.lessonId, r);
+  for (const r of remoteRecords) mergedMap.set(r.lessonId, r);
+  const mergedList = Array.from(mergedMap.values());
+
+  const sorted = [...mergedList].sort((a, b) => {
     if (sortKey === "practiceDate") {
-      return b.practiceDate.localeCompare(a.practiceDate);
+      return (b.practiceDate || "").localeCompare(a.practiceDate || "");
     } else if (sortKey === "grade") {
       const aIndex = gradeOrder.indexOf(a.grade || "");
       const bIndex = gradeOrder.indexOf(b.grade || "");
@@ -145,59 +225,53 @@ export default function PracticeHistoryPage() {
       if (bIndex === -1) return -1;
       return aIndex - bIndex;
     } else if (sortKey === "lessonTitle") {
-      return a.lessonTitle.localeCompare(b.lessonTitle);
+      return (a.lessonTitle || "").localeCompare(b.lessonTitle || "");
     }
     return 0;
   });
 
-  const handleDelete = async (lessonId: string) => {
-    if (!confirm("この実践記録を削除しますか？")) return;
+  const handleDeleteLocal = async (lessonId: string) => {
+    if (!confirm("この実践記録（ローカル）を削除しますか？\n※クラウドのデータは削除されません。")) return;
     try {
-      await deleteRecord(lessonId);
-      setRecords(records.filter((r) => r.lessonId !== lessonId));
+      await deleteLocalRecord(lessonId);
+      setLocalRecords((p) => p.filter((r) => r.lessonId !== lessonId));
     } catch {
       alert("IndexedDB上の削除に失敗しました。");
     }
   };
 
-  const handlePostToShared = async (lessonId: string) => {
-    if (!confirm("この実践記録を共有版に投稿しますか？")) return;
+  const handlePostToCloud = async (lessonId: string) => {
+    const uid = auth.currentUser?.uid || "";
+    if (!uid) {
+      alert("認証中です。数秒後に再度お試しください。");
+      return;
+    }
+    const rec =
+      localRecords.find((r) => r.lessonId === lessonId) ||
+      mergedList.find((r) => r.lessonId === lessonId);
+    if (!rec) {
+      alert("対象の実践記録が見つかりません。");
+      return;
+    }
+    if (!rec.modelType) {
+      alert("modelType が未設定のため、投稿できません。");
+      return;
+    }
 
     try {
       setUploadingRecordId(lessonId);
-      const dbLocal = await getDB();
-      const record = await dbLocal.get(STORE_NAME, lessonId);
-
-      if (!record) {
-        alert("ローカルの実践記録が見つかりませんでした。");
-        setUploadingRecordId(null);
-        return;
-      }
-
-      if (!record.lessonTitle) record.lessonTitle = "タイトルなし";
-      if (!record.modelType) {
-        alert("modelTypeが設定されていません。投稿できません。");
-        setUploadingRecordId(null);
-        return;
-      }
-
-      record.modelType = normalizeModelType(record.modelType);
-
-      const authorNameToSave = record.authorName || "";
-
-      await uploadRecordToFirebase(record, userEmail, authorNameToSave);
-
-      alert("共有版に投稿しました。");
-      router.push("/practice/share");
+      await uploadRecordToFirebase(rec, uid, userEmail, rec.authorName || "");
+      const remotes = await fetchMyPracticeRecords(uid);
+      setRemoteRecords(remotes);
+      alert("クラウドに投稿しました。");
     } catch (e: any) {
       console.error("投稿エラー:", e);
-      alert("投稿に失敗しました。\n" + (e.message || e.toString()));
+      alert("投稿に失敗しました。\n" + (e?.message || String(e)));
     } finally {
       setUploadingRecordId(null);
     }
   };
 
-  // --- スタイル群 ---
   const navBarStyle: CSSProperties = {
     position: "fixed",
     top: 0,
@@ -307,31 +381,16 @@ export default function PracticeHistoryPage() {
     whiteSpace: "nowrap",
   };
 
-  const pdfBtn: CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#FF9800",
-  };
-  const driveBtn: CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#2196F3",
-  };
-  const actionBtn: CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#4CAF50",
-  };
-  const deleteBtn: CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#f44336",
-  };
-  const postBtn: CSSProperties = {
-    ...buttonBaseStyle,
-    backgroundColor: "#800080",
-  };
+  const pdfBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#FF9800" };
+  const driveBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#2196F3" };
+  const actionBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#4CAF50" };
+  const deleteBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#f44336" };
+  const postBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#800080" };
 
   const planBlockStyle: CSSProperties = {
     backgroundColor: "#fafafa",
-    border: "1px solid #ccc",
-    borderRadius: 6,
+    border: "1px solid #ddd",
+    borderRadius: 8,
     padding: 12,
     marginTop: 12,
     whiteSpace: "normal",
@@ -356,7 +415,6 @@ export default function PracticeHistoryPage() {
 
   return (
     <>
-      {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -375,14 +433,8 @@ export default function PracticeHistoryPage() {
         </h1>
       </nav>
 
-      {/* メニューオーバーレイ */}
-      <div
-        style={overlayStyle}
-        onClick={() => setMenuOpen(false)}
-        aria-hidden={!menuOpen}
-      />
+      <div style={overlayStyle} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
 
-      {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
@@ -404,63 +456,27 @@ export default function PracticeHistoryPage() {
           <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
           </Link>
-          <Link
-            href="/models/create"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
           <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
       </div>
 
-      {/* メインコンテンツ */}
       <main style={mainContainerStyle}>
         <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>実践記録一覧</h2>
 
-        {/* 共有ページへのリンク */}
-        <div style={{ marginBottom: 20 }}>
-          <Link
-            href="/practice/share"
-            style={{
-              display: "inline-block",
-              backgroundColor: "#2196F3",
-              color: "white",
-              padding: "8px 16px",
-              borderRadius: 6,
-              textDecoration: "none",
-              cursor: "pointer",
-            }}
-          >
-            共有版実践記録を見る
-          </Link>
-        </div>
-
-        {/* 並び替えセレクト */}
         <label style={{ display: "block", textAlign: "right", marginBottom: 16 }}>
           並び替え：
           <select
@@ -475,19 +491,18 @@ export default function PracticeHistoryPage() {
         </label>
 
         {sorted.length === 0 ? (
-          <p style={{ textAlign: "center", fontSize: "1.2rem" }}>
-            まだ実践記録がありません。
-          </p>
+          <p style={{ textAlign: "center", fontSize: "1.2rem" }}>まだ実践記録がありません。</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {sorted.map((r, idx) => {
               const plan = lessonPlans.find(
-                (p) => p.id === r.lessonId && p.modelType === r.modelType
+                (p) => p.id === r.lessonId && p.modelType === (r.modelType || "")
               );
+
               return (
                 <article key={`${r.lessonId}-${idx}`} style={cardStyle}>
                   <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
-                    <h3 style={{ margin: "0 0 8px" }}>{r.lessonTitle}</h3>
+                    <h3 style={{ margin: "0 0 8px" }}>{r.lessonTitle || "タイトルなし"}</h3>
 
                     {plan && typeof plan.result === "object" && (
                       <div style={planBlockStyle}>
@@ -522,7 +537,7 @@ export default function PracticeHistoryPage() {
                                   ? [plan.result["評価の観点"]["知識・技能"]]
                                   : []
                                 ).map((v: string, i: number) => (
-                                  <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
+                                  <li key={`知識技能-${plan?.id ?? "id"}-${v}-${i}`}>{v}</li>
                                 ))}
                               </ul>
 
@@ -534,7 +549,7 @@ export default function PracticeHistoryPage() {
                                   ? [plan.result["評価の観点"]["思考・判断・表現"]]
                                   : []
                                 ).map((v: string, i: number) => (
-                                  <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
+                                  <li key={`思考判断表現-${plan?.id ?? "id"}-${v}-${i}`}>{v}</li>
                                 ))}
                               </ul>
 
@@ -548,7 +563,7 @@ export default function PracticeHistoryPage() {
                                   ? [plan.result["評価の観点"]["態度"]]
                                   : []
                                 ).map((v: string, i: number) => (
-                                  <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
+                                  <li key={`主体的-${plan?.id ?? "id"}-${v}-${i}`}>{v}</li>
                                 ))}
                               </ul>
                             </div>
@@ -590,32 +605,20 @@ export default function PracticeHistoryPage() {
                     )}
 
                     <p style={{ marginTop: 16 }}>
-                      <strong>実践開始日：</strong> {r.practiceDate}
+                      <strong>実践開始日：</strong> {r.practiceDate || "－"}
                     </p>
 
                     <p>
                       <strong>振り返り：</strong>
                       <br />
-                      {r.reflection}
+                      {r.reflection || "－"}
                     </p>
 
-                    {r.boardImages.length > 0 && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 12,
-                        }}
-                      >
+                    {Array.isArray(r.boardImages) && r.boardImages.length > 0 && (
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}>
                         {r.boardImages.map((img, i) => (
-                          <div
-                            key={`${img.name}-${i}`}
-                            style={boardImageContainerStyle}
-                          >
-                            <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                              板書{i + 1}
-                            </div>
+                          <div key={`${img.name}-${i}`} style={boardImageContainerStyle}>
+                            <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                             <img
                               src={img.src}
                               alt={img.name}
@@ -649,12 +652,11 @@ export default function PracticeHistoryPage() {
                         import("html2pdf.js").then(({ default: html2pdf }) => {
                           const el = document.getElementById(`record-${r.lessonId}`);
                           if (!el) return alert("PDF化用の要素が見つかりませんでした。");
-
                           html2pdf()
                             .from(el)
                             .set({
                               margin: [5, 5, 5, 5],
-                              filename: `${r.lessonTitle}_実践記録.pdf`,
+                              filename: `${r.lessonTitle || "タイトルなし"}_実践記録.pdf`,
                               jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                               html2canvas: { useCORS: true, scale: 3 },
                               pagebreak: { mode: ["css", "legacy"] },
@@ -666,12 +668,12 @@ export default function PracticeHistoryPage() {
                     >
                       📄 PDF保存
                     </button>
+
                     <button
                       onClick={() => {
                         import("html2pdf.js").then(async ({ default: html2pdf }) => {
                           const el = document.getElementById(`record-${r.lessonId}`);
                           if (!el) return alert("Drive保存用の要素が見つかりませんでした。");
-
                           const pdfBlob = await html2pdf()
                             .from(el)
                             .set({
@@ -681,12 +683,11 @@ export default function PracticeHistoryPage() {
                               pagebreak: { mode: ["css", "legacy"] },
                             })
                             .outputPdf("blob");
-
                           try {
                             const { uploadToDrive } = await import("../../../lib/drive");
                             await uploadToDrive(
                               pdfBlob,
-                              `${r.lessonTitle}_実践記録.pdf`,
+                              `${r.lessonTitle || "タイトルなし"}_実践記録.pdf`,
                               "application/pdf"
                             );
                             alert("Driveへの保存が完了しました。");
@@ -700,21 +701,26 @@ export default function PracticeHistoryPage() {
                     >
                       ☁️ Drive保存
                     </button>
+
                     <Link href={`/practice/add/${r.lessonId}`}>
                       <button style={actionBtn}>✏️ 編集</button>
                     </Link>
-                    <button
-                      onClick={() => handleDelete(r.lessonId)}
-                      style={deleteBtn}
-                    >
-                      🗑 削除
+
+                    <button onClick={() => handleDeleteLocal(r.lessonId)} style={deleteBtn}>
+                      🗑 ローカル削除
                     </button>
+
                     <button
-                      onClick={() => handlePostToShared(r.lessonId)}
+                      onClick={() => handlePostToCloud(r.lessonId)}
                       style={postBtn}
-                      disabled={uploadingRecordId === r.lessonId}
+                      disabled={uploadingRecordId === r.lessonId || remoteIdSet.has(r.lessonId)}
+                      title={remoteIdSet.has(r.lessonId) ? "クラウドに投稿済みです" : ""}
                     >
-                      {uploadingRecordId === r.lessonId ? "投稿中..." : "🌐 投稿"}
+                      {remoteIdSet.has(r.lessonId)
+                        ? "✅ 投稿済み"
+                        : uploadingRecordId === r.lessonId
+                        ? "投稿中..."
+                        : "🌐 クラウド投稿"}
                     </button>
                   </div>
                 </article>

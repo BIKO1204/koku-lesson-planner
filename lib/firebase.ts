@@ -1,16 +1,32 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
+// lib/firebase.ts
+"use client";
+
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import {
+  initializeFirestore,
   getFirestore,
   collection,
-  getDocs,
+  onSnapshot,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
   serverTimestamp,
+  query,
+  orderBy,
+  getDocs,
+  Firestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
 } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth";
+import { getStorage, FirebaseStorage } from "firebase/storage";
+import { getAuth, Auth } from "firebase/auth";
+
+/**
+ * Firebase クライアント初期化
+ * - Firestore は persistentLocalCache を有効化してオフラインや複数タブに強く
+ * - 既存コードとの互換のために fetch* を残しつつ、リアルタイム購読の subscribe* も提供
+ */
 
 const firebaseConfig = {
   apiKey:             process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -21,26 +37,63 @@ const firebaseConfig = {
   appId:              process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-const app = !getApps().length
-  ? initializeApp(firebaseConfig)
-  : getApp();
+const app: FirebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const auth = getAuth(app);
+// Firestore をオフラインキャッシュ込みで初期化（getFirestore より先に実行）
+initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});
 
-// --- ユーザー関連 --- //
+export const db: Firestore = getFirestore(app);
+export const storage: FirebaseStorage = getStorage(app);
+export const auth: Auth = getAuth(app);
+
+/* =========================================
+ *  ユーザー関連
+ * =======================================*/
+
+/** 既存互換：単発取得 */
 export async function fetchUsers() {
   const usersCol = collection(db, "users");
   const usersSnapshot = await getDocs(usersCol);
-  return usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return usersSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-// --- 通知関連 --- //
+/** 推奨：リアルタイム購読（unsub を返す） */
+export function subscribeUsers(
+  callback: (users: Array<{ id: string; [k: string]: any }>) => void
+) {
+  const colRef = collection(db, "users");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+  const unsub = onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+  return unsub;
+}
+
+/* =========================================
+ *  通知関連
+ * =======================================*/
+
+/** 既存互換：単発取得 */
 export async function fetchNotifications() {
   const notificationsCol = collection(db, "通知");
   const notificationsSnapshot = await getDocs(notificationsCol);
-  return notificationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return notificationsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** 推奨：リアルタイム購読（unsub を返す） */
+export function subscribeNotifications(
+  callback: (items: Array<{ id: string; [k: string]: any }>) => void
+) {
+  const colRef = collection(db, "通知");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+  const unsub = onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+  return unsub;
 }
 
 export async function addNotification(title: string, message: string) {
@@ -50,6 +103,7 @@ export async function addNotification(title: string, message: string) {
     message,
     visible: true,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 }
 
@@ -58,7 +112,7 @@ export async function updateNotification(
   data: Partial<{ title: string; message: string; visible: boolean }>
 ) {
   const notificationDoc = doc(db, "通知", id);
-  await updateDoc(notificationDoc, data);
+  await updateDoc(notificationDoc, { ...data, updatedAt: serverTimestamp() });
 }
 
 export async function deleteNotification(id: string) {
