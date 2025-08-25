@@ -2,43 +2,50 @@
 import admin from "firebase-admin";
 
 /**
- * Firebase Admin SDK 初期化（サービスアカウント一行JSON）
+ * 遅延初期化（ビルド中に走らない）＋ \n / \\n の差を吸収
  * - FIREBASE_SERVICE_ACCOUNT: 一行JSON
- * - FIREBASE_STORAGE_BUCKET または NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET を使用
+ * - FIREBASE_STORAGE_BUCKET または NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET（任意）
  */
 
-// dev のホットリロード対策（多重初期化防止）
-declare global {
-  // eslint-disable-next-line no-var
-  var __adminApp: admin.app.App | undefined;
-}
+let _app: admin.app.App | null = null;
 
-if (!global.__adminApp) {
+function initIfNeeded(): admin.app.App {
+  if (_app) return _app;
+
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) {
+    // ここで throw しても「初期化が必要なAPIを叩いた時」にだけ起きる
     throw new Error("FIREBASE_SERVICE_ACCOUNT is missing");
   }
 
-  let credentials: admin.ServiceAccount;
-  try {
-    credentials = JSON.parse(raw);
-  } catch {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON");
+  const creds: any = JSON.parse(raw);
+  if (typeof creds.private_key === "string") {
+    // ← ここが肝。\\n → \n を吸収（すでに \n なら無害）
+    creds.private_key = creds.private_key.replace(/\\n/g, "\n");
   }
 
   const storageBucket =
     process.env.FIREBASE_STORAGE_BUCKET ??
-    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET; // どちらか入っていればOK
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
-  global.__adminApp = admin.initializeApp({
-    credential: admin.credential.cert(credentials),
-    ...(storageBucket ? { storageBucket } : {}), // 未設定なら省略（落ちない）
+  _app = admin.initializeApp({
+    credential: admin.credential.cert(creds),
+    ...(storageBucket ? { storageBucket } : {}),
   });
+
+  return _app!;
 }
 
-export const adminApp = global.__adminApp!;
-export const adminAuth = admin.auth(adminApp);
-export const adminDb = admin.firestore(adminApp);
-
-// Storage は“使う時だけ”参照（@google-cloud/storage 未導入でもここまでは落ちない）
-export const getAdminStorage = () => admin.storage(adminApp);
+export function getAdminApp() {
+  return initIfNeeded();
+}
+export function getAdminAuth() {
+  return admin.auth(initIfNeeded());
+}
+export function getAdminDb() {
+  return admin.firestore(initIfNeeded());
+}
+// Storage は使う時だけ
+export function getAdminStorage() {
+  return admin.storage(initIfNeeded());
+}

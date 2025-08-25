@@ -1,7 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import admin from "firebase-admin";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { getAdminDb } from "@/lib/firebaseAdmin";
 
 async function refreshAccessToken(token: any) {
   if (!token?.refreshToken) return { ...token, error: "NoRefreshToken" as const };
@@ -42,20 +42,22 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
-  // 原因調査が終わったら false に戻してOK
   debug: true,
   callbacks: {
     async signIn({ user }) {
       if (!user?.id) return false;
-      await adminDb.collection("users").doc(user.id).set(
-        {
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          lastLogin: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await getAdminDb()
+        .collection("users")
+        .doc(user.id)
+        .set(
+          {
+            email: user.email,
+            name: user.name,
+            image: user.image,
+            lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
       return true;
     },
     async jwt({ token, account, user }) {
@@ -68,7 +70,10 @@ export const authOptions: NextAuthOptions = {
           userId: (user as any).id ?? token.sub,
         };
       }
-      const exp = typeof (token as any).accessTokenExpires === "number" ? (token as any).accessTokenExpires : 0;
+      const exp =
+        typeof (token as any).accessTokenExpires === "number"
+          ? (token as any).accessTokenExpires
+          : 0;
       if (Date.now() < exp) return token;
       return await refreshAccessToken(token);
     },
