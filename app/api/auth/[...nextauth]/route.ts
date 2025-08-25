@@ -1,26 +1,21 @@
 // app/api/auth/[...nextauth]/route.ts
 export const runtime = "nodejs";
 
-import type { AdapterUser } from "next-auth/adapters";
-import type { JWT } from "next-auth/jwt";
-import type { Session } from "next-auth";
+import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import admin from "firebase-admin";
 
+// ★ ここを「一行JSON」方式に統一（環境変数1個で済む）
 if (!admin.apps.length) {
+  const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!svc) throw new Error("FIREBASE_SERVICE_ACCOUNT is missing");
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
+    credential: admin.credential.cert(JSON.parse(svc)),
   });
 }
 const firestore = admin.firestore();
 
-let NextAuthHandler: any;
-
-async function refreshAccessToken(token: JWT): Promise<JWT> {
+async function refreshAccessToken(token: any) {
   if (!token.refreshToken) throw new Error("No refresh token available");
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -33,9 +28,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
     }),
   });
   const refreshedTokens = await response.json();
-  if (!response.ok) {
-    return { ...token, error: "RefreshAccessTokenError" as const };
-  }
+  if (!response.ok) return { ...token, error: "RefreshAccessTokenError" as const };
   return {
     ...token,
     accessToken: refreshedTokens.access_token,
@@ -45,7 +38,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   };
 }
 
-export const authOptions = {
+const handler = NextAuth({
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -59,13 +52,14 @@ export const authOptions = {
       },
     }),
   ],
+  session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
+  debug: true, // 一時的にON（原因特定用）
 
   callbacks: {
-    async signIn({ user }: { user: AdapterUser }) {
-      if (!user.id) return false;
-      const userRef = firestore.collection("users").doc(user.id);
-      await userRef.set(
+    async signIn({ user }) {
+      if (!user?.id) return false;
+      await firestore.collection("users").doc(user.id).set(
         {
           email: user.email,
           name: user.name,
@@ -77,64 +71,28 @@ export const authOptions = {
       return true;
     },
 
-    async jwt({
-      token,
-      account,
-      user,
-    }: {
-      token: JWT & { userId?: string };
-      account?: any | null;
-      user?: AdapterUser | null;
-    }): Promise<JWT & { userId?: string }> {
+    async jwt({ token, account, user }) {
       if (account && user) {
-        // Google の sub は token.sub に入る。安全のため userId にもコピー
         return {
           ...token,
-          accessToken: account.access_token,
-          refreshToken: account.refresh_token,
-          accessTokenExpires: (account.expires_at ?? 0) * 1000,
-          userId: (user as any).id ?? token.sub, // ★ ここが後続の custom-token で必要
+          accessToken: (account as any).access_token,
+          refreshToken: (account as any).refresh_token,
+          accessTokenExpires: ((account as any).expires_at ?? 0) * 1000,
+          userId: (user as any).id ?? token.sub,
         };
       }
-
-      const expires =
-        typeof token.accessTokenExpires === "number" ? token.accessTokenExpires : 0;
-      if (Date.now() < expires) {
-        return token;
-      }
-
+      const expires = typeof (token as any).accessTokenExpires === "number" ? (token as any).accessTokenExpires : 0;
+      if (Date.now() < expires) return token;
       return await refreshAccessToken(token);
     },
 
-    async session({
-      session,
-      token,
-    }: {
-      session: Session & { userId?: string; error?: string; accessToken?: string };
-      token: JWT & { userId?: string; accessToken?: string; error?: string };
-    }): Promise<Session> {
-      session.accessToken = token.accessToken as any;
+    async session({ session, token }) {
+      (session as any).accessToken = (token as any).accessToken;
       (session as any).error = (token as any).error;
-      (session as any).userId = token.userId ?? token.sub; // ★ custom-token で参照
+      (session as any).userId = (token as any).userId ?? token.sub;
       return session;
     },
   },
-};
+});
 
-async function getHandler() {
-  if (!NextAuthHandler) {
-    const mod = await import("next-auth");
-    NextAuthHandler = mod.default;
-  }
-  return NextAuthHandler(authOptions);
-}
-
-export async function GET(req: Request) {
-  const handler = await getHandler();
-  return handler(req);
-}
-
-export async function POST(req: Request) {
-  const handler = await getHandler();
-  return handler(req);
-}
+export { handler as GET, handler as POST };

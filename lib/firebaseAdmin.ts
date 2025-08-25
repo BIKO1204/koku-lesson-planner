@@ -1,24 +1,44 @@
 // lib/firebaseAdmin.ts
-import * as admin from "firebase-admin";
+import admin from "firebase-admin";
 
 /**
- * Firebase Admin SDK 初期化
- * - 環境変数 FIREBASE_SERVICE_ACCOUNT は JSON 文字列で設定
- * - FIREBASE_STORAGE_BUCKET は Firebase コンソールに表示されるバケット名をそのまま
+ * Firebase Admin SDK 初期化（サービスアカウント一行JSON）
+ * - FIREBASE_SERVICE_ACCOUNT: 一行JSON
+ * - FIREBASE_STORAGE_BUCKET または NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET を使用
  */
 
-if (!admin.apps.length) {
-  const serviceAccount =
-    process.env.FIREBASE_SERVICE_ACCOUNT
-      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-      : {};
+// dev のホットリロード対策（多重初期化防止）
+declare global {
+  // eslint-disable-next-line no-var
+  var __adminApp: admin.app.App | undefined;
+}
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET, // ← コンソールの値をそのまま使う
+if (!global.__adminApp) {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT is missing");
+  }
+
+  let credentials: admin.ServiceAccount;
+  try {
+    credentials = JSON.parse(raw);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON");
+  }
+
+  const storageBucket =
+    process.env.FIREBASE_STORAGE_BUCKET ??
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET; // どちらか入っていればOK
+
+  global.__adminApp = admin.initializeApp({
+    credential: admin.credential.cert(credentials),
+    ...(storageBucket ? { storageBucket } : {}), // 未設定なら省略（落ちない）
   });
 }
 
-export const adminAuth = admin.auth();
-export const adminDb = admin.firestore();
-export const adminStorage = admin.storage();
+export const adminApp = global.__adminApp!;
+export const adminAuth = admin.auth(adminApp);
+export const adminDb = admin.firestore(adminApp);
+
+// Storage は“使う時だけ”参照（@google-cloud/storage 未導入でもここまでは落ちない）
+export const getAdminStorage = () => admin.storage(adminApp);
