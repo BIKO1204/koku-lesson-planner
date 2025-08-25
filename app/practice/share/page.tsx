@@ -51,7 +51,7 @@ type PracticeRecord = {
   unitName?: string;
   author?: string;
   authorName?: string;
-  pdfFiles?: PdfFile[]; // 複数PDF管理
+  pdfFiles?: PdfFile[];  // 複数PDF管理
   createdAt?: string;
   modelType?: string; // モデル識別用
 };
@@ -100,13 +100,10 @@ export default function PracticeSharePage() {
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
   const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
-
   const [menuOpen, setMenuOpen] = useState(false);
-
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
   const storage = getStorage();
-
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -121,25 +118,25 @@ export default function PracticeSharePage() {
     let allRecords: PracticeRecord[] = [];
 
     modelCollections.forEach((colName) => {
-      const qRef = query(collection(db, colName), orderBy("practiceDate", "desc"));
-      const unsubscribe = onSnapshot(qRef, (snapshot) => {
-        const recs: PracticeRecord[] = snapshot.docs.map((d) => ({
-          ...(d.data() as PracticeRecord),
-          lessonId: d.id,
+      const q = query(collection(db, colName), orderBy("practiceDate", "desc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const recs: PracticeRecord[] = snapshot.docs.map((doc) => ({
+          ...(doc.data() as PracticeRecord),
+          lessonId: doc.id,
           modelType: colName.replace("practiceRecords_", ""),
-          likedUsers: (d.data() as any).likedUsers || [],
-          author: (d.data() as any).author || "",
-          authorName: (d.data() as any).authorName || "",
-          pdfFiles: (d.data() as any).pdfFiles || [],
-          createdAt: (d.data() as any).createdAt || "",
+          likedUsers: (doc.data() as any).likedUsers || [],
+          author: (doc.data() as any).author || "",
+          authorName: (doc.data() as any).authorName || "",
+          pdfFiles: (doc.data() as any).pdfFiles || [],
+          createdAt: (doc.data() as any).createdAt || "",
         }));
 
         allRecords = [
-          ...allRecords.filter((r) => r.modelType !== colName.replace("practiceRecords_", "")),
+          ...allRecords.filter(r => r.modelType !== colName.replace("practiceRecords_", "")),
           ...recs,
         ];
 
-        allRecords.sort((a, b) => (b.practiceDate || "").localeCompare(a.practiceDate || ""));
+        allRecords.sort((a, b) => b.practiceDate.localeCompare(a.practiceDate));
 
         setRecords([...allRecords]);
       });
@@ -157,16 +154,16 @@ export default function PracticeSharePage() {
     let allPlans: LessonPlan[] = [];
 
     lessonPlanCollections.forEach((colName) => {
-      const qRef = query(collection(db, colName));
-      const unsubscribe = onSnapshot(qRef, (snapshot) => {
-        const plansData: LessonPlan[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          result: d.data().result,
+      const q = query(collection(db, colName));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const plansData: LessonPlan[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          result: doc.data().result,
           modelType: colName.replace("lesson_plans_", ""),
         }));
 
         allPlans = [
-          ...allPlans.filter((p) => p.modelType !== colName.replace("lesson_plans_", "")),
+          ...allPlans.filter(p => p.modelType !== colName.replace("lesson_plans_", "")),
           ...plansData,
         ];
 
@@ -176,8 +173,8 @@ export default function PracticeSharePage() {
     });
 
     return () => {
-      unsubscribers.forEach((unsub) => unsub());
-      planUnsubs.forEach((unsub) => unsub());
+      unsubscribers.forEach(unsub => unsub());
+      planUnsubs.forEach(unsub => unsub());
     };
   }, []);
 
@@ -196,14 +193,14 @@ export default function PracticeSharePage() {
     return true;
   });
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
+  const toggleMenu = () => setMenuOpen(prev => !prev);
 
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
   };
 
-  // いいねのトグル対応
+  // いいねのトグル
   const handleLike = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -213,7 +210,7 @@ export default function PracticeSharePage() {
       alert("ユーザー情報が取得できません");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("モデルタイプが特定できません");
       return;
@@ -226,16 +223,14 @@ export default function PracticeSharePage() {
         const docSnap = await transaction.get(docRef);
         if (!docSnap.exists()) throw new Error("該当データがありません");
         const data = docSnap.data();
-        const likedUsers: string[] = (data as any).likedUsers || [];
+        const likedUsers: string[] = data.likedUsers || [];
 
         if (likedUsers.includes(userId)) {
-          // いいね解除
           transaction.update(docRef, {
             likes: increment(-1),
-            likedUsers: likedUsers.filter((id) => id !== userId),
+            likedUsers: likedUsers.filter(id => id !== userId),
           });
         } else {
-          // いいね追加
           transaction.update(docRef, {
             likes: increment(1),
             likedUsers: arrayUnion(userId),
@@ -249,10 +244,10 @@ export default function PracticeSharePage() {
   };
 
   const handleCommentChange = (lessonId: string, value: string) => {
-    setNewComments((prev) => ({ ...prev, [lessonId]: value }));
+    setNewComments(prev => ({ ...prev, [lessonId]: value }));
   };
   const handleCommentAuthorChange = (lessonId: string, value: string) => {
-    setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
+    setNewCommentAuthors(prev => ({ ...prev, [lessonId]: value }));
   };
 
   const handleAddComment = async (lessonId: string) => {
@@ -270,7 +265,7 @@ export default function PracticeSharePage() {
       alert("コメント投稿者名を入力してください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("モデルタイプが特定できません");
       return;
@@ -287,8 +282,8 @@ export default function PracticeSharePage() {
           createdAt: new Date().toISOString(),
         }),
       });
-      setNewComments((prev) => ({ ...prev, [lessonId]: "" }));
-      setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: "" }));
+      setNewComments(prev => ({ ...prev, [lessonId]: "" }));
+      setNewCommentAuthors(prev => ({ ...prev, [lessonId]: "" }));
     } catch (e) {
       console.error("コメント追加失敗", e);
       alert("コメントの投稿に失敗しました");
@@ -318,7 +313,7 @@ export default function PracticeSharePage() {
       alert("コメントを入力してください");
       return;
     }
-    const record = records.find((r) => r.lessonId === recordId);
+    const record = records.find(r => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
@@ -348,7 +343,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === recordId);
+    const record = records.find(r => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
       return;
@@ -374,16 +369,17 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
     }
+    // 投稿者のみアップロード可能（既存ロジック継続）
     if (record.author !== userId) {
       alert("PDFのアップロードは投稿者のみ可能です");
       return;
     }
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
       await uploadBytes(pdfRef, file);
@@ -402,7 +398,7 @@ export default function PracticeSharePage() {
       console.error("PDFアップロード失敗", error);
       alert("PDFアップロードに失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
@@ -411,7 +407,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
@@ -425,14 +421,14 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にPDFファイルを削除しますか？")) return;
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdfName}`);
       await deleteObject(pdfRef);
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
 
-      const newPdfFiles = (record.pdfFiles || []).filter((p) => p.name !== pdfName);
+      const newPdfFiles = (record.pdfFiles || []).filter(p => p.name !== pdfName);
 
       await updateDoc(docRef, {
         pdfFiles: newPdfFiles,
@@ -442,7 +438,7 @@ export default function PracticeSharePage() {
       console.error("PDF削除失敗", error);
       alert("PDF削除に失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
@@ -451,7 +447,7 @@ export default function PracticeSharePage() {
       alert("ログインしてください");
       return;
     }
-    const record = records.find((r) => r.lessonId === lessonId);
+    const record = records.find(r => r.lessonId === lessonId);
     if (!record || !record.modelType) {
       alert("対象の実践案またはモデルタイプが見つかりません");
       return;
@@ -461,7 +457,7 @@ export default function PracticeSharePage() {
       return;
     }
     if (!confirm("本当にこの実践案を削除しますか？")) return;
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds(prev => [...prev, lessonId]);
     try {
       if (record.pdfFiles) {
         for (const pdf of record.pdfFiles) {
@@ -477,47 +473,32 @@ export default function PracticeSharePage() {
       console.error("実践案削除失敗", error);
       alert("実践案の削除に失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds(prev => prev.filter(id => id !== lessonId));
     }
   };
 
+  // ★ ここで編集入口をガード（投稿者以外は編集不可）
   const handleEdit = (lessonId: string) => {
+    const record = records.find(r => r.lessonId === lessonId);
+    const isAuthor = !!(record && record.author && userId && record.author === userId);
+    if (!isAuthor) {
+      alert("この実践記録の編集は投稿者のみ可能です。");
+      return;
+    }
     router.push(`/practice/add/${lessonId}`);
   };
 
-  // ====== ここから：PDF画像埋め込みの改善版 ======
-
-  // 画像URL→dataURL へのフェッチfallback
-  async function fetchToDataURL(url: string): Promise<string> {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-    const blob = await res.blob();
-    return await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  // 画像をbase64化（上限なし・長めタイムアウト・fallback付き）
-  const toBase64ImageWithTimeout = (url: string, timeout = 15000): Promise<string> => {
-    if (!url || url.startsWith("data:")) {
-      // すでに dataURL の場合や空文字はそのまま返す
-      return Promise.resolve(url || "");
-    }
+  // 画像をbase64化（生成PDF用）
+  const toBase64ImageWithTimeout = (url: string, timeout = 5000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      (img as any).referrerPolicy = "no-referrer";
-
       let didTimeout = false;
       const timer = setTimeout(() => {
         didTimeout = true;
         img.src = "";
-        // タイムアウト時は fetch fallback を試す
-        fetchToDataURL(url).then(resolve).catch(reject);
+        reject(new Error("画像変換タイムアウト"));
       }, timeout);
-
       img.onload = () => {
         if (didTimeout) return;
         clearTimeout(timer);
@@ -531,33 +512,28 @@ export default function PracticeSharePage() {
           const dataUrl = canvas.toDataURL("image/png");
           resolve(dataUrl);
         } catch (e) {
-          // onload 失敗時も fetch fallback
-          fetchToDataURL(url).then(resolve).catch(reject);
+          reject(e);
         }
       };
-
       img.onerror = () => {
         if (didTimeout) return;
         clearTimeout(timer);
-        // onerror でも fetch fallback
-        fetchToDataURL(url).then(resolve).catch(reject);
+        reject(new Error("画像読み込み失敗"));
       };
-
       img.src = url;
     });
   };
 
-  // ★上限削除：全画像を対象に順次変換
-  const convertImagesToBase64 = async (images: BoardImage[]): Promise<string[]> => {
+  const convertImagesToBase64 = async (images: BoardImage[], maxCount = 5): Promise<string[]> => {
     const result: string[] = [];
-    for (const img of images) {
-      // 少し待って連続ロードを緩和
-      await new Promise((r) => setTimeout(r, 80));
+    const limitedImages = images.slice(0, maxCount);
+    for (let i = 0; i < limitedImages.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
       try {
-        const base64 = await toBase64ImageWithTimeout(img.src, 15000);
+        const base64 = await toBase64ImageWithTimeout(limitedImages[i].src, 5000);
         result.push(base64);
       } catch {
-        result.push(""); // 失敗時も順番保持
+        result.push("");
       }
     }
     return result;
@@ -584,7 +560,7 @@ export default function PracticeSharePage() {
       const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
-      const plan = lessonPlans.find((p) => p.id === record.lessonId && p.modelType === record.modelType);
+      const plan = lessonPlans.find(p => p.id === record.lessonId && p.modelType === record.modelType);
 
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
@@ -600,8 +576,8 @@ export default function PracticeSharePage() {
           const knowledge = Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
             ? plan.result["評価の観点"]["知識・技能"]
             : plan.result["評価の観点"]?.["知識・技能"]
-            ? [plan.result["評価の観点"]["知識・技能"]]
-            : [];
+              ? [plan.result["評価の観点"]["知識・技能"]]
+              : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>知識・技能</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           knowledge.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -611,8 +587,8 @@ export default function PracticeSharePage() {
           const thinking = Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
             ? plan.result["評価の観点"]["思考・判断・表現"]
             : plan.result["評価の観点"]?.["思考・判断・表現"]
-            ? [plan.result["評価の観点"]["思考・判断・表現"]]
-            : [];
+              ? [plan.result["評価の観点"]["思考・判断・表現"]]
+              : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>思考・判断・表現</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           thinking.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -622,10 +598,10 @@ export default function PracticeSharePage() {
           const attitude = Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
             ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
             : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-            ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
-            : plan.result["評価の観点"]?.["態度"]
-            ? [plan.result["評価の観点"]["態度"]]
-            : [];
+              ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
+              : plan.result["評価の観点"]?.["態度"]
+                ? [plan.result["評価の観点"]["態度"]]
+                : [];
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>主体的に学習に取り組む態度</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           attitude.forEach((v: string) => {
             lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
@@ -655,7 +631,7 @@ export default function PracticeSharePage() {
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 12px;">板書画像</h2>`;
-        const base64Images = await convertImagesToBase64(record.boardImages);
+        const base64Images = await convertImagesToBase64(record.boardImages, 5);
         base64Images.forEach((base64, idx) => {
           if (base64) {
             boardImagesHtml += `
@@ -689,17 +665,13 @@ export default function PracticeSharePage() {
       `;
       document.body.appendChild(tempDiv);
 
-      // 画像枚数に応じてスケール調整（多いほど軽め）
-      const imgCount = record.boardImages?.length || 0;
-      const html2canvasScale = imgCount > 12 ? 2 : imgCount > 6 ? 3 : 4;
-
       await html2pdf()
         .from(tempDiv)
         .set({
           margin: 10,
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          html2canvas: { scale: html2canvasScale, useCORS: true },
-          pagebreak: { mode: ["css", "legacy"] },
+          html2canvas: { scale: 4, useCORS: true },
+          pagebreak: { mode: ["avoid-all"] },
         })
         .save(filename);
 
@@ -949,8 +921,10 @@ export default function PracticeSharePage() {
             <p>条件に合う実践記録がありません。</p>
           ) : (
             filteredRecords.map((r) => {
-              const plan = lessonPlans.find((p) => p.id === r.lessonId && p.modelType === r.modelType);
-              const isAuthor = r.author === userId;
+              const plan = lessonPlans.find(
+                (p) => p.id === r.lessonId && p.modelType === r.modelType
+              );
+              const isAuthor = !!(r.author && userId && r.author === userId);
 
               return (
                 <article key={r.lessonId} style={cardStyle}>
@@ -966,20 +940,24 @@ export default function PracticeSharePage() {
                   </p>
                   <p style={authorNameStyle}>作成者: {r.authorName || r.author || "－"}</p>
 
-                  <button
-                    onClick={() => handleEdit(r.lessonId)}
-                    style={{
-                      backgroundColor: "#1976d2",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "6px 12px",
-                      cursor: "pointer",
-                      marginBottom: 8,
-                    }}
-                  >
-                    編集
-                  </button>
+                  {/* ★ 投稿者のみ編集ボタン表示 */}
+                  {isAuthor && (
+                    <button
+                      onClick={() => handleEdit(r.lessonId)}
+                      style={{
+                        backgroundColor: "#1976d2",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 6,
+                        padding: "6px 12px",
+                        cursor: "pointer",
+                        marginBottom: 8,
+                      }}
+                      title="投稿者のみ編集できます"
+                    >
+                      編集
+                    </button>
+                  )}
 
                   <button
                     onClick={() => generatePdfFromRecord(r)}
@@ -991,7 +969,7 @@ export default function PracticeSharePage() {
                       padding: "6px 12px",
                       cursor: pdfGeneratingId === r.lessonId ? "not-allowed" : "pointer",
                       marginBottom: 12,
-                      marginLeft: 8,
+                      marginLeft: isAuthor ? 8 : 0,
                       opacity: pdfGeneratingId === r.lessonId ? 0.6 : 1,
                     }}
                     disabled={pdfGeneratingId === r.lessonId}
@@ -1045,7 +1023,9 @@ export default function PracticeSharePage() {
 
                           <strong>主体的に学習に取り組む態度</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                            {(Array.isArray(plan.result["評価の観点"]?.["主体的に学習に取り組む態度"])
+                            {(Array.isArray(
+                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                            )
                               ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
                               : plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
                               ? [plan.result["評価の観点"]["主体的に学習に取り組む態度"]]
@@ -1060,10 +1040,12 @@ export default function PracticeSharePage() {
                       )}
 
                       <p>
-                        <strong>育てたい子どもの姿：</strong> {plan.result["育てたい子どもの姿"] || "－"}
+                        <strong>育てたい子どもの姿：</strong>{" "}
+                        {plan.result["育てたい子どもの姿"] || "－"}
                       </p>
                       <p>
-                        <strong>言語活動の工夫：</strong> {plan.result["言語活動の工夫"] || "－"}
+                        <strong>言語活動の工夫：</strong>{" "}
+                        {plan.result["言語活動の工夫"] || "－"}
                       </p>
 
                       {plan.result["授業の流れ"] && (
@@ -1077,7 +1059,8 @@ export default function PracticeSharePage() {
                                 return numA - numB;
                               })
                               .map(([key, val]) => {
-                                const content = typeof val === "string" ? val : JSON.stringify(val);
+                                const content =
+                                  typeof val === "string" ? val : JSON.stringify(val);
                                 return (
                                   <li key={key}>
                                     <strong>{key}:</strong> {content}
@@ -1107,7 +1090,9 @@ export default function PracticeSharePage() {
                     >
                       {r.boardImages.map((img, i) => (
                         <div key={i} style={boardImageContainerStyle}>
-                          <div style={{ fontWeight: "bold", marginBottom: 6 }}>板書{i + 1}</div>
+                          <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+                            板書{i + 1}
+                          </div>
                           <img
                             src={img.src}
                             alt={img.name}
@@ -1193,13 +1178,26 @@ export default function PracticeSharePage() {
                           <b>{c.displayName}</b>{" "}
                           <small>{c.createdAt ? `(${new Date(c.createdAt).toLocaleDateString()})` : ""}</small>
                           <br />
-                          {editingCommentId && editingCommentId.recordId === r.lessonId && editingCommentId.index === i ? (
+                          {editingCommentId &&
+                          editingCommentId.recordId === r.lessonId &&
+                          editingCommentId.index === i ? (
                             <>
-                              <textarea rows={3} value={editingCommentText} onChange={onEditCommentTextChange} style={commentInputStyle} />
-                              <button style={{ ...commentBtnStyle, marginRight: 8 }} onClick={handleUpdateComment}>
+                              <textarea
+                                rows={3}
+                                value={editingCommentText}
+                                onChange={onEditCommentTextChange}
+                                style={commentInputStyle}
+                              />
+                              <button
+                                style={{ ...commentBtnStyle, marginRight: 8 }}
+                                onClick={handleUpdateComment}
+                              >
                                 更新
                               </button>
-                              <button style={{ ...commentBtnStyle, backgroundColor: "#e53935" }} onClick={cancelEditComment}>
+                              <button
+                                style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
+                                onClick={cancelEditComment}
+                              >
                                 キャンセル
                               </button>
                             </>
@@ -1448,7 +1446,11 @@ const authorNameStyle: CSSProperties = {
   marginBottom: 12,
 };
 
-// メニュー関連
+// 以下メニュー関連関数
+const toggleMenu = () => {
+  const event = new CustomEvent("toggleMenu");
+  window.dispatchEvent(event);
+};
 const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
   position: "fixed",
   top: 56,
