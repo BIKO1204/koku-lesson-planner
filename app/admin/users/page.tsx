@@ -1,29 +1,86 @@
-"use client";
+export const runtime = "nodejs";
 
-import React, { useState } from "react";
-import { useUsers, User } from "@/hooks/useUsers";
-import UserTable from "@/components/UserTable";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
 
-export default function AdminUserPage() {
-  const { users, loading, errorMsg, updateUser } = useUsers();
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+function fmtJST(d?: Date | null) {
+  if (!d) return "—";
+  return d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+}
 
-  async function handleUpdate(user: User) {
-    setUpdatingUserId(user.id);
-    try {
-      await updateUser(user);
-    } finally {
-      setUpdatingUserId(null);
-    }
-  }
+export default async function AdminUsersPage() {
+  // 1) 認証（未ログイン→サインインへ）
+  const session = await getServerSession(authOptions);
+  if (!session) redirect("/api/auth/signin?callbackUrl=/admin/users");
 
-  if (loading) return <p>読み込み中…</p>;
+  // 2) 管理者チェック（Firebaseのcustom claimsを見る）
+  const email = session.user?.email;
+  if (!email) redirect("/");
+  const auth = getAdminAuth();
+  const rec = await auth.getUserByEmail(email);
+  const isAdmin =
+    rec.customClaims?.admin === true || rec.customClaims?.role === "admin";
+  if (!isAdmin) redirect("/");
+
+  // 3) Firestoreからusers一覧
+  const db = getAdminDb();
+  const snap = await db
+    .collection("users")
+    .orderBy("lastLogin", "desc")
+    .limit(200)
+    .get();
+
+  const rows = snap.docs.map((d) => {
+    const v = d.data() as any;
+    const last =
+      v.lastLogin?.toDate?.() instanceof Date ? v.lastLogin.toDate() : null;
+    return {
+      id: d.id,
+      name: v.name ?? "",
+      email: v.email ?? "",
+      lastLogin: last,
+    };
+  });
 
   return (
-    <div>
-      <h1>管理者ページ - ユーザー一覧</h1>
-      {errorMsg && <p style={{ color: "red" }}>{errorMsg}</p>}
-      <UserTable users={users} onChangeUser={handleUpdate} updatingUserId={updatingUserId} />
-    </div>
+    <main style={{ maxWidth: 900, margin: "40px auto", padding: "0 16px" }}>
+      <h1 style={{ fontSize: "1.5rem", marginBottom: 16 }}>ユーザー一覧（管理者）</h1>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#f5f5f5" }}>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #ddd" }}>名前</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #ddd" }}>メール</th>
+              <th style={{ textAlign: "left", padding: 8, borderBottom: "1px solid #ddd" }}>最終ログイン（JST）</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={3} style={{ padding: 12, color: "#666" }}>
+                  ユーザーがまだいません。
+                </td>
+              </tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.id}>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+                    {r.name || "（未設定）"}
+                  </td>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+                    {r.email}
+                  </td>
+                  <td style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+                    {fmtJST(r.lastLogin)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </main>
   );
 }
