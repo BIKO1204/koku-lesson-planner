@@ -53,7 +53,7 @@ type PracticeRecord = {
   pdfFiles?: PdfFile[];
   createdAt?: any;
   modelType?: string; // reading / writing / discussion / language_activity
-  isShared?: boolean;  // ★ 追加：共有ページに出すかどうか（未定義 or true=共有中、false=非共有）
+  isShared?: boolean;  // 共有ページに出すかどうか（未定義 or true=共有中、false=非共有）
 };
 type LessonPlan = {
   id: string;
@@ -80,6 +80,27 @@ const asArray = (v: any): string[] => {
   if (Array.isArray(v)) return v;
   if (typeof v === "string" && v.trim()) return [v];
   return [];
+};
+
+// HTMLエスケープ（PDFのテキスト埋め込み用）
+const escapeHtml = (s: string): string =>
+  (s ?? "").replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      case "'": return "&#39;";
+      default:  return ch;
+    }
+  });
+
+// 日時表示（ISO文字列→日本ローカル）
+const formatJaDateTime = (iso?: string): string => {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return escapeHtml(iso);
+  return new Date(t).toLocaleString("ja-JP");
 };
 
 export default function PracticeSharePage() {
@@ -142,13 +163,11 @@ export default function PracticeSharePage() {
             pdfFiles: d.pdfFiles || [],
             createdAt: d.createdAt || "",
             boardImages: Array.isArray(d.boardImages) ? d.boardImages : [],
-            isShared: d.isShared, // ★ 取り込み
+            isShared: d.isShared,
           };
         })
-        // ★ 共有解除(isShared === false)は共有ページに出さない
         .filter((r) => r.isShared !== false);
 
-        // 同一 modelType を置き換え
         const typeKey = colName.replace("practiceRecords_", "");
         allRecords = [
           ...allRecords.filter((r) => r.modelType !== typeKey),
@@ -202,7 +221,6 @@ export default function PracticeSharePage() {
   };
 
   const filteredRecords = records.filter((r) => {
-    // 念のため最終段でも非共有を除外
     if (r.isShared === false) return false;
     if (gradeFilter && r.grade !== gradeFilter) return false;
     if (genreFilter && r.genre !== genreFilter) return false;
@@ -454,7 +472,7 @@ export default function PracticeSharePage() {
     }
   };
 
-  // ★ 投稿者のみ編集可能。modelType をクエリで渡す
+  // 投稿者のみ編集可能。modelType をクエリで渡す
   const handleEdit = (lessonId: string) => {
     const record = records.find((r) => r.lessonId === lessonId);
     const isAuthor = !!(record && record.author && userId && record.author === userId);
@@ -466,7 +484,7 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
   };
 
-  // ★ 共有解除（共有ページからだけ非表示・ドキュメントは残す）
+  // 共有解除（共有ページからだけ非表示・ドキュメントは残す）
   const handleUnshareRecord = async (lessonId: string) => {
     if (!session) {
       alert("ログインしてください");
@@ -545,6 +563,7 @@ export default function PracticeSharePage() {
     return result;
   };
 
+  // ★ PDF生成（コメントも出力）
   const generatePdfFromRecord = async (record: PracticeRecord) => {
     if (!record) return;
     if (pdfGeneratingId) {
@@ -571,10 +590,10 @@ export default function PracticeSharePage() {
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
         lessonPlanHtml += `<h2 style="color:#4CAF50; margin-top: 8px; margin-bottom: 8px;">授業案</h2>`;
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>教科書名：</strong> ${plan.result["教科書名"] || "－"}</p>`;
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元名：</strong> ${plan.result["単元名"] || "－"}</p>`;
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業時間数：</strong> ${plan.result["授業時間数"] || "－"}時間</p>`;
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元の目標：</strong> ${plan.result["単元の目標"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>教科書名：</strong> ${escapeHtml(plan.result["教科書名"] || "－")}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元名：</strong> ${escapeHtml(plan.result["単元名"] || "－")}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業時間数：</strong> ${escapeHtml(String(plan.result["授業時間数"] ?? "－"))}時間</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>単元の目標：</strong> ${escapeHtml(plan.result["単元の目標"] || "－")}</p>`;
 
         if (plan.result["評価の観点"]) {
           lessonPlanHtml += `<strong style="display:block; margin-top: 8px;">評価の観点：</strong>`;
@@ -582,14 +601,14 @@ export default function PracticeSharePage() {
           const knowledge = asArray(plan.result["評価の観点"]?.["知識・技能"]);
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>知識・技能</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           knowledge.forEach((v: string) => {
-            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
           const thinking = asArray(plan.result["評価の観点"]?.["思考・判断・表現"]);
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>思考・判断・表現</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           thinking.forEach((v: string) => {
-            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`;
           });
           lessonPlanHtml += `</ul>`;
 
@@ -599,23 +618,24 @@ export default function PracticeSharePage() {
           );
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:2px;"><strong>主体的に学習に取り組む態度</strong></p><ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
           attitude.forEach((v: string) => {
-            lessonPlanHtml += `<li style="margin-bottom:2px;">${v}</li>`;
+            lessonPlanHtml += `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`;
           });
           lessonPlanHtml += `</ul>`;
         }
 
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>育てたい子どもの姿：</strong> ${plan.result["育てたい子どもの姿"] || "－"}</p>`;
-        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>言語活動の工夫：</strong> ${plan.result["言語活動の工夫"] || "－"}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>育てたい子どもの姿：</strong> ${escapeHtml(plan.result["育てたい子どもの姿"] || "－")}</p>`;
+        lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>言語活動の工夫：</strong> ${escapeHtml(plan.result["言語活動の工夫"] || "－")}</p>`;
 
         if (plan.result["授業の流れ"]) {
           lessonPlanHtml += `<p style="margin-top:4px; margin-bottom:4px;"><strong>授業の流れ：</strong></p>`;
           const flow = plan.result["授業の流れ"];
           if (typeof flow === "string") {
-            lessonPlanHtml += `<p style="white-space:pre-wrap;">${flow}</p>`;
+            lessonPlanHtml += `<p style="white-space:pre-wrap;">${escapeHtml(flow)}</p>`;
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
             flow.forEach((item: any) => {
-              lessonPlanHtml += `<li style="margin-bottom:2px;">${typeof item === "string" ? item : JSON.stringify(item)}</li>`;
+              const text = typeof item === "string" ? item : JSON.stringify(item);
+              lessonPlanHtml += `<li style="margin-bottom:2px;">${escapeHtml(text)}</li>`;
             });
             lessonPlanHtml += `</ul>`;
           } else if (typeof flow === "object") {
@@ -628,13 +648,34 @@ export default function PracticeSharePage() {
               })
               .forEach(([key, val]) => {
                 const content = typeof val === "string" ? val : JSON.stringify(val);
-                lessonPlanHtml += `<li style="margin-bottom:2px;"><strong>${key}:</strong> ${content}</li>`;
+                lessonPlanHtml += `<li style="margin-bottom:2px;"><strong>${escapeHtml(key)}:</strong> ${escapeHtml(content)}</li>`;
               });
             lessonPlanHtml += `</ul>`;
           }
         }
       }
 
+      // コメントをPDFに載せる（作成日時の昇順で）
+      let commentsHtml = "";
+      const comments = (record.comments || [])
+        .slice()
+        .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+      if (comments.length > 0) {
+        commentsHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">コメント（${comments.length}件）</h2>`;
+        comments.forEach((c, idx) => {
+          commentsHtml += `
+            <div style="margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+              <div style="font-weight:bold; margin-bottom: 4px;">
+                ${escapeHtml(c.displayName || "匿名")} 
+                <small style="color:#666; font-weight:normal;">${formatJaDateTime(c.createdAt)}</small>
+              </div>
+              <div style="white-space: pre-wrap;">${escapeHtml(c.comment || "")}</div>
+            </div>
+          `;
+        });
+      }
+
+      // 板書画像
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 12px;">板書画像</h2>`;
@@ -659,15 +700,17 @@ export default function PracticeSharePage() {
         });
       }
 
+      // 本文
       tempDiv.innerHTML = `
         <h1 style="border-bottom: 2px solid #4CAF50; padding-bottom: 8px; margin-top:0; margin-bottom: 12px; font-size: 20px;">
-          ${record.lessonTitle || safeUnitName}
+          ${escapeHtml(record.lessonTitle || safeUnitName)}
         </h1>
-        <p style="margin-top:4px; margin-bottom:4px;"><strong>実践開始日：</strong> ${record.practiceDate || "－"}</p>
-        <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${record.authorName || "－"}</p>
+        <p style="margin-top:4px; margin-bottom:4px;"><strong>実践開始日：</strong> ${escapeHtml(record.practiceDate || "－")}</p>
+        <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${escapeHtml(record.authorName || "－")}</p>
         ${lessonPlanHtml}
         <h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">振り返り</h2>
-        <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${record.reflection || "－"}</p>
+        <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${escapeHtml(record.reflection || "－")}</p>
+        ${commentsHtml}
         ${boardImagesHtml}
       `;
       document.body.appendChild(tempDiv);
@@ -1159,7 +1202,7 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* ★ 完全削除は共有版ではやらず、共有解除ボタンに変更 */}
+                  {/* 共有解除（共有ページからだけ非表示） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
