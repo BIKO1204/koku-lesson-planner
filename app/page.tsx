@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "./contexts/AuthContext";
+import { getAuth, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
 
 export default function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -23,30 +24,41 @@ export default function HomeRedirect() {
 }
 
 function Dashboard() {
-  const { user } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // 管理者判定（custom claims を確認）
+  // ① NextAuth セッション → Firebase へブリッジ（未ログインならcustom-tokenでサインイン）
   useEffect(() => {
-    let cancelled = false;
     (async () => {
-      if (!user) {
-        if (!cancelled) setIsAdmin(false);
-        return;
-      }
+      const auth = getAuth();
+      if (auth.currentUser) return; // 既にFirebaseにログイン済みなら何もしない
       try {
-        // 初回は強制更新なし。必要あれば getIdToken(true) に変更
-        const { claims } = await user.getIdTokenResult();
-        const ok = claims.admin === true || claims.role === "admin";
-        if (!cancelled) setIsAdmin(ok);
-      } catch {
-        if (!cancelled) setIsAdmin(false);
+        const res = await fetch("/api/firebase/custom-token", { cache: "no-store" });
+        if (!res.ok) return; // 未ログイン(NextAuth)なら401
+        const { token } = await res.json();
+        if (!token) return;
+        await signInWithCustomToken(auth, token);
+      } catch (e) {
+        // noop（未ログイン時などはここに来る）
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  }, []);
+
+  // ② Firebaseログイン状態を監視し、claimsを強制更新して管理者判定
+  useEffect(() => {
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (!u) return setIsAdmin(false);
+      try {
+        await u.getIdToken(true); // ★ ここが重要：claimsを確実に反映
+        const { claims } = await u.getIdTokenResult();
+        const ok = claims.admin === true || claims.role === "admin";
+        setIsAdmin(ok);
+      } catch {
+        setIsAdmin(false);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const baseItems: {
     href: string;
@@ -63,12 +75,8 @@ function Dashboard() {
     { href: "/models/history", emoji: "🕒", label: "教育観モデル履歴を見る", bg: "#E53935" },
   ];
 
-  // 管理者ならメニュー末尾に追加
   const menuItems = isAdmin
-    ? [
-        ...baseItems,
-        { href: "/admin/users", emoji: "🔧", label: "管理者ページ", bg: "#455A64" },
-      ]
+    ? [...baseItems, { href: "/admin/users", emoji: "🔧", label: "管理者ページ", bg: "#455A64" }]
     : baseItems;
 
   return (
