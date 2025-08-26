@@ -120,6 +120,37 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
   return allPlans;
 }
 
+// ---------- 追加: PDF最適化ユーティリティ ----------
+function isSmallDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
+  const narrow = typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 820px)").matches
+    : window.innerWidth <= 820;
+  return touch && narrow;
+}
+
+function sanitizeFilename(name: string) {
+  const fallback = "実践記録";
+  const base = (name || fallback).trim();
+  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 100);
+}
+
+// コンポーネント内に注入する印刷向けCSS
+const H2PDF_PRINT_CSS = `
+/* 分割回避ヘルパー */
+.h2pdf-avoid { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-root img, .h2pdf-root figure, .h2pdf-root .h2pdf-block { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-break-before { break-before: page; page-break-before: always; }
+.h2pdf-break-after { break-after: page; page-break-after: always; }
+
+/* 画像が大きすぎる時のはみ出し防止 */
+.h2pdf-root img { max-width: 100%; height: auto; }
+
+/* リストの孤立行回避（できる範囲） */
+.h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
+`;
+
 // ---------- コンポーネント本体 ----------
 export default function PracticeHistoryPage() {
   const { data: session } = useSession();
@@ -371,6 +402,9 @@ export default function PracticeHistoryPage() {
 
   return (
     <>
+      {/* PDF分割回避用CSSを注入 */}
+      <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
+
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
@@ -515,15 +549,23 @@ export default function PracticeHistoryPage() {
                 r.modelType || "reading"
               )}`;
 
+              // PDF設定（端末に応じて最適値）
+              const scaleVal = isSmallDevice() ? 2.2 : 2.6;
+
               return (
                 <article key={r.lessonId} style={cardStyle}>
-                  <div id={`record-${r.lessonId}`} style={{ flex: 1 }}>
+                  {/* PDF化対象ルート。分割回避ルールを適用 */}
+                  <div
+                    id={`record-${r.lessonId}`}
+                    className="h2pdf-root h2pdf-avoid"
+                    style={{ flex: 1 }}
+                  >
                     <h3 style={{ margin: "0 0 8px" }}>
                       {r.lessonTitle || "タイトルなし"}
                     </h3>
 
                     {plan && typeof plan.result === "object" && (
-                      <div style={planBlockStyle}>
+                      <div className="h2pdf-avoid h2pdf-block" style={planBlockStyle}>
                         <strong>授業案</strong>
                         <div>
                           <p>
@@ -559,6 +601,7 @@ export default function PracticeHistoryPage() {
                                     <li
                                       key={`eval-k-${r.lessonId}-${i}`}
                                       style={{ whiteSpace: "pre-wrap" }}
+                                      className="h2pdf-avoid"
                                     >
                                       {v}
                                     </li>
@@ -575,6 +618,7 @@ export default function PracticeHistoryPage() {
                                     <li
                                       key={`eval-t-${r.lessonId}-${i}`}
                                       style={{ whiteSpace: "pre-wrap" }}
+                                      className="h2pdf-avoid"
                                     >
                                       {v}
                                     </li>
@@ -593,6 +637,7 @@ export default function PracticeHistoryPage() {
                                     <li
                                       key={`eval-a-${r.lessonId}-${i}`}
                                       style={{ whiteSpace: "pre-wrap" }}
+                                      className="h2pdf-avoid"
                                     >
                                       {v}
                                     </li>
@@ -620,7 +665,7 @@ export default function PracticeHistoryPage() {
 
                         {/* ▼ 授業の流れ（PDFにも入る） */}
                         {plan.result["授業の流れ"] && (
-                          <div style={{ marginTop: 12 }}>
+                          <div style={{ marginTop: 12 }} className="h2pdf-avoid">
                             <div style={{ fontWeight: "bold", marginBottom: 6 }}>
                               授業の流れ
                             </div>
@@ -638,6 +683,7 @@ export default function PracticeHistoryPage() {
                                     <li
                                       key={`flow-${r.lessonId}-${i}`}
                                       style={{ whiteSpace: "pre-wrap" }}
+                                      className="h2pdf-avoid"
                                     >
                                       {typeof item === "string"
                                         ? item
@@ -669,6 +715,7 @@ export default function PracticeHistoryPage() {
                                       <li
                                         key={`flow-${r.lessonId}-${key}-${i}`}
                                         style={{ whiteSpace: "pre-wrap" }}
+                                        className="h2pdf-avoid"
                                       >
                                         <strong>{key}：</strong>{" "}
                                         {typeof val === "string"
@@ -684,13 +731,13 @@ export default function PracticeHistoryPage() {
                       </div>
                     )}
 
-                    <p style={{ marginTop: 16 }}>
+                    <p style={{ marginTop: 16 }} className="h2pdf-avoid">
                       <strong>実践開始日：</strong> {r.practiceDate}
                     </p>
-                    <p>
+                    <p className="h2pdf-avoid">
                       <strong>作成者：</strong> {r.authorName || "不明"}
                     </p>
-                    <p style={{ whiteSpace: "pre-wrap" }}>
+                    <p style={{ whiteSpace: "pre-wrap" }} className="h2pdf-avoid">
                       <strong>振り返り：</strong>
                       <br />
                       {r.reflection}
@@ -704,15 +751,17 @@ export default function PracticeHistoryPage() {
                           flexDirection: "column",
                           gap: 12,
                         }}
+                        className="h2pdf-avoid"
                       >
                         {r.boardImages.map((img, i) => (
-                          <div key={`${img.name}-${i}`} style={{ width: "100%" }}>
+                          <div key={`${img.name}-${i}`} style={{ width: "100%" }} className="h2pdf-avoid h2pdf-block">
                             <div style={{ marginBottom: 6, fontWeight: "bold" }}>
                               板書{i + 1}
                             </div>
                             <img
                               src={img.src}
                               alt={img.name}
+                              crossOrigin="anonymous"
                               style={{
                                 width: "100%",
                                 height: "auto",
@@ -751,14 +800,15 @@ export default function PracticeHistoryPage() {
                             .from(el)
                             .set({
                               margin: [5, 5, 5, 5],
-                              filename: `${r.lessonTitle || "実践記録"}.pdf`,
+                              filename: `${sanitizeFilename(r.lessonTitle)}.pdf`,
                               jsPDF: {
                                 unit: "mm",
                                 format: "a4",
                                 orientation: "portrait",
                               },
-                              html2canvas: { useCORS: true, scale: 3 },
-                              pagebreak: { mode: ["css", "legacy"] },
+                              html2canvas: { useCORS: true, scale: scaleVal },
+                              // CSS指定 + レガシー + 全体avoid を併用
+                              pagebreak: { mode: ["css", "legacy", "avoid-all"] },
                             })
                             .save();
                         });
@@ -788,8 +838,8 @@ export default function PracticeHistoryPage() {
                                   format: "a4",
                                   orientation: "portrait",
                                 },
-                                html2canvas: { useCORS: true, scale: 3 },
-                                pagebreak: { mode: ["css", "legacy"] },
+                                html2canvas: { useCORS: true, scale: scaleVal },
+                                pagebreak: { mode: ["css", "legacy", "avoid-all"] },
                               })
                               .outputPdf("blob");
                             try {
@@ -798,7 +848,7 @@ export default function PracticeHistoryPage() {
                               );
                               await uploadToDrive(
                                 pdfBlob,
-                                `${r.lessonTitle || "実践記録"}.pdf`,
+                                `${sanitizeFilename(r.lessonTitle)}.pdf`,
                                 "application/pdf"
                               );
                               alert("Driveへの保存が完了しました。");
