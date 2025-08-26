@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "./contexts/AuthContext";
@@ -23,25 +23,57 @@ export default function HomeRedirect() {
 }
 
 function Dashboard() {
-  const menuItems: {
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // 管理者判定（custom claims を確認）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user) {
+        if (!cancelled) setIsAdmin(false);
+        return;
+      }
+      try {
+        // 初回は強制更新なし。必要あれば getIdToken(true) に変更
+        const { claims } = await user.getIdTokenResult();
+        const ok = claims.admin === true || claims.role === "admin";
+        if (!cancelled) setIsAdmin(ok);
+      } catch {
+        if (!cancelled) setIsAdmin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const baseItems: {
     href: string;
     emoji: string;
     label: string;
     bg: string;
   }[] = [
     { href: "/plan", emoji: "📝", label: "授業案を作成する", bg: "#42A5F5" },
-    { href: "/plan/history", emoji: "📖", label: "保存された授業案を見る", bg: "#00BCD4" }, // 明るいシアン系
+    { href: "/plan/history", emoji: "📖", label: "保存された授業案を見る", bg: "#00BCD4" },
     { href: "/practice/history", emoji: "📷", label: "授業実践の記録を見る", bg: "#009688" },
-    { href: "/practice/share", emoji: "🌐", label: "共有版実践記録を見る", bg: "#9C27B0" }, // 紫系
+    { href: "/practice/share", emoji: "🌐", label: "共有版実践記録を見る", bg: "#9C27B0" },
     { href: "/models/create", emoji: "✏️", label: "新しい教育観モデルを登録する", bg: "#66BB6A" },
     { href: "/models", emoji: "🌱", label: "教育観モデルを一覧で見る", bg: "#AED581" },
-    { href: "/models/history", emoji: "🕒", label: "教育観モデル履歴を見る", bg: "#E53935" }, // 赤系
+    { href: "/models/history", emoji: "🕒", label: "教育観モデル履歴を見る", bg: "#E53935" },
   ];
+
+  // 管理者ならメニュー末尾に追加
+  const menuItems = isAdmin
+    ? [
+        ...baseItems,
+        { href: "/admin/users", emoji: "🔧", label: "管理者ページ", bg: "#455A64" },
+      ]
+    : baseItems;
 
   return (
     <>
       <style>{`
-        /* スマホ向けにh1を調整 */
         @media (max-width: 600px) {
           h1 {
             font-size: 1.8rem !important;
@@ -60,7 +92,6 @@ function Dashboard() {
           margin: "0 auto",
         }}
       >
-        {/* ヘッダー */}
         <h1
           style={{
             fontSize: "2rem",
@@ -76,7 +107,6 @@ function Dashboard() {
           ようこそ！
         </h1>
 
-        {/* ボタンリスト */}
         <div
           style={{
             display: "flex",
