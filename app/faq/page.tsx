@@ -84,7 +84,7 @@ export default function FAQPage() {
           <strong>Q8:</strong> アカウント乗っ取りが心配です。対策はありますか？
         </h2>
         <p>
-          GoogleログインはGoogleのセキュリティ基盤で保護されています。匿名認証は端末固有情報を用い、不正利用を抑制します。将来的に多要素認証（MFA）の導入も検討しています。
+          GoogleログインはGoogleのセキュリティ基盤で保護されています。将来的に多要素認証（MFA）の導入も検討しています。
         </p>
       </section>
 
