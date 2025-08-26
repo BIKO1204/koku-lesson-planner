@@ -57,7 +57,33 @@ type LessonPlanStored = {
   usedStyleName?: string | null;
 };
 
-// ===================== 追加: 学習用のMarkdown構築ヘルパ =====================
+/* ===================== 追加: 端末別PDF最適化 & ファイル名サニタイズ ===================== */
+function isSmallDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
+  const narrow = typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 820px)").matches
+    : window.innerWidth <= 820;
+  return touch && narrow;
+}
+
+function sanitizeFilename(name: string) {
+  const fallback = "授業案";
+  const base = (name || fallback).trim();
+  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 100);
+}
+
+// PDF分割回避のためのCSS（コンポーネント内に注入）
+const H2PDF_PRINT_CSS = `
+.h2pdf-avoid { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-root img, .h2pdf-root figure, .h2pdf-root .h2pdf-block { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-break-before { break-before: page; page-break-before: always; }
+.h2pdf-break-after { break-after: page; page-break-after: always; }
+.h2pdf-root img { max-width: 100%; height: auto; }
+.h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
+`;
+
+/* ===================== 学習用のMarkdown構築ヘルパ ===================== */
 function toAssistantPlanMarkdown(r: ParsedResult): string {
   const getA = (arrLike: any): string[] => {
     if (!arrLike) return [];
@@ -665,6 +691,9 @@ ${languageActivities}
 
   return (
     <>
+      {/* PDF分割回避CSSを注入 */}
+      <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
+
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -954,16 +983,19 @@ ${languageActivities}
                   }
                   const el = document.getElementById("result-content");
                   if (!el) return alert("PDF生成対象がありません");
+
                   const html2pdf = (await import("html2pdf.js")).default;
+                  const scaleVal = isSmallDevice() ? 2.2 : 2.6; // 端末別に最適化
+
                   setTimeout(() => {
                     html2pdf()
                       .from(el)
                       .set({
                         margin: 5,
-                        filename: `${unit}_授業案.pdf`,
-                        html2canvas: { scale: 2 },
+                        filename: `${sanitizeFilename(unit)}_授業案.pdf`,
+                        html2canvas: { scale: scaleVal, useCORS: true },
                         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                        pagebreak: { mode: ["avoid-all"] },
+                        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
                       })
                       .save();
                   }, 100);
@@ -982,21 +1014,26 @@ ${languageActivities}
               </button>
             </div>
 
-            <div id="result-content" style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}>
-              <div style={titleStyle}>授業の概要</div>
-              <p>教科書名：{parsedResult["教科書名"]}</p>
-              <p>学年：{parsedResult["学年"]}</p>
-              <p>ジャンル：{parsedResult["ジャンル"]}</p>
-              <p>単元名：{parsedResult["単元名"]}</p>
-              <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
-              <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
+            {/* ▼ PDF化対象に分割回避クラスを付与 */}
+            <div
+              id="result-content"
+              className="h2pdf-root h2pdf-avoid"
+              style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
+            >
+              <div style={titleStyle} className="h2pdf-avoid">授業の概要</div>
+              <p className="h2pdf-avoid">教科書名：{parsedResult["教科書名"]}</p>
+              <p className="h2pdf-avoid">学年：{parsedResult["学年"]}</p>
+              <p className="h2pdf-avoid">ジャンル：{parsedResult["ジャンル"]}</p>
+              <p className="h2pdf-avoid">単元名：{parsedResult["単元名"]}</p>
+              <p className="h2pdf-avoid">授業時間数：{parsedResult["授業時間数"]}時間</p>
+              <p className="h2pdf-avoid">育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
                 <div style={titleStyle}>単元の目標</div>
                 <p>{parsedResult["単元の目標"]}</p>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
                 <div style={titleStyle}>評価の観点</div>
 
                 <strong>知識・技能</strong>
@@ -1008,7 +1045,7 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["知識・技能"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`knowledge-${i}`}>{v}</li>
+                    <li key={`knowledge-${i}`} className="h2pdf-avoid">{v}</li>
                   ))}
                 </ul>
 
@@ -1021,7 +1058,7 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["思考・判断・表現"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`thinking-${i}`}>{v}</li>
+                    <li key={`thinking-${i}`} className="h2pdf-avoid">{v}</li>
                   ))}
                 </ul>
 
@@ -1034,23 +1071,23 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["主体的に学習に取り組む態度"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`attitude-${i}`}>{v}</li>
+                    <li key={`attitude-${i}`} className="h2pdf-avoid">{v}</li>
                   ))}
                 </ul>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
                 <div style={titleStyle}>言語活動の工夫</div>
                 <p>{parsedResult["言語活動の工夫"]}</p>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
                 <div style={titleStyle}>授業の流れ</div>
                 <ul style={listStyle}>
                   {parsedResult["授業の流れ"] &&
                     typeof parsedResult["授業の流れ"] === "object" &&
                     Object.entries(parsedResult["授業の流れ"]).map(([key, val], i) => (
-                      <li key={`flow-${i}`}>
+                      <li key={`flow-${i}`} className="h2pdf-avoid">
                         <strong>{key}：</strong> {String(val)}
                       </li>
                     ))}
