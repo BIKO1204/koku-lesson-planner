@@ -19,7 +19,7 @@ export default function FAQPage() {
           <strong>Q2:</strong> サインイン方法にはどんなものがありますか？
         </h2>
         <p>
-          現在はGoogleアカウントでのログイン（推奨）や匿名ログインを提供しています。提供方式は今後変更・追加される場合があります。
+          現在はGoogleアカウントでのログインを提供しています。提供方式は今後変更・追加される場合があります。
         </p>
       </section>
 
@@ -53,7 +53,7 @@ export default function FAQPage() {
           <strong>Q5:</strong> 実践案の板書画像が共有版ページにすぐ反映されません。どうすれば良いですか？
         </h2>
         <ul>
-          <li>画像の追加・削除後は、共有版で<span style={{ fontWeight: 700 }}>「プレビュー」</span>ボタンを押してください。</li>
+          <li>画像の追加・削除後は、<span style={{ fontWeight: 700 }}>「プレビュー」</span>ボタンを押してください。</li>
           <li>反映が遅い場合はページ再読み込みやキャッシュクリアをお試しください。</li>
         </ul>
       </section>
