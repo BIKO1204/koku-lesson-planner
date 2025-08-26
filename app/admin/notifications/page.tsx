@@ -1,237 +1,25 @@
-"use client";
+export const runtime = "nodejs";
+export const revalidate = 0;
 
-import { useEffect, useState } from "react";
-import {
-  collection,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { getAdminAuth } from "@/lib/firebaseAdmin";
+import NotificationAdmin from "./Client"; // ← クライアントUI（下の Client.tsx）
 
-type Notification = {
-  id: string;
-  title: string;
-  message: string;
-  visible: boolean;
-  createdAt: any;
-};
+export default async function AdminNotificationsPage() {
+  // 1) 未ログインならサインインへ
+  const session = await getServerSession(authOptions);
+  if (!session) redirect("/api/auth/signin?callbackUrl=/admin/notifications");
 
-export default function NotificationAdmin() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // 2) 管理者チェック（Firebase custom claims）
+  const email = session.user?.email;
+  if (!email) redirect("/");
+  const rec = await getAdminAuth().getUserByEmail(email);
+  const isAdmin =
+    rec.customClaims?.admin === true || rec.customClaims?.role === "admin";
+  if (!isAdmin) redirect("/");
 
-  // 編集用state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editMessage, setEditMessage] = useState("");
-
-  // 新規追加用state
-  const [newTitle, setNewTitle] = useState("");
-  const [newMessage, setNewMessage] = useState("");
-
-  useEffect(() => {
-    fetchNotifications();
-  }, []);
-
-  async function fetchNotifications() {
-    setLoading(true);
-    try {
-      const snapshot = await getDocs(collection(db, "通知"));
-      setNotifications(
-        snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            title: data.title,
-            message: data.message,
-            visible: data.visible,
-            createdAt: data.createdAt,
-          };
-        })
-      );
-      setErrorMsg(null);
-    } catch {
-      setErrorMsg("通知取得に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function addNotification() {
-    if (!newTitle.trim() || !newMessage.trim()) {
-      setErrorMsg("タイトルとメッセージを入力してください");
-      return;
-    }
-    setLoading(true);
-    try {
-      await addDoc(collection(db, "通知"), {
-        title: newTitle,
-        message: newMessage,
-        visible: true,
-        createdAt: serverTimestamp(),
-      });
-      setNewTitle("");
-      setNewMessage("");
-      await fetchNotifications();
-      setErrorMsg(null);
-    } catch {
-      setErrorMsg("通知の追加に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function toggleVisible(id: string, current: boolean) {
-    try {
-      const ref = doc(db, "通知", id);
-      await updateDoc(ref, { visible: !current });
-      await fetchNotifications();
-    } catch {
-      setErrorMsg("表示状態の更新に失敗しました");
-    }
-  }
-
-  async function deleteNotification(id: string) {
-    try {
-      const ref = doc(db, "通知", id);
-      await deleteDoc(ref);
-      await fetchNotifications();
-    } catch {
-      setErrorMsg("通知の削除に失敗しました");
-    }
-  }
-
-  function startEdit(n: Notification) {
-    setEditingId(n.id);
-    setEditTitle(n.title);
-    setEditMessage(n.message);
-    setErrorMsg(null);
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditTitle("");
-    setEditMessage("");
-    setErrorMsg(null);
-  }
-
-  async function saveEdit() {
-    if (!editTitle.trim() || !editMessage.trim()) {
-      setErrorMsg("タイトルとメッセージを入力してください");
-      return;
-    }
-    try {
-      if (!editingId) return;
-      const ref = doc(db, "通知", editingId);
-      await updateDoc(ref, { title: editTitle, message: editMessage });
-      await fetchNotifications();
-      cancelEdit();
-    } catch {
-      setErrorMsg("通知の更新に失敗しました");
-    }
-  }
-
-  if (loading) return <p>読み込み中...</p>;
-
-  return (
-    <div>
-      <h1>通知管理</h1>
-      {errorMsg && <p style={{ color: "red" }}>{errorMsg}</p>}
-
-      {/* 新規追加フォーム */}
-      <div style={{ marginBottom: 20 }}>
-        <input
-          type="text"
-          placeholder="タイトル"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          style={{ marginRight: 10 }}
-        />
-        <input
-          type="text"
-          placeholder="メッセージ"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          style={{ marginRight: 10, width: "50%" }}
-        />
-        <button onClick={addNotification}>追加</button>
-      </div>
-
-      {/* 通知一覧 */}
-      <table border={1} cellPadding={5} style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th>タイトル</th>
-            <th>メッセージ</th>
-            <th>表示中</th>
-            <th>作成日時</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {notifications.length === 0 && (
-            <tr>
-              <td colSpan={5}>通知がありません</td>
-            </tr>
-          )}
-          {notifications.map((n) => (
-            <tr key={n.id}>
-              {editingId === n.id ? (
-                <>
-                  <td>
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      value={editMessage}
-                      onChange={(e) => setEditMessage(e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={n.visible}
-                      onChange={() => toggleVisible(n.id, n.visible)}
-                    />
-                  </td>
-                  <td>{n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : "-"}</td>
-                  <td>
-                    <button onClick={saveEdit}>保存</button>
-                    <button onClick={cancelEdit}>キャンセル</button>
-                  </td>
-                </>
-              ) : (
-                <>
-                  <td>{n.title}</td>
-                  <td>{n.message}</td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={n.visible}
-                      onChange={() => toggleVisible(n.id, n.visible)}
-                    />
-                  </td>
-                  <td>{n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : "-"}</td>
-                  <td>
-                    <button onClick={() => startEdit(n)}>編集</button>
-                    <button onClick={() => deleteNotification(n.id)}>削除</button>
-                  </td>
-                </>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  // 3) OKならクライアント側の管理UIを表示
+  return <NotificationAdmin />;
 }
