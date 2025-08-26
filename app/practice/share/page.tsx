@@ -103,7 +103,8 @@ export default function PracticeSharePage() {
   const [newComments, setNewComments] = useState<Record<string, string>>({});
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
-  const [editingCommentId, setEditingCommentId] = useState<{ recordId: string; index: number } | null>(null);
+  const [editingCommentId, setEditingCommentId] =
+    useState<{ recordId: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
   const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
@@ -155,7 +156,9 @@ export default function PracticeSharePage() {
           ...allRecords.filter((r) => r.modelType !== typeKey),
           ...recs,
         ];
-        allRecords.sort((a, b) => (b.practiceDate || "").localeCompare(a.practiceDate || ""));
+        allRecords.sort((a, b) =>
+          (b.practiceDate || "").localeCompare(a.practiceDate || "")
+        );
         setRecords([...allRecords]);
       });
       unsubscribers.push(unsubscribe);
@@ -558,7 +561,6 @@ export default function PracticeSharePage() {
 
     // 高品質リサンプル
     ctx.imageSmoothingEnabled = true;
-    // 一部環境で型が古い場合に備えた書き方
     (ctx as any).imageSmoothingQuality = "high";
     // 軽い見やすさ補正（テキストのコントラストを少しだけ上げる）
     ctx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
@@ -609,11 +611,17 @@ export default function PracticeSharePage() {
       tempDiv.style.lineHeight = "1.35";
       tempDiv.style.fontSize = "12px";
 
-      const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
-      const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
+      const safeUnitName = record.unitName
+        ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_")
+        : "無題単元";
+      const safeAuthor = record.authorName
+        ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_")
+        : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
-      const plan = lessonPlans.find((p) => p.id === record.lessonId && p.modelType === record.modelType);
+      const plan = lessonPlans.find(
+        (p) => p.id === record.lessonId && p.modelType === record.modelType
+      );
 
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
@@ -656,7 +664,9 @@ export default function PracticeSharePage() {
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul style="margin-top:0; margin-bottom:4px; padding-left:16px;">`;
             flow.forEach((item: any) => {
-              lessonPlanHtml += `<li style="margin-bottom:2px;">${typeof item === "string" ? item : JSON.stringify(item)}</li>`;
+              lessonPlanHtml += `<li style="margin-bottom:2px;">${
+                typeof item === "string" ? item : JSON.stringify(item)
+              }</li>`;
             });
             lessonPlanHtml += `</ul>`;
           } else if (typeof flow === "object") {
@@ -676,21 +686,18 @@ export default function PracticeSharePage() {
         }
       }
 
-      // ★ ここで板書を高品質化して全件埋め込み
+      // 板書を高品質化して全件埋め込み
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         boardImagesHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 12px;">板書画像</h2>`;
-        const base64Images = await convertImagesToBase64(
-          record.boardImages,
-          {
-            maxWidth: 1800,      // A4縦PDFでも十分シャープに見える程度
-            maxHeight: 1800,
-            jpegQuality: 0.92,   // 画質とサイズのバランス
-            contrast: 1.08,
-            brightness: 1.02,
-            saturate: 1.04,
-          }
-        );
+        const base64Images = await convertImagesToBase64(record.boardImages, {
+          maxWidth: 1800,
+          maxHeight: 1800,
+          jpegQuality: 0.92,
+          contrast: 1.08,
+          brightness: 1.02,
+          saturate: 1.04,
+        });
 
         base64Images.forEach((base64, idx) => {
           const original = record.boardImages[idx];
@@ -712,14 +719,20 @@ export default function PracticeSharePage() {
         });
       }
 
-      // ★（任意）コメントもPDFに出力する場合
+      // コメントもPDFに出力
       let commentsHtml = "";
       if (Array.isArray(record.comments) && record.comments.length > 0) {
         commentsHtml += `<h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">コメント</h2>`;
         commentsHtml += `<ul style="margin:0; padding-left: 16px;">`;
         record.comments.forEach((c) => {
           const dateStr = c.createdAt ? new Date(c.createdAt).toLocaleString("ja-JP") : "";
-          commentsHtml += `<li style="margin-bottom:6px;"><strong>${c.displayName || "匿名"}</strong> <small style="color:#666;">${dateStr}</small><br/>${(c.comment || "").replace(/\n/g, "<br/>")}</li>`;
+          commentsHtml += `<li style="margin-bottom:6px;"><strong>${
+            c.displayName || "匿名"
+          }</strong> <small style="color:#666;">${dateStr}</small><br/>${(c.comment || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\n/g, "<br/>")}</li>`;
         });
         commentsHtml += `</ul>`;
       }
@@ -732,7 +745,10 @@ export default function PracticeSharePage() {
         <p style="margin-top:4px; margin-bottom:12px;"><strong>作成者：</strong> ${record.authorName || "－"}</p>
         ${lessonPlanHtml}
         <h2 style="color:#4CAF50; margin-top: 16px; margin-bottom: 8px;">振り返り</h2>
-        <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${record.reflection || "－"}</p>
+        <p style="white-space: pre-wrap; margin-top:4px; margin-bottom:12px;">${(record.reflection || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")}</p>
         ${boardImagesHtml}
         ${commentsHtml}
       `;
@@ -1088,8 +1104,8 @@ export default function PracticeSharePage() {
                           <strong>主体的に学習に取り組む態度</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
                             {asArray(
-                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ?? 
-                              plan.result["評価の観点"]?.["態度"]
+                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+                                plan.result["評価の観点"]?.["態度"]
                             ).map((v, i) => (
                               <li key={`主体的-${i}`}>{v}</li>
                             ))}
@@ -1182,7 +1198,7 @@ export default function PracticeSharePage() {
                               borderRadius: 8,
                               border: "1px solid #ccc",
                               objectFit: "contain",
-                              imageRendering: "auto",   // ブラウザ任せ（crisp-edgesより自然）
+                              imageRendering: "auto",
                               display: "block",
                             }}
                           />
@@ -1497,7 +1513,7 @@ const lessonPlanSectionStyle: CSSProperties = {
   padding: 12,
   borderRadius: 6,
   marginBottom: 16,
-  wordBreak: "break-word", // ← 修正箇所
+  wordBreak: "break-word", // ← 修正済み
   fontSize: "1rem",
   lineHeight: 1.5,
 };
