@@ -262,6 +262,9 @@ export default function PracticeAddPage() {
   // ▼ モデルタイプ固定フラグ
   const [modelLocked, setModelLocked] = useState<boolean>(false);
 
+  // ▼ 学年・ジャンル・単元名：固定 or 手動
+  const [lockMeta, setLockMeta] = useState<boolean>(true);
+
   // ▼ 追加：確認関連
   const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
   const [currentSignature, setCurrentSignature] = useState<string>("");
@@ -401,12 +404,12 @@ export default function PracticeAddPage() {
           setModelType(coll);
           setModelLocked(true);
 
-          // 授業案の単元名を使ってタイトルを補完できる場合はしておく
+          // 授業案の単元名やメタを補完
           const data = snap.data() as any;
           const result = data?.result;
           setLessonPlan({ id, result });
-          if (result && typeof result === "object" && result["単元名"]) {
-            setLessonTitle(String(result["単元名"]));
+          if (result && typeof result === "object") {
+            if (result["単元名"]) setLessonTitle(String(result["単元名"]));
           }
           return;
         }
@@ -414,6 +417,32 @@ export default function PracticeAddPage() {
       // 3) 見つからなければ未固定（授業案未登録 or 直打ちアクセスの想定）
     })();
   }, [id, modelLocked, modelTypeParam]);
+
+  /* ---- 学年・ジャンル・単元名：固定 or 手動を決定（既存 or 授業案があれば固定） ---- */
+  useEffect(() => {
+    // 既存実践記録で値があれば固定
+    const hasExisting = Boolean(grade || genre || unitName);
+    if (hasExisting) {
+      setLockMeta(true);
+      return;
+    }
+
+    // 授業案から取り出せれば固定
+    const r = (lessonPlan?.result as ParsedResult) || undefined;
+    const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
+    const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
+    const planUnit  = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+
+    if (planGrade || planGenre || planUnit) {
+      if (!grade) setGrade(planGrade);
+      if (!genre) setGenre(planGenre);
+      if (!unitName) setUnitName(planUnit);
+      setLockMeta(true);
+    } else {
+      // どちらも無ければ手動入力OK
+      setLockMeta(false);
+    }
+  }, [lessonPlan, grade, genre, unitName]);
 
   /* ---- 画像の選択・削除で再確認が必要に ---- */
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -573,6 +602,11 @@ export default function PracticeAddPage() {
       return;
     }
 
+    if (!grade || !genre || !unitName) {
+      alert("学年・ジャンル・単元名が未入力です。授業案が無い場合は手動で入力してください。");
+      return;
+    }
+
     setUploading(true);
     try {
       const toSaveLocal: PracticeRecord = {
@@ -602,6 +636,14 @@ export default function PracticeAddPage() {
   /* =========================================================
    * UI
    * ======================================================= */
+  const canSave =
+    !!record &&
+    !!confirmNoPersonalInfo &&
+    !!modelLocked &&
+    !!grade &&
+    !!genre &&
+    !!unitName;
+
   return (
     <>
       <nav style={navBarStyle}>
@@ -721,7 +763,7 @@ export default function PracticeAddPage() {
           ※板書の写真を追加・削除した場合は、必ず「プレビューを生成」ボタンを押してください
         </p>
 
-        {/* ▼ 追加：アップロード前の注意書き */}
+        {/* ▼ アップロード前の注意書き */}
         <div style={noticeBoxStyle}>
           <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
@@ -760,6 +802,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* 学年 */}
           <div style={boxStyle}>
             <label>
               学年：
@@ -767,9 +810,14 @@ export default function PracticeAddPage() {
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
                 required
-                style={{ marginLeft: 8, padding: 4 }}
+                disabled={lockMeta}
+                style={{
+                  marginLeft: 8,
+                  padding: 4,
+                  background: lockMeta ? "#f5f5f5" : undefined,
+                }}
               >
-                <option value="">選択してください</option>
+                <option value="">{lockMeta ? (grade || "（未設定）") : "選択してください"}</option>
                 <option value="1年">1年</option>
                 <option value="2年">2年</option>
                 <option value="3年">3年</option>
@@ -778,8 +826,14 @@ export default function PracticeAddPage() {
                 <option value="6年">6年</option>
               </select>
             </label>
+            {!lockMeta && (
+              <small style={{ color: "#666", display: "block", marginTop: 6 }}>
+                授業案／既存記録が見つからなかったため手動入力が必要です。
+              </small>
+            )}
           </div>
 
+          {/* ジャンル */}
           <div style={boxStyle}>
             <label>
               ジャンル：
@@ -787,9 +841,14 @@ export default function PracticeAddPage() {
                 value={genre}
                 onChange={(e) => setGenre(e.target.value)}
                 required
-                style={{ marginLeft: 8, padding: 4 }}
+                disabled={lockMeta}
+                style={{
+                  marginLeft: 8,
+                  padding: 4,
+                  background: lockMeta ? "#f5f5f5" : undefined,
+                }}
               >
-                <option value="">選択してください</option>
+                <option value="">{lockMeta ? (genre || "（未設定）") : "選択してください"}</option>
                 <option value="物語文">物語文</option>
                 <option value="説明文">説明文</option>
                 <option value="詩">詩</option>
@@ -797,6 +856,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* 単元名 */}
           <div style={boxStyle}>
             <label>
               単元名：
@@ -805,9 +865,20 @@ export default function PracticeAddPage() {
                 value={unitName}
                 onChange={(e) => setUnitName(e.target.value)}
                 required
-                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+                readOnly={lockMeta}
+                style={{
+                  marginLeft: 8,
+                  padding: 4,
+                  width: "calc(100% - 16px)",
+                  background: lockMeta ? "#f5f5f5" : undefined,
+                }}
               />
             </label>
+            {!lockMeta && (
+              <small style={{ color: "#666" }}>
+                授業案が無い場合は手動で入力してください。
+              </small>
+            )}
           </div>
 
           {/* ▼ モデルタイプは自動セット＆編集不可 */}
@@ -1101,14 +1172,18 @@ export default function PracticeAddPage() {
           onClick={handleSaveBoth}
           style={{
             ...primaryBtnStyle,
-            backgroundColor: confirmNoPersonalInfo ? "#4caf50" : "#9e9e9e",
-            cursor: confirmNoPersonalInfo ? "pointer" : "not-allowed",
+            backgroundColor: canSave ? "#4caf50" : "#9e9e9e",
+            cursor: canSave ? "pointer" : "not-allowed",
           }}
-          disabled={uploading || !confirmNoPersonalInfo}
+          disabled={uploading || !canSave}
           title={
-            confirmNoPersonalInfo
+            canSave
               ? undefined
-              : "保存するには「個人情報が写っていない」チェックが必要です"
+              : !confirmNoPersonalInfo
+              ? "保存するには「個人情報が写っていない」チェックが必要です"
+              : !modelLocked
+              ? "授業案からの自動設定が必要です"
+              : "学年・ジャンル・単元名の入力が必要です"
           }
         >
           {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
