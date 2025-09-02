@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, CSSProperties } from "react";
+import React, { useEffect, useState, CSSProperties } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+
 import {
   collection,
   query,
@@ -12,18 +12,14 @@ import {
   onSnapshot,
   deleteDoc,
   doc,
-  updateDoc,
-  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-/* =========================
- * 型
- * ======================= */
+/* ---------- 型 ---------- */
 type EducationHistory = {
   id: string;
   modelId: string;
-  updatedAt: any; // Firestore Timestamp | string | Date
+  updatedAt: any; // Firestore Timestamp | string | Date を許容
   name: string;
   philosophy: string;
   evaluationFocus: string;
@@ -31,15 +27,7 @@ type EducationHistory = {
   childFocus: string;
   note?: string;
   creatorId: string;
-
-  // ▼ ポートフォリオ拡張
-  triggerType?: string;
-  triggerText?: string;
-  reason?: string;
-  reflection?: string;
-  tags?: string[];
-  isMilestone?: boolean;
-  portfolioUpdatedAt?: any;
+  triggerReason?: string; // ← きっかけ・理由（なぜ変えたか）
 };
 
 type GroupedHistory = {
@@ -48,9 +36,7 @@ type GroupedHistory = {
   histories: EducationHistory[];
 };
 
-/* =========================
- * 小コンポーネント
- * ======================= */
+/* ---------- 表示コンポーネント ---------- */
 function FieldWithDiff({
   current,
   previous,
@@ -60,7 +46,10 @@ function FieldWithDiff({
   previous?: string;
   label: string;
 }) {
-  const isChanged = previous === undefined || current.trim() !== (previous ?? "").trim();
+  const cur = (current ?? "").trim();
+  const prev = (previous ?? "").trim();
+  const isChanged = previous === undefined || cur !== prev;
+
   return (
     <p
       style={{
@@ -73,9 +62,9 @@ function FieldWithDiff({
         borderRadius: isChanged ? 4 : undefined,
         transition: "background-color 0.3s ease",
       }}
-      title={isChanged && previous ? `${label}（前回）: ${previous}` : undefined}
+      title={isChanged && previous ? `${label}（前回）: ${prev || "—"}` : undefined}
     >
-      <strong>{label}：</strong> {current || "—"}
+      <strong>{label}：</strong> {cur || "—"}
     </p>
   );
 }
@@ -83,6 +72,7 @@ function FieldWithDiff({
 function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
   return (
     <div
+      className="h2pdf-avoid"
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -104,6 +94,7 @@ function TimelineItem({ date, children }: { date: string; children: React.ReactN
         {date}
       </time>
       <div
+        className="h2pdf-avoid h2pdf-block"
         style={{
           marginLeft: 12,
           borderLeft: "4px solid #1976d2",
@@ -126,12 +117,20 @@ function TimelineItem({ date, children }: { date: string; children: React.ReactN
   );
 }
 
-/* =========================
- * ユーティリティ
- * ======================= */
+/* ---------- PDF用CSS（分割回避など） ---------- */
+const H2PDF_PRINT_CSS = `
+.h2pdf-avoid { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-root img, .h2pdf-root figure, .h2pdf-root .h2pdf-block { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-break-before { break-before: page; page-break-before: always; }
+.h2pdf-break-after { break-after: page; page-break-after: always; }
+.h2pdf-root img { max-width: 100%; height: auto; }
+.h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
+`;
+
+/* ---------- ユーティリティ ---------- */
 function formatDateTime(anyDate: any): string {
   const d: Date =
-    typeof anyDate?.toDate === "function"
+    anyDate?.toDate?.() instanceof Date
       ? anyDate.toDate()
       : typeof anyDate === "string"
       ? new Date(anyDate)
@@ -147,189 +146,46 @@ function formatDateTime(anyDate: any): string {
   return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
 }
 
-const TRIGGER_OPTIONS = [
-  "授業での気づき",
-  "児童の反応",
-  "同僚・管理職からの助言",
-  "研修・書籍・研究",
-  "評価の結果から",
-  "失敗からの学び",
-  "その他",
-] as const;
-
-function parseTags(input: string): string[] {
-  return input
-    .split(/[,\s]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-}
-
-function toTagString(tags?: string[]) {
-  return (tags ?? []).join(", ");
-}
-
 function sanitizeFilename(name: string) {
-  const fallback = "教育観ポートフォリオ";
-  const base = (name || fallback).trim();
-  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 120);
+  const base = (name || "教育観").trim();
+  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 100);
 }
 
-/* =========================
- * ポートフォリオ編集
- * ======================= */
-function PortfolioEditor({
-  data,
-  onCancel,
-  onSaved,
-}: {
-  data: EducationHistory;
-  onCancel: () => void;
-  onSaved: (updated: Partial<EducationHistory>) => void;
-}) {
-  const [triggerType, setTriggerType] = useState<string>(data.triggerType ?? "");
-  const [triggerText, setTriggerText] = useState<string>(data.triggerText ?? "");
-  const [reason, setReason] = useState<string>(data.reason ?? "");
-  const [reflection, setReflection] = useState<string>(data.reflection ?? "");
-  const [tagsInput, setTagsInput] = useState<string>(toTagString(data.tags));
-  const [isMilestone, setIsMilestone] = useState<boolean>(!!data.isMilestone);
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const payload: Partial<EducationHistory> = {
-        triggerType: triggerType || undefined,
-        triggerText: triggerText || undefined,
-        reason: reason || undefined,
-        reflection: reflection || undefined,
-        tags: parseTags(tagsInput),
-        isMilestone,
-        portfolioUpdatedAt: serverTimestamp(),
-      };
-      await updateDoc(doc(db, "educationModelsHistory", data.id), payload as any);
-      onSaved(payload);
-    } catch (e) {
-      console.error(e);
-      alert("保存に失敗しました。");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div style={editorWrapStyle}>
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>きっかけ（分類）</label>
-        <select
-          value={triggerType}
-          onChange={(e) => setTriggerType(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">（未選択）</option>
-          {TRIGGER_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>きっかけ（具体）</label>
-        <input
-          type="text"
-          value={triggerText}
-          onChange={(e) => setTriggerText(e.target.value)}
-          placeholder="例）第2時のディスカッションで『根拠』が弱かった"
-          style={inputStyle}
-        />
-      </div>
-
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>理由・背景</label>
-        <textarea
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={3}
-          placeholder="なぜその変更をしたのか、意図や根拠・背景を記録"
-          style={textareaStyle}
-        />
-      </div>
-
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>振り返りメモ</label>
-        <textarea
-          value={reflection}
-          onChange={(e) => setReflection(e.target.value)}
-          rows={4}
-          placeholder="次回に活かす視点や児童の変化、自分の学び"
-          style={textareaStyle}
-        />
-      </div>
-
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>タグ</label>
-        <input
-          type="text"
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-          placeholder="例）評価, 特別活動, 対話, 失敗から学ぶ"
-          style={inputStyle}
-        />
-        <small style={{ color: "#666" }}>※カンマまたは空白で区切り</small>
-      </div>
-
-      <div style={{ ...editorRowStyle, alignItems: "center" }}>
-        <label style={labelStyle}>マイルストーン</label>
-        <input
-          type="checkbox"
-          checked={isMilestone}
-          onChange={(e) => setIsMilestone(e.target.checked)}
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{ ...buttonBaseStyle, backgroundColor: "#4caf50" }}
-        >
-          {saving ? "保存中..." : "保存"}
-        </button>
-        <button onClick={onCancel} style={{ ...buttonBaseStyle, backgroundColor: "#9e9e9e" }}>
-          キャンセル
-        </button>
-      </div>
-    </div>
-  );
+function isSmallDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
+  const narrow =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 820px)").matches
+      : window.innerWidth <= 820;
+  return touch && narrow;
 }
 
-/* =========================
- * メイン
- * ======================= */
+/* =========================================================
+ * ページ本体
+ * ======================================================= */
 export default function GroupedHistoryPage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
+
   const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // フィルタ／検索
-  const [qText, setQText] = useState("");
-  const [filterTrigger, setFilterTrigger] = useState<string>("");
-  const [filterTag, setFilterTag] = useState<string>("");
-  const [milestoneOnly, setMilestoneOnly] = useState<boolean>(false);
+  // 追加：検索
+  const [q, setQ] = useState("");
+  const [exportingGroupId, setExportingGroupId] = useState<string | null>(null);
 
-  const router = useRouter();
-
-  // 展開状態を永続化
+  // 展開状態をlocalStorageと同期
   useEffect(() => {
     const saved = localStorage.getItem("expandedIds");
     if (saved) {
       try {
-        setExpandedIds(new Set(JSON.parse(saved)));
-      } catch {}
+        const parsed: string[] = JSON.parse(saved);
+        setExpandedIds(new Set(parsed));
+      } catch {
+        /* noop */
+      }
     }
   }, []);
   useEffect(() => {
@@ -353,7 +209,7 @@ export default function GroupedHistoryPage() {
           ...(d.data() as Omit<EducationHistory, "id">),
         })) as EducationHistory[];
 
-        // モデルIDでグループ
+        // モデルごとにグループ化
         const map = new Map<string, GroupedHistory>();
         rows.forEach((h) => {
           if (!map.has(h.modelId)) {
@@ -375,16 +231,11 @@ export default function GroupedHistoryPage() {
   const toggleExpand = (modelId: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      next.has(modelId) ? next.delete(modelId) : next.add(modelId);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
       return next;
     });
   };
-
-  const expandAll = () => {
-    const all = new Set(groupedHistories.map((g) => g.modelId));
-    setExpandedIds(all);
-  };
-  const collapseAll = () => setExpandedIds(new Set());
 
   const deleteHistory = async (id: string) => {
     if (!confirm("この履歴を削除しますか？")) return;
@@ -402,113 +253,63 @@ export default function GroupedHistoryPage() {
     }
   };
 
-  // タグの×削除
-  const removeTag = async (h: EducationHistory, tag: string) => {
-    const current = h.tags ?? [];
-    const next = current.filter((t) => t !== tag);
+  // 検索フィルタ
+  const norm = (s: string) => (s || "").toLowerCase();
+  const matchHistory = (h: EducationHistory, keyword: string) => {
+    const k = norm(keyword);
+    if (!k) return true;
+    return (
+      norm(h.name).includes(k) ||
+      norm(h.philosophy).includes(k) ||
+      norm(h.evaluationFocus).includes(k) ||
+      norm(h.languageFocus).includes(k) ||
+      norm(h.childFocus).includes(k) ||
+      norm(h.note || "").includes(k) ||
+      norm(h.triggerReason || "").includes(k)
+    );
+  };
+
+  // PDF（モデル単位）エクスポート
+  const exportGroupPdf = async (modelId: string, modelName: string) => {
+    const el = document.getElementById(`group-${modelId}`);
+    if (!el) {
+      alert("PDF化対象の要素が見つかりませんでした。");
+      return;
+    }
+    setExportingGroupId(modelId);
     try {
-      await updateDoc(doc(db, "educationModelsHistory", h.id), { tags: next });
-      // 楽観的更新
-      setGroupedHistories((prev) =>
-        prev.map((g) =>
-          g.modelId !== h.modelId
-            ? g
-            : { ...g, histories: g.histories.map((x) => (x.id === h.id ? { ...x, tags: next } : x)) }
-        )
-      );
+      const { default: html2pdf } = await import("html2pdf.js");
+      const scaleVal = isSmallDevice() ? 2.2 : 2.6;
+      await html2pdf()
+        .from(el)
+        .set({
+          margin: [5, 5, 5, 5],
+          filename: `教育観_${sanitizeFilename(modelName)}.pdf`,
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          html2canvas: { useCORS: true, scale: scaleVal },
+          pagebreak: { mode: ["css", "legacy", "avoid-all"] },
+        })
+        .save();
     } catch (e) {
       console.error(e);
-      alert("タグの削除に失敗しました");
+      alert("PDFの作成に失敗しました。");
+    } finally {
+      setExportingGroupId(null);
     }
   };
 
-  // PDF出力
-  const exportPdf = async (elementId: string, filename: string) => {
-    const el = document.getElementById(elementId);
-    if (!el) return alert("PDF化対象の要素が見つかりませんでした。");
-    const { default: html2pdf } = await import("html2pdf.js");
-    const scale = window.innerWidth <= 820 ? 2.0 : 2.6;
-    await (html2pdf() as any)
-      .from(el)
-      .set({
-        margin: [6, 6, 6, 6],
-        filename: `${sanitizeFilename(filename)}.pdf`,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale },
-        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-      })
-      .save();
-  };
-
-  // 全タグ／全きっかけ候補を算出（フィルタUI用）
-  const allTags = useMemo(() => {
-    const set = new Set<string>();
-    groupedHistories.forEach((g) =>
-      g.histories.forEach((h) => (h.tags ?? []).forEach((t) => set.add(t)))
-    );
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
-  }, [groupedHistories]);
-
-  const allTriggers = useMemo(() => {
-    const set = new Set<string>();
-    groupedHistories.forEach((g) =>
-      g.histories.forEach((h) => h.triggerType && set.add(h.triggerType))
-    );
-    return Array.from(set);
-  }, [groupedHistories]);
-
-  // フィルタリング＆検索
-  function matchFilters(h: EducationHistory) {
-    if (milestoneOnly && !h.isMilestone) return false;
-    if (filterTrigger && h.triggerType !== filterTrigger) return false;
-    if (filterTag && !(h.tags ?? []).includes(filterTag)) return false;
-    if (qText.trim()) {
-      const hay = [
-        h.name,
-        h.philosophy,
-        h.evaluationFocus,
-        h.languageFocus,
-        h.childFocus,
-        h.note ?? "",
-        h.reason ?? "",
-        h.reflection ?? "",
-        h.triggerText ?? "",
-        (h.tags ?? []).join(" "),
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(qText.trim().toLowerCase())) return false;
-    }
-    return true;
-  }
-
-  // モデルごとのサマリー
-  function renderModelSummary(historiesDesc: EducationHistory[]) {
-    if (historiesDesc.length === 0) return null;
-    const latest = historiesDesc[0];
-    const oldest = historiesDesc[historiesDesc.length - 1];
-
-    const changedFields: string[] = [];
-    if (latest.philosophy !== oldest.philosophy) changedFields.push("教育観");
-    if (latest.evaluationFocus !== oldest.evaluationFocus) changedFields.push("評価観点");
-    if (latest.languageFocus !== oldest.languageFocus) changedFields.push("言語活動");
-    if (latest.childFocus !== oldest.childFocus) changedFields.push("育てたい子どもの姿");
-
-    const milestoneCount = historiesDesc.filter((h) => h.isMilestone).length;
-
-    return (
-      <div style={summaryCardStyle}>
-        <div style={{ fontWeight: "bold", marginBottom: 6 }}>サマリー</div>
-        <p style={{ margin: 0, fontSize: 14 }}>
-          変化した領域：{changedFields.length ? changedFields.join("・") : "（大きな変化なし）"}
-        </p>
-        <p style={{ margin: "6px 0 0", fontSize: 14 }}>マイルストーン：{milestoneCount} 件</p>
-      </div>
-    );
-  }
+  // 統計（表示件数）
+  const totalCount = groupedHistories.reduce((sum, g) => sum + g.histories.length, 0);
+  const visibleCount = groupedHistories.reduce(
+    (sum, g) => sum + g.histories.filter((h) => matchHistory(h, q)).length,
+    0
+  );
 
   return (
     <>
+      {/* PDF分割回避CSS */}
+      <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
+
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
@@ -576,219 +377,124 @@ export default function GroupedHistoryPage() {
         </div>
       </div>
 
-      {/* メイン */}
-      <main style={mainStyle} id="portfolio-root">
-        <h1 style={titleStyle}>📁 教育観ポートフォリオ</h1>
+      {/* 本文 */}
+      <main style={mainStyle}>
+        <h1 style={titleStyle}>🕒 教育観履歴（教育観ポートフォリオ）</h1>
+        <p style={subNoteStyle}>
+          ※「ポートフォリオ」＝これまでの変化と学びをまとめて見直す記録。<br />
+          ※各項目には注釈付き：教育観（授業の考え方）／評価の観点（何を見て評価するか）／言語活動（話す・聞く・書く等）／育てたい子どもの姿（目指す姿）／
+          きっかけ・理由（なぜ変えたか）。
+        </p>
 
-        {/* フィルタ＆操作バー */}
-        <section style={filterBarStyle}>
+        {/* 検索 */}
+        <div style={searchRowStyle}>
           <input
-            type="text"
-            placeholder="キーワード検索（本文・メモ・タグなど）"
-            value={qText}
-            onChange={(e) => setQText(e.target.value)}
-            style={filterInputStyle}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="キーワードで絞り込み（名前／教育観／評価観点／言語活動／育てたい姿／メモ／きっかけ）"
+            aria-label="教育観履歴の検索"
+            style={searchInputStyle}
           />
-
-          <select
-            value={filterTrigger}
-            onChange={(e) => setFilterTrigger(e.target.value)}
-            style={filterSelectStyle}
-          >
-            <option value="">きっかけ（すべて）</option>
-            {allTriggers.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filterTag}
-            onChange={(e) => setFilterTag(e.target.value)}
-            style={filterSelectStyle}
-          >
-            <option value="">タグ（すべて）</option>
-            {allTags.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={milestoneOnly}
-              onChange={(e) => setMilestoneOnly(e.target.checked)}
-            />
-            マイルストーンのみ
-          </label>
-
-          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <button
-              onClick={expandAll}
-              style={{ ...buttonBaseStyle, backgroundColor: "#607d8b" }}
-              title="すべてのモデルを展開"
-            >
-              すべて展開
+          {q && (
+            <button onClick={() => setQ("")} style={clearBtnStyle} aria-label="検索をクリア">
+              ×
             </button>
-            <button
-              onClick={collapseAll}
-              style={{ ...buttonBaseStyle, backgroundColor: "#90a4ae" }}
-              title="すべてのモデルを折りたたむ"
-            >
-              すべて折りたたみ
-            </button>
-            <button
-              onClick={() => exportPdf("portfolio-root", "教育観ポートフォリオ_全体")}
-              style={{ ...buttonBaseStyle, backgroundColor: "#FF9800" }}
-              title="このページ全体をPDF保存"
-            >
-              📄 全体PDF
-            </button>
-          </div>
-        </section>
+          )}
+        </div>
+        <div style={countNoteStyle}>
+          表示：{visibleCount} / {totalCount} 件
+        </div>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
-            // Firestoreからは新→旧なので、表示は「古い→新しい」の時系列に
-            const historiesAsc = [...histories].reverse();
+            // 検索適用後の配列（新→旧の配列を受け、表示は昇順に並べ替え）
+            const filtered = histories.filter((h) => matchHistory(h, q));
+            if (filtered.length === 0) return null;
 
-            // フィルタ適用（モデルごと）
-            const filteredAsc = historiesAsc.filter((h) => matchFilters(h));
-            if (filteredAsc.length === 0) {
-              return null;
-            }
-
-            // サマリー用：新→旧に並べた配列
-            const desc = [...histories].sort(
-              (a, b) => +new Date(formatDateTime(b.updatedAt)) - +new Date(formatDateTime(a.updatedAt))
-            );
-
-            const sectionId = `model-${modelId}`;
+            const historiesAsc = [...filtered].reverse();
 
             return (
-              <section key={modelId} style={groupSectionStyle} id={sectionId}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <section key={modelId} style={groupSectionStyle}>
+                <div style={groupHeaderRowStyle}>
                   <button
                     onClick={() => toggleExpand(modelId)}
                     style={groupToggleBtnStyle}
                     aria-expanded={expandedIds.has(modelId)}
                     aria-controls={`section-${modelId}`}
                   >
-                    {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴 {histories.length} 件）
+                    {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（このモデルの記録 {filtered.length} 件）
                   </button>
 
                   <button
-                    onClick={() => exportPdf(sectionId, `教育観_${modelName}`)}
-                    style={{ ...buttonBaseStyle, backgroundColor: "#FF9800" }}
-                    title="このモデルだけPDF保存"
+                    onClick={() => exportGroupPdf(modelId, modelName)}
+                    style={pdfBtnStyle}
+                    disabled={exportingGroupId === modelId}
+                    title="このモデルの履歴をPDFに保存します"
                   >
-                    📄 モデルPDF
+                    {exportingGroupId === modelId ? "PDF作成中…" : "📄 PDF保存"}
                   </button>
                 </div>
 
-                {/* モデルサマリー（常時表示） */}
-                <div style={{ marginTop: 8 }}>{renderModelSummary(desc)}</div>
-
                 {expandedIds.has(modelId) && (
-                  <div id={`section-${modelId}`} style={historyListStyle}>
-                    {filteredAsc.map((h, i) => {
-                      const prev = i > 0 ? filteredAsc[i - 1] : undefined;
-                      const isEditing = editingId === h.id;
-
+                  <div
+                    id={`group-${modelId}`}
+                    className="h2pdf-root h2pdf-avoid"
+                    style={historyListStyle}
+                  >
+                    {historiesAsc.map((h, i) => {
+                      const prev = i > 0 ? historiesAsc[i - 1] : undefined;
                       return (
                         <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <h2 style={cardTitleStyle}>{h.name}</h2>
-                            {h.isMilestone && (
-                              <span style={milestoneChipStyle} title="重要な転換点">
-                                ★ milestone
-                              </span>
-                            )}
-                          </div>
+                          <h2 style={cardTitleStyle}>{h.name || "（名称未設定）"}</h2>
 
-                          {/* 変化点（差分ハイライト） */}
-                          <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
-                          <FieldWithDiff current={h.evaluationFocus} previous={prev?.evaluationFocus} label="評価観点" />
-                          <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
-                          <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
+                          <FieldWithDiff
+                            current={h.philosophy}
+                            previous={prev?.philosophy}
+                            label="教育観（授業の考え方）"
+                          />
+                          <FieldWithDiff
+                            current={h.evaluationFocus}
+                            previous={prev?.evaluationFocus}
+                            label="評価の観点（何を見て評価するか）"
+                          />
+                          <FieldWithDiff
+                            current={h.languageFocus}
+                            previous={prev?.languageFocus}
+                            label="言語活動（話す・聞く・書く等）"
+                          />
+                          <FieldWithDiff
+                            current={h.childFocus}
+                            previous={prev?.childFocus}
+                            label="育てたい子どもの姿（目指す姿）"
+                          />
 
-                          {/* ポートフォリオ領域 */}
-                          {!isEditing ? (
-                            <div style={portfolioViewStyle}>
-                              <p style={rowP}>
-                                <strong>きっかけ：</strong>
-                                {h.triggerType || "—"}
-                                {h.triggerText ? `｜${h.triggerText}` : ""}
-                              </p>
-                              <p style={rowP}>
-                                <strong>理由・背景：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reason || "—"}</span>
-                              </p>
-                              <p style={rowP}>
-                                <strong>振り返りメモ：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reflection || "—"}</span>
-                              </p>
-                              <p style={{ ...rowP, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                <strong>タグ：</strong>
-                                {(h.tags ?? []).length ? (
-                                  (h.tags ?? []).map((t) => (
-                                    <span key={t} style={tagChipStyle} title="クリックで削除">
-                                      #{t}
-                                      <button
-                                        aria-label={`${t} を削除`}
-                                        onClick={() => removeTag(h, t)}
-                                        style={chipCloseBtnStyle}
-                                      >
-                                        ×
-                                      </button>
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span>—</span>
-                                )}
-                              </p>
+                          <p style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>
+                            <strong>きっかけ・理由（なぜ変えたか）：</strong>{" "}
+                            {h.triggerReason?.trim() || "—"}
+                          </p>
 
-                              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                                <button
-                                  onClick={() => setEditingId(h.id)}
-                                  style={{ ...buttonBaseStyle, backgroundColor: "#1976d2" }}
-                                >
-                                  ✏️ 追記・編集
-                                </button>
-                                <button
-                                  onClick={() => deleteHistory(h.id)}
-                                  style={{ ...buttonBaseStyle, backgroundColor: "#e53935" }}
-                                >
-                                  🗑 削除
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <PortfolioEditor
-                              data={h}
-                              onCancel={() => setEditingId(null)}
-                              onSaved={(updated) => {
-                                setGroupedHistories((prev) =>
-                                  prev.map((g) =>
-                                    g.modelId !== h.modelId
-                                      ? g
-                                      : {
-                                          ...g,
-                                          histories: g.histories.map((x) =>
-                                            x.id === h.id ? { ...x, ...updated } : x
-                                          ),
-                                        }
-                                  )
-                                );
-                                setEditingId(null);
-                              }}
-                            />
+                          {h.note?.trim() && (
+                            <p style={{ whiteSpace: "pre-wrap", margin: "6px 0 0", color: "#555" }}>
+                              <strong>メモ：</strong> {h.note}
+                            </p>
                           )}
+
+                          <button
+                            style={{
+                              marginTop: 10,
+                              backgroundColor: "#e53935",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 6,
+                              padding: "0.5rem 1rem",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => deleteHistory(h.id)}
+                          >
+                            削除
+                          </button>
                         </TimelineItem>
                       );
                     })}
@@ -803,10 +509,7 @@ export default function GroupedHistoryPage() {
   );
 }
 
-/* =========================
- * スタイル
- * ======================= */
-
+/* ---------- スタイル ---------- */
 const navBarStyle: CSSProperties = {
   position: "fixed",
   top: 0,
@@ -819,7 +522,6 @@ const navBarStyle: CSSProperties = {
   padding: "0 1rem",
   zIndex: 1000,
 };
-
 const hamburgerStyle: CSSProperties = {
   cursor: "pointer",
   width: 30,
@@ -828,19 +530,8 @@ const hamburgerStyle: CSSProperties = {
   flexDirection: "column",
   justifyContent: "space-between",
 };
-
-const barStyle: CSSProperties = {
-  height: 4,
-  backgroundColor: "white",
-  borderRadius: 2,
-};
-
-const navTitleStyle: CSSProperties = {
-  color: "white",
-  marginLeft: 16,
-  fontSize: "1.25rem",
-  userSelect: "none",
-};
+const barStyle: CSSProperties = { height: 4, backgroundColor: "white", borderRadius: 2 };
+const navTitleStyle: CSSProperties = { color: "white", marginLeft: 16, fontSize: "1.25rem", userSelect: "none" };
 
 const menuWrapperStyle: CSSProperties = {
   position: "fixed",
@@ -856,14 +547,7 @@ const menuWrapperStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
 };
-
-const menuScrollStyle: CSSProperties = {
-  padding: "1rem",
-  paddingBottom: 80,
-  overflowY: "auto",
-  flexGrow: 1,
-};
-
+const menuScrollStyle: CSSProperties = { padding: "1rem", paddingBottom: 80, overflowY: "auto", flexGrow: 1 };
 const logoutButtonStyle: CSSProperties = {
   margin: "1rem",
   padding: "0.75rem 1rem",
@@ -875,7 +559,6 @@ const logoutButtonStyle: CSSProperties = {
   cursor: "pointer",
   zIndex: 1000,
 };
-
 const overlayStyle: CSSProperties = {
   position: "fixed",
   top: 56,
@@ -886,7 +569,6 @@ const overlayStyle: CSSProperties = {
   transition: "opacity 0.3s ease",
   zIndex: 998,
 };
-
 const navLinkStyle: CSSProperties = {
   display: "block",
   padding: "0.75rem 1rem",
@@ -907,61 +589,47 @@ const mainStyle: CSSProperties = {
   paddingTop: 80,
   boxSizing: "border-box",
 };
-
-const titleStyle: CSSProperties = {
-  fontSize: "1.8rem",
-  marginBottom: "1rem",
-  textAlign: "center",
-  userSelect: "none",
-};
-
-const emptyStyle: CSSProperties = {
-  padding: "1.5rem",
+const titleStyle: CSSProperties = { fontSize: "1.8rem", marginBottom: "0.5rem", textAlign: "center", userSelect: "none" };
+const subNoteStyle: CSSProperties = {
   textAlign: "center",
   color: "#666",
-  fontSize: "1.1rem",
+  marginBottom: 12,
+  lineHeight: 1.6,
+  fontSize: 14,
 };
 
-const filterBarStyle: CSSProperties = {
+const searchRowStyle: CSSProperties = {
   display: "flex",
-  flexWrap: "wrap",
   gap: 8,
   alignItems: "center",
-  margin: "0 0 16px",
-  background: "#f6f9ff",
-  border: "1px solid #d6e3ff",
-  borderRadius: 8,
-  padding: 8,
+  margin: "8px 0",
 };
-
-const filterInputStyle: CSSProperties = {
-  flex: "1 1 240px",
-  minWidth: 220,
-  padding: "8px 10px",
+const searchInputStyle: CSSProperties = {
+  flex: 1,
+  padding: "8px 12px",
+  fontSize: 16,
+  border: "1px solid #bbb",
   borderRadius: 6,
-  border: "1px solid #c5d2f0",
-  outline: "none",
 };
-
-const filterSelectStyle: CSSProperties = {
-  flex: "0 0 auto",
-  minWidth: 160,
-  padding: "8px 10px",
+const clearBtnStyle: CSSProperties = {
+  padding: "8px 12px",
   borderRadius: 6,
-  border: "1px solid #c5d2f0",
-  outline: "none",
-  background: "white",
+  border: "none",
+  backgroundColor: "#9e9e9e",
+  color: "#fff",
+  cursor: "pointer",
 };
+const countNoteStyle: CSSProperties = { color: "#666", fontSize: 14, marginBottom: 8 };
 
-const groupSectionStyle: CSSProperties = {
-  marginBottom: "2rem",
-};
-
+const emptyStyle: CSSProperties = { padding: "1.5rem", textAlign: "center", color: "#666", fontSize: "1.1rem" };
+const groupSectionStyle: CSSProperties = { marginBottom: "2rem" };
+const groupHeaderRowStyle: CSSProperties = { display: "flex", gap: 8, alignItems: "center" };
 const groupToggleBtnStyle: CSSProperties = {
   cursor: "pointer",
+  flex: 1,
   textAlign: "left",
-  padding: "0.75rem 1rem",
-  fontSize: "1.05rem",
+  padding: "1rem 1.25rem",
+  fontSize: "1.15rem",
   fontWeight: "bold",
   backgroundColor: "#e3f2fd",
   border: "none",
@@ -969,112 +637,15 @@ const groupToggleBtnStyle: CSSProperties = {
   boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
   userSelect: "none",
 };
-
-const historyListStyle: CSSProperties = {
-  marginTop: "1rem",
-};
-
-const cardTitleStyle: CSSProperties = {
-  fontSize: "1.2rem",
-  margin: "0 0 0.5rem",
-  wordBreak: "break-word",
-};
-
-const milestoneChipStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 4,
-  padding: "2px 8px",
-  borderRadius: 999,
-  background: "#ffecb3",
-  border: "1px solid #f9d77a",
-  fontSize: 12,
-  color: "#7b5b00",
-};
-
-const portfolioViewStyle: CSSProperties = {
-  background: "#fff",
-  border: "1px solid #e0e7ff",
-  borderRadius: 8,
-  padding: 10,
-  marginTop: 6,
-};
-
-const rowP: CSSProperties = {
-  margin: "4px 0",
-};
-
-const tagChipStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  background: "#e8f0ff",
-  border: "1px solid #b6ccff",
-  color: "#2a4aa0",
-  borderRadius: 999,
-  padding: "0 6px 0 8px",
-  fontSize: 12,
-};
-
-const chipCloseBtnStyle: CSSProperties = {
+const pdfBtnStyle: CSSProperties = {
+  padding: "10px 14px",
+  backgroundColor: "#FF9800",
+  color: "#fff",
+  borderRadius: 6,
   border: "none",
-  background: "transparent",
-  color: "#2a4aa0",
   cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 12,
-  lineHeight: 1,
-  padding: "2px 2px 3px",
+  whiteSpace: "nowrap",
 };
 
-const editorWrapStyle: CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #bcd4ff",
-  borderRadius: 8,
-  padding: 12,
-  marginTop: 8,
-};
-
-const editorRowStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  marginBottom: 8,
-};
-
-const labelStyle: CSSProperties = {
-  fontSize: 13,
-  color: "#455a64",
-};
-
-const inputStyle: CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid #c5d2f0",
-  outline: "none",
-} as CSSProperties;
-
-const textareaStyle: CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid #c5d2f0",
-  outline: "none",
-  resize: "vertical",
-} as CSSProperties;
-
-const buttonBaseStyle: CSSProperties = {
-  padding: "8px 12px",
-  fontSize: "0.9rem",
-  borderRadius: 6,
-  cursor: "pointer",
-  border: "none",
-  color: "white",
-};
-
-const summaryCardStyle: CSSProperties = {
-  background: "#F5FAFF",
-  border: "1px solid #cfe3ff",
-  borderRadius: 8,
-  padding: 10,
-  fontSize: 14,
-};
+const historyListStyle: CSSProperties = { marginTop: "1rem" };
+const cardTitleStyle: CSSProperties = { fontSize: "1.2rem", margin: "0 0 0.5rem", wordBreak: "break-word" };
