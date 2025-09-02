@@ -759,14 +759,16 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        <p style={{ color: "#e53935", fontSize: 14, marginBottom: 12 }}>
-          ※板書の写真を追加・削除した場合は、必ず「プレビューを生成」ボタンを押してください
-        </p>
-
-        {/* ▼ アップロード前の注意書き */}
+        {/* ▼ アップロード前の注意書き（ここに統合） */}
         <div style={noticeBoxStyle}>
           <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
+            <li>
+              <strong>
+                板書の写真を<strong>追加・削除</strong>した場合は、必ず
+                「プレビューを生成」ボタンを押してください（保存内容を正しく反映するため）。
+              </strong>
+            </li>
             <li>
               児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、手書きの名前等）が写っていないこと。
             </li>
