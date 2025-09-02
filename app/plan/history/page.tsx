@@ -372,6 +372,18 @@ export default function HistoryPage() {
     textAlign: "left",
   };
 
+  // ★ 追加：注釈ボックス
+  const infoNoteStyle: CSSProperties = {
+    background: "#fffef7",
+    border: "1px solid #ffecb3",
+    borderRadius: 8,
+    padding: "12px",
+    color: "#604a00",
+    marginBottom: "12px",
+    lineHeight: 1.6,
+    fontSize: "0.95rem",
+  };
+
   return (
     <>
       {/* ナビバー */}
@@ -447,6 +459,22 @@ export default function HistoryPage() {
         <h2 style={{ fontSize: isMobile ? "1.6rem" : "2rem", marginBottom: 16 }}>
           保存された授業案一覧
         </h2>
+
+        {/* ★ 追加：注釈ボックス */}
+        <section style={infoNoteStyle} role="note">
+          <p style={{ margin: 0 }}>
+            このページには<strong>保存された授業案</strong>が一覧表示されます。各カードの
+            <strong>「✍️ 実践記録」</strong>ボタンを押すと、その授業案に基づいた
+            <strong>実践記録</strong>を作成できます。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            作成した実践記録は、
+            <Link href="/practice/share" style={{ textDecoration: "underline" }}>
+              共有版実践記録
+            </Link>
+            ページで公開し、他の先生方と実践を共有できます。ぜひ活用してください。
+          </p>
+        </section>
 
         <label style={{ display: "block", marginBottom: 16, textAlign: "right" }}>
           並び替え：
