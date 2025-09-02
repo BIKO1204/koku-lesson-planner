@@ -63,6 +63,21 @@ const toStrArray = (v: unknown): string[] => {
   return [];
 };
 
+/* ======================= モデルタイプ自動判定関連 ======================= */
+const LESSON_PLAN_COLLECTIONS = [
+  "lesson_plans_reading",
+  "lesson_plans_writing",
+  "lesson_plans_discussion",
+  "lesson_plans_language_activity",
+];
+
+const MODEL_LABELS: Record<string, string> = {
+  lesson_plans_reading: "読解モデル",
+  lesson_plans_discussion: "話し合いモデル",
+  lesson_plans_writing: "作文モデル",
+  lesson_plans_language_activity: "言語活動モデル",
+};
+
 /* ======================= 確認メタ：シグネチャ ======================= */
 // 依存ライブラリなしの軽量ハッシュ（djb2）
 function hashString(input: string): string {
@@ -70,12 +85,11 @@ function hashString(input: string): string {
   for (let i = 0; i < input.length; i++) {
     hash = (hash * 33) ^ input.charCodeAt(i);
   }
-  // 32bit符号付を符号なしへ
   return (hash >>> 0).toString(16);
 }
 function calcImagesSignature(imgs: BoardImage[]): string {
   const combined = imgs
-    .map((i) => `${i.name || ""}|${(i.src || "").slice(0, 256)}`) // フルbase64は重いので先頭だけ
+    .map((i) => `${i.name || ""}|${(i.src || "").slice(0, 256)}`)
     .join("||");
   return hashString(combined);
 }
@@ -174,16 +188,13 @@ async function uploadImageToStorageFromAny(
   const path = `practiceImages/${uid}/${fileName}`;
   const imgRef = ref(storage, path);
 
-  // すでに Firebase Storage のURLなら再アップロード不要
   if (isFirebaseStorageUrl(src)) return src;
 
-  // data: URL
   if (isDataUrl(src)) {
     await uploadString(imgRef, src, "data_url");
     return getDownloadURL(imgRef);
   }
 
-  // blob: or http(s):
   if (isBlobUrl(src) || isHttpUrl(src)) {
     const res = await fetch(src);
     const blob = await res.blob();
@@ -191,7 +202,6 @@ async function uploadImageToStorageFromAny(
     return getDownloadURL(imgRef);
   }
 
-  // 素のbase64（保険）
   const maybeDataUrl = `data:image/jpeg;base64,${src}`;
   await uploadString(imgRef, maybeDataUrl, "data_url");
   return getDownloadURL(imgRef);
@@ -248,6 +258,9 @@ export default function PracticeAddPage() {
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // ▼ モデルタイプ固定フラグ
+  const [modelLocked, setModelLocked] = useState<boolean>(false);
 
   // ▼ 追加：確認関連
   const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
@@ -312,7 +325,7 @@ export default function PracticeAddPage() {
     });
   }, [id]);
 
-  /* ---- Firestoreからもロード（別端末同期） ---- */
+  /* ---- Firestoreから 実践記録 をロード（別端末同期） ---- */
   useEffect(() => {
     async function loadFromFirestore() {
       const preferred = normalizeToPracticeCollection(modelTypeParam);
@@ -327,7 +340,10 @@ export default function PracticeAddPage() {
           ? String(data.modelType) // lesson_plans_*
           : toLessonFromPractice(coll);
 
+        // 既存実践記録がある = そのモデルに固定
         setModelType(lessonType);
+        setModelLocked(true);
+
         setPracticeDate(data.practiceDate || "");
         setReflection(data.reflection || "");
         setLessonTitle(data.lessonTitle || "");
@@ -356,16 +372,48 @@ export default function PracticeAddPage() {
           imagesSignature: data.imagesSignature ?? undefined,
         });
 
-        // ▼ Firestoreに保存されているシグネチャ
         if (data.imagesSignature) {
           setPreviousSignature(String(data.imagesSignature));
         }
-        break; // 見つかったら終わり
+        break;
       }
     }
     loadFromFirestore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, modelTypeParam]);
+
+  /* ---- 授業案から モデルタイプ を自動特定（クエリ or lesson_plans_* 横断） ---- */
+  useEffect(() => {
+    if (modelLocked) return; // 既に固定済みなら何もしない
+
+    (async () => {
+      // 1) クエリ ?modelType=lesson_plans_xxx があればそれを採用
+      if (modelTypeParam && modelTypeParam.startsWith("lesson_plans_")) {
+        setModelType(modelTypeParam);
+        setModelLocked(true);
+        return;
+      }
+
+      // 2) Firestore の授業案コレクションを横断して存在確認
+      for (const coll of LESSON_PLAN_COLLECTIONS) {
+        const snap = await getDoc(doc(db, coll, id));
+        if (snap.exists()) {
+          setModelType(coll);
+          setModelLocked(true);
+
+          // 授業案の単元名を使ってタイトルを補完できる場合はしておく
+          const data = snap.data() as any;
+          const result = data?.result;
+          setLessonPlan({ id, result });
+          if (result && typeof result === "object" && result["単元名"]) {
+            setLessonTitle(String(result["単元名"]));
+          }
+          return;
+        }
+      }
+      // 3) 見つからなければ未固定（授業案未登録 or 直打ちアクセスの想定）
+    })();
+  }, [id, modelLocked, modelTypeParam]);
 
   /* ---- 画像の選択・削除で再確認が必要に ---- */
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -389,7 +437,6 @@ export default function PracticeAddPage() {
     setBoardImages((prev) => [...prev, ...newFullImages]);
     setCompressedImages((prev) => [...prev, ...newCompressedImages]);
 
-    // 画像変更 → 再確認必要
     setConfirmNoPersonalInfo(false);
     setNeedsReconfirm(true);
 
@@ -400,7 +447,6 @@ export default function PracticeAddPage() {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
 
-    // 画像変更 → 再確認必要
     setConfirmNoPersonalInfo(false);
     setNeedsReconfirm(true);
   };
@@ -431,7 +477,6 @@ export default function PracticeAddPage() {
     const sig = calcImagesSignature(imgs);
     setCurrentSignature(sig);
     if (previousSignature && sig === previousSignature) {
-      // 以前と同じ画像構成 → 自動で「再確認不要」
       setNeedsReconfirm(false);
     } else {
       setNeedsReconfirm(true);
@@ -449,6 +494,14 @@ export default function PracticeAddPage() {
       throw new Error("Not logged in");
     }
 
+    // モデルタイプが固定されていない場合は保存不可（誤紐づけ防止）
+    if (!modelLocked) {
+      alert(
+        "授業案からモデルタイプが自動設定されていません。授業案から本ページに遷移するか、共有一覧の「編集」から開いてください。"
+      );
+      throw new Error("Model type not locked");
+    }
+
     // 画像ソース：compressed があればそちら、なければ board
     const sourceImages =
       (rec.compressedImages?.length ? rec.compressedImages : rec.boardImages) || [];
@@ -456,7 +509,6 @@ export default function PracticeAddPage() {
     const uploadedUrls: BoardImage[] = await Promise.all(
       sourceImages.map(async (img, idx) => {
         if (img?.src && isFirebaseStorageUrl(img.src)) {
-          // すでに Storage URL
           return { name: img.name, src: img.src };
         }
         const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(
@@ -471,8 +523,6 @@ export default function PracticeAddPage() {
     const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
-    // ここで最終的なシグネチャを計算（アップロード後のURLで再計算してもOKだが、
-    // プレビュー時に算出した currentSignature を使っても実務上十分）
     const finalSignature =
       rec.imagesSignature || calcImagesSignature(sourceImages);
 
@@ -511,15 +561,20 @@ export default function PracticeAddPage() {
       return;
     }
 
-    // ▼ 確認チェックが未完了なら保存させない
     if (!confirmNoPersonalInfo) {
       alert("保存前に「児童の顔・氏名など個人情報が写っていない」ことの確認にチェックしてください。");
       return;
     }
 
+    if (!modelLocked) {
+      alert(
+        "授業案からモデルタイプが自動設定されていません。授業案から本ページに遷移するか、共有一覧の「編集」から開いてください。"
+      );
+      return;
+    }
+
     setUploading(true);
     try {
-      // ローカルにも確認メタを保存
       const toSaveLocal: PracticeRecord = {
         ...record,
         confirmedNoPersonalInfo: true,
@@ -670,7 +725,9 @@ export default function PracticeAddPage() {
         <div style={noticeBoxStyle}>
           <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
-            <li>児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、手書きの名前等）が写っていないこと。</li>
+            <li>
+              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、手書きの名前等）が写っていないこと。
+            </li>
             <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
             <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
           </ul>
@@ -753,21 +810,28 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
+          {/* ▼ モデルタイプは自動セット＆編集不可 */}
           <div style={boxStyle}>
             <label>
               モデルタイプ：
-              <select
-                value={modelType}
-                onChange={(e) => setModelType(e.target.value)}
-                required
-                style={{ marginLeft: 8, padding: 4 }}
+              <span
+                title="授業案に基づき自動設定されます"
+                style={{
+                  marginLeft: 8,
+                  padding: "4px 8px",
+                  background: "#eee",
+                  borderRadius: 4,
+                  display: "inline-block",
+                }}
               >
-                <option value="lesson_plans_reading">読解モデル</option>
-                <option value="lesson_plans_discussion">話し合いモデル</option>
-                <option value="lesson_plans_writing">作文モデル</option>
-                <option value="lesson_plans_language_activity">言語活動モデル</option>
-              </select>
+                {MODEL_LABELS[modelType] || modelType}
+              </span>
             </label>
+            {!modelLocked && (
+              <p style={{ marginTop: 8, color: "#e65100" }}>
+                ※授業案が見つかると自動設定されます。授業案から本ページに遷移するか、共有一覧の「編集」から開いてください。
+              </p>
+            )}
           </div>
 
           <div style={boxStyle}>
@@ -823,7 +887,7 @@ export default function PracticeAddPage() {
             ))}
           </div>
 
-          {/* ▼ 追加：確認チェック（画像が変わったら再確認） */}
+          {/* ▼ 確認チェック（画像が変わったら再確認） */}
           <div style={confirmBoxStyle}>
             <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <input
