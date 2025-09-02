@@ -77,7 +77,10 @@ export default function EducationModelsPage() {
         const colRef = collection(db, "educationModels");
         const qy = query(
           colRef,
-          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+          orderBy(
+            sortOrder === "newest" ? "updatedAt" : "name",
+            sortOrder === "newest" ? "desc" : "asc"
+          )
         );
         const snapshot = await getDocs(qy);
         const raw = snapshot.docs.map((d) => ({
@@ -87,7 +90,7 @@ export default function EducationModelsPage() {
 
         // 未設定(isShared===undefined)は共有中として扱う
         const list = raw.filter(
-          (m) => (m.isShared !== false) || m.creatorId === userId
+          (m) => m.isShared !== false || m.creatorId === userId
         );
 
         setModels(list);
@@ -310,11 +313,14 @@ export default function EducationModelsPage() {
     const filename = `教育観モデル_${sanitize(model.name)}_${sanitize(model.creatorName)}.pdf`;
 
     try {
-      await html2pdf().from(element).set({
-        margin: 15,
-        filename,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      }).save();
+      await html2pdf()
+        .from(element)
+        .set({
+          margin: 15,
+          filename,
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .save();
     } catch (e) {
       console.error(e);
       alert("PDFの生成に失敗しました。");
@@ -570,13 +576,22 @@ export default function EducationModelsPage() {
         {/* ページの意義（注釈） */}
         <section style={valueNoteStyle}>
           <p style={{ margin: 0 }}>
-            このページは、共有されている<strong>教育観モデル</strong>を一覧で見て
-            <strong>参考・比較</strong>できる場所です。
-            作成者本人はここから内容の編集や「共有から外す（公開停止）」ができます。
+            ここは<strong>教育観モデルを参照</strong>するページです。授業案作成では、ここで選んだ
+            <strong>ベースとなる教育観</strong>からスタートできます。
           </p>
-          <p style={{ margin: "6px 0 0" }}>
-            「共有から外す」は<strong>削除ではありません</strong>（データは残ります）。後で「共有にする」を押せば再公開できます。
-          </p>
+          <ul style={{ margin: "8px 0 0 1.2em" }}>
+            <li style={{ margin: "4px 0" }}>
+              できれば<strong>他の方と同じモデル名</strong>で、あなたの思いや考えを共有してください。
+              同名のデータが集まるほど、比較・分析や将来の検索・生成（RAG など）に活かせます。
+            </li>
+            <li style={{ margin: "4px 0" }}>
+              個人情報や<strong>特定の児童名</strong>は記載しないでください。
+            </li>
+            <li style={{ margin: "4px 0" }}>
+              「共有から外す」は<strong>削除ではありません</strong>（データは残り、作成者は引き続き利用できます）。
+              後で「共有にする」を押せば再公開できます。
+            </li>
+          </ul>
         </section>
 
         {/* 並び替え */}
