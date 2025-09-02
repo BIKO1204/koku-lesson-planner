@@ -230,6 +230,9 @@ export default function PracticeAddPage() {
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // ★ 追加：児童の個人情報（顔・氏名など）が写っていないことの確認
+  const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
+
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   /* ---- 授業案（ローカル）＆ローカル下書き ---- */
@@ -431,6 +434,12 @@ export default function PracticeAddPage() {
       alert("プレビューを作成してください");
       return;
     }
+    // ★ 追加：個人情報確認チェックが未承認なら保存しない
+    if (!confirmNoPersonalInfo) {
+      alert("保存前に「児童の顔・氏名など個人情報が写っていないこと」を確認してください。写り込みがある場合は必ずマスキング等で隠してください。");
+      return;
+    }
+
     setUploading(true);
     try {
       await saveRecordToIndexedDB(record);
@@ -566,6 +575,28 @@ export default function PracticeAddPage() {
         <p style={{ color: "#e53935", fontSize: 14, marginBottom: 16 }}>
           ※板書の写真を追加・削除した場合は、必ず「プレビューを生成」ボタンを押してください
         </p>
+
+        {/* ★ 追加：個人情報に関する注意ボックス */}
+        <div
+          style={{
+            border: "1px solid #ffcdd2",
+            background: "#fff5f5",
+            color: "#b71c1c",
+            padding: "12px",
+            borderRadius: 8,
+            marginBottom: 16,
+            lineHeight: 1.6,
+          }}
+        >
+          <strong>【重要】児童の個人情報を含む画像はアップロードしないでください。</strong>
+          <ul style={{ margin: "8px 0 0 18px" }}>
+            <li>顔・氏名・学籍番号・連絡先・住所・保護者名など個人を特定できる情報</li>
+            <li>名簿・提出物・成績等の写り込み</li>
+          </ul>
+          <div style={{ marginTop: 6 }}>
+            写り込んだ場合は、<strong>投稿前に必ずマスキングやぼかしで隠してください。</strong>
+          </div>
+        </div>
 
         <form onSubmit={handlePreview}>
           <div style={boxStyle}>
@@ -904,10 +935,40 @@ export default function PracticeAddPage() {
           </section>
         )}
 
+        {/* ★ 追加：保存前の確認チェック */}
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            border: "1px solid #f5b7b1",
+            background: "#fff8f8",
+            borderRadius: 8,
+            lineHeight: 1.6,
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={confirmNoPersonalInfo}
+              onChange={(e) => setConfirmNoPersonalInfo(e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              児童の<strong>顔・氏名・連絡先・学籍番号</strong>、名簿や成績など
+              <strong>個人情報が写っていない</strong>ことを確認しました。写り込みがある場合は
+              <strong>マスキング（塗りつぶし）やぼかし</strong>を行いました。
+            </span>
+          </label>
+        </div>
+
         <button
           onClick={handleSaveBoth}
-          style={primaryBtnStyle}
-          disabled={uploading}
+          style={{
+            ...primaryBtnStyle,
+            opacity: uploading || !confirmNoPersonalInfo ? 0.6 : 1,
+            cursor: uploading || !confirmNoPersonalInfo ? "not-allowed" : "pointer",
+          }}
+          disabled={uploading || !confirmNoPersonalInfo}
         >
           {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
         </button>
