@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import {
   collection,
   query,
@@ -12,11 +11,13 @@ import {
   addDoc,
   updateDoc,
   doc,
-  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import html2pdf from "html2pdf.js";
 
+/* =========================
+ * 型
+ * ======================= */
 type EducationModel = {
   id: string;
   name: string;
@@ -27,6 +28,8 @@ type EducationModel = {
   updatedAt: string;
   creatorId: string;
   creatorName: string;
+  // 追加：共有フラグ（未設定は共有中とみなす）
+  isShared?: boolean;
 };
 
 export default function EducationModelsPage() {
@@ -49,17 +52,16 @@ export default function EducationModelsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
 
-  // スマホ判定用state
   const [windowWidth, setWindowWidth] = useState<number>(
     typeof window !== "undefined" ? window.innerWidth : 1000
   );
 
-  // PDF用 refs をモデルごとに保持するため、Mapで管理
+  // PDF用 refs
   const pdfRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // ウィンドウリサイズ監視
+  // リサイズ監視
   useEffect(() => {
     function handleResize() {
       setWindowWidth(window.innerWidth);
@@ -68,29 +70,33 @@ export default function EducationModelsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // 一覧取得（共有=true か、自分のモデルは常に表示）
   useEffect(() => {
     async function fetchModels() {
       try {
         const colRef = collection(db, "educationModels");
-        const q = query(
+        const qy = query(
           colRef,
-          orderBy(
-            sortOrder === "newest" ? "updatedAt" : "name",
-            sortOrder === "newest" ? "desc" : "asc"
-          )
+          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
         );
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Omit<EducationModel, "id">),
-        }));
-        setModels(data);
+        const snapshot = await getDocs(qy);
+        const raw = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<EducationModel, "id">),
+        })) as EducationModel[];
+
+        // 未設定(isShared===undefined)は共有中として扱う
+        const list = raw.filter(
+          (m) => (m.isShared !== false) || m.creatorId === userId
+        );
+
+        setModels(list);
       } catch (e) {
         console.error("Firestoreからの読み込みエラー:", e);
       }
     }
     fetchModels();
-  }, [sortOrder]);
+  }, [sortOrder, userId]);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -150,8 +156,8 @@ export default function EducationModelsPage() {
       let newModel: EducationModel;
 
       if (editId) {
-        const original = models.find((m) => m.id === editId);
-        if (!original || original.creatorId !== userId) {
+        const target = models.find((m) => m.id === editId);
+        if (!target || target.creatorId !== userId) {
           alert("編集は作成者本人のみ可能です");
           return false;
         }
@@ -163,8 +169,8 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
         });
 
         await addDoc(collection(db, "educationModelsHistory"), {
@@ -175,8 +181,8 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
           note: "編集",
         });
 
@@ -188,8 +194,9 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
+          isShared: target.isShared, // 共有状態は維持
         };
       } else {
         const colRef = collection(db, "educationModels");
@@ -200,8 +207,9 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
+          isShared: true, // 既定は共有ON
         });
 
         await addDoc(collection(db, "educationModelsHistory"), {
@@ -212,8 +220,8 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
           note: "新規作成",
         });
 
@@ -225,16 +233,17 @@ export default function EducationModelsPage() {
           languageFocus: form.languageFocus.trim(),
           childFocus: form.childFocus.trim(),
           creatorName: form.creatorName.trim(),
-          updatedAt: now,
           creatorId: userId,
+          updatedAt: now,
+          isShared: true,
         };
       }
 
-      const updatedLocalModels = editId
+      const updated = editId
         ? models.map((m) => (m.id === editId ? newModel : m))
         : [newModel, ...models];
-      setModels(updatedLocalModels);
 
+      setModels(updated);
       cancelEdit();
       setError("");
       setMenuOpen(false);
@@ -242,7 +251,6 @@ export default function EducationModelsPage() {
       if (editId) {
         router.push("/models/history");
       }
-
       return true;
     } catch (e) {
       console.error("Firestore保存エラー", e);
@@ -251,39 +259,38 @@ export default function EducationModelsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const model = models.find((m) => m.id === id);
-    if (!model) return;
-    if (model.creatorId !== userId) {
-      alert("削除は作成者本人のみ可能です");
+  // 共有ON/OFF切り替え（削除の代わり）
+  const toggleShare = async (m: EducationModel) => {
+    if (m.creatorId !== userId) {
+      alert("変更は作成者本人のみ可能です");
       return;
     }
-    if (!confirm("このモデルを削除しますか？")) return;
+    const now = new Date().toISOString();
+    const currentShared = m.isShared !== false; // undefined は共有中扱い
+    const next = !currentShared;
+
     try {
-      await deleteDoc(doc(db, "educationModels", id));
-      const filtered = models.filter((m) => m.id !== id);
-      setModels(filtered);
-      if (editId === id) cancelEdit();
-      setMenuOpen(false);
+      await updateDoc(doc(db, "educationModels", m.id), {
+        isShared: next,
+        updatedAt: now,
+      });
+
+      setModels((prev) =>
+        prev.map((x) => (x.id === m.id ? { ...x, isShared: next, updatedAt: now } : x))
+      );
     } catch (e) {
-      alert("削除に失敗しました。");
       console.error(e);
+      alert("共有設定の更新に失敗しました。");
     }
   };
 
   const handlePdfSave = async (id: string) => {
     const element = pdfRefs.current.get(id);
-    if (!element) {
-      alert("PDF生成対象が見つかりません。");
-      return;
-    }
+    if (!element) return alert("PDF生成対象が見つかりません。");
     const model = models.find((m) => m.id === id);
-    if (!model) {
-      alert("モデル情報が見つかりません。");
-      return;
-    }
+    if (!model) return alert("モデル情報が見つかりません。");
 
-    const originalStyle = element.style.cssText;
+    const original = element.style.cssText;
 
     element.style.position = "static";
     element.style.left = "auto";
@@ -292,41 +299,33 @@ export default function EducationModelsPage() {
     element.style.padding = "20mm 15mm";
     element.style.backgroundColor = "white";
     element.style.color = "#222";
-    element.style.fontFamily =
-      "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif";
+    element.style.fontFamily = "'Yu Gothic','游ゴシック','Noto Sans JP',sans-serif";
     element.style.fontSize = "14px";
     element.style.lineHeight = "1.7";
     element.style.boxSizing = "border-box";
     element.style.wordBreak = "break-word";
     element.style.whiteSpace = "pre-wrap";
 
-    const sanitizeFileName = (name: string) =>
-      name.replace(/[\\/:"*?<>|]+/g, "_");
-
-    const filename = `教育観モデル_${sanitizeFileName(
-      model.name
-    )}_${sanitizeFileName(model.creatorName)}.pdf`;
+    const sanitize = (s: string) => s.replace(/[\\/:"*?<>|]+/g, "_");
+    const filename = `教育観モデル_${sanitize(model.name)}_${sanitize(model.creatorName)}.pdf`;
 
     try {
-      await html2pdf()
-        .from(element)
-        .set({
-          margin: 15,
-          filename,
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        })
-        .save();
+      await html2pdf().from(element).set({
+        margin: 15,
+        filename,
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      }).save();
     } catch (e) {
-      alert("PDFの生成に失敗しました。");
       console.error(e);
+      alert("PDFの生成に失敗しました。");
     } finally {
-      element.style.cssText = originalStyle;
+      element.style.cssText = original;
     }
   };
 
-  // --- Styles ---
-
-  // スマホかどうか判定（480px未満をスマホとする）
+  /* =========================
+   * スタイル
+   * ======================= */
   const isMobile = windowWidth < 480;
 
   const navBarStyle: React.CSSProperties = {
@@ -370,13 +369,17 @@ export default function EducationModelsPage() {
     padding: "0 1rem",
     boxSizing: "border-box",
   };
-
-  // メニューのボタンはスマホで少し大きく間隔を広げる
-  const menuLinksWrapperStyle: React.CSSProperties = {
-    overflowY: "auto",
-    flexGrow: 1,
-    paddingTop: "1rem",
-    paddingBottom: "20px",
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    top: 56,
+    left: 0,
+    width: "100vw",
+    height: "calc(100vh - 56px)",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    opacity: menuOpen ? 1 : 0,
+    visibility: menuOpen ? "visible" : "hidden",
+    transition: "opacity 0.3s ease",
+    zIndex: 998,
   };
   const navBtnStyle: React.CSSProperties = {
     marginBottom: isMobile ? 14 : 8,
@@ -402,66 +405,96 @@ export default function EducationModelsPage() {
     margin: "1rem",
     fontSize: isMobile ? "1.1rem" : "1rem",
   };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "calc(100vh - 56px)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const mainContainerStyle: React.CSSProperties = {
+
+  const mainStyle: React.CSSProperties = {
     padding: isMobile ? "72px 12px 12px" : "72px 24px 24px",
-    maxWidth: isMobile ? "100%" : 900,
-    margin: "auto",
-    fontFamily: "sans-serif",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
+    maxWidth: 900,
+    margin: "0 auto",
+    fontFamily: "'Yu Gothic','游ゴシック','Noto Sans JP',sans-serif",
     boxSizing: "border-box",
-    fontSize: isMobile ? "1rem" : "1.1rem",
-    lineHeight: 1.5,
   };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: isMobile ? "1.6rem" : "1.8rem",
+    marginBottom: 10,
+    textAlign: "center",
+    userSelect: "none",
+  };
+
+  const valueNoteStyle: React.CSSProperties = {
+    background: "#fffef7",
+    border: "1px solid #ffecb3",
+    borderRadius: 8,
+    padding: 10,
+    color: "#604a00",
+    marginBottom: 12,
+    lineHeight: 1.6,
+    fontSize: 14,
+  };
+
+  const controlRowStyle: React.CSSProperties = {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    marginBottom: 16,
+    flexWrap: "wrap",
+  };
+
+  const selectStyle: React.CSSProperties = {
+    padding: "8px 10px",
+    borderRadius: 6,
+    border: "1px solid #c5d2f0",
+    outline: "none",
+    background: "white",
+  };
+
   const cardStyle: React.CSSProperties = {
-    border: "1px solid #ccc",
+    border: "1px solid #e0e7ff",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 20,
     backgroundColor: "white",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+    boxShadow: "0 2px 6px rgba(25,118,210,0.08)",
     position: "relative",
   };
+
+  const buttonBase: React.CSSProperties = {
+    backgroundColor: "#1976d2",
+    color: "white",
+    padding: isMobile ? "10px 16px" : "8px 14px",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: isMobile ? "1.05rem" : "0.95rem",
+  };
+
+  const statusChip: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "2px 8px",
+    borderRadius: 999,
+    border: "1px solid #b6ccff",
+    background: "#e8f0ff",
+    color: "#2a4aa0",
+    fontSize: 12,
+    marginLeft: 8,
+  };
+
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: isMobile ? 10 : 8,
     marginBottom: 12,
-    fontSize: isMobile ? "1.1rem" : "1rem",
+    fontSize: isMobile ? "1.05rem" : "1rem",
     borderRadius: 6,
-    border: "1px solid #ccc",
+    border: "1px solid #c5d2f0",
     boxSizing: "border-box",
   };
-  const buttonPrimary: React.CSSProperties = {
-    backgroundColor: "#4caf50",
-    color: "white",
-    padding: isMobile ? "10px 20px" : "8px 16px",
-    border: "none",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontWeight: "bold",
-    fontSize: isMobile ? "1.1rem" : "1rem",
-  };
 
-  const editSectionTitleStyle: React.CSSProperties = {
-    fontWeight: "bold",
-    fontSize: isMobile ? "1.1rem" : "1.1rem",
-    marginBottom: 6,
-    marginTop: 12,
-  };
-
+  /* =========================
+   * UI
+   * ======================= */
   return (
     <>
       {/* ナビバー */}
@@ -478,25 +511,19 @@ export default function EducationModelsPage() {
           <span style={barStyle} />
           <span style={barStyle} />
         </div>
-        <h1
-          style={{
-            color: "white",
-            marginLeft: "1rem",
-            fontSize: isMobile ? "1.1rem" : "1.25rem",
-          }}
-        >
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
           国語授業プランナー
         </h1>
       </nav>
 
-      {/* メニューオーバーレイ */}
+      {/* オーバーレイ */}
       <div
         style={overlayStyle}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー全体 */}
+      {/* メニュー */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
@@ -508,388 +535,288 @@ export default function EducationModelsPage() {
           🔓 ログアウト
         </button>
 
-        <div style={menuLinksWrapperStyle}>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/");
-            }}
-          >
+        <div style={{ overflowY: "auto", flexGrow: 1, paddingTop: "1rem", paddingBottom: 20 }}>
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
             📋 授業作成
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
             📖 計画履歴
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
             📷 実践履歴
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/share");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
             🌐 共有版実践記録
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/create");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
             📚 教育観一覧
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
             🕒 教育観履歴
           </button>
         </div>
       </div>
 
-      {/* メインコンテンツ */}
-      <main style={mainContainerStyle}>
-        <h1 style={{ fontSize: isMobile ? 22 : 24, marginBottom: 16 }}>
-          教育観モデル一覧・編集
-        </h1>
+      {/* メイン */}
+      <main style={mainStyle}>
+        <h1 style={titleStyle}>📚 教育観一覧（参照ページ）</h1>
+
+        {/* ページの意義（注釈） */}
+        <section style={valueNoteStyle}>
+          <p style={{ margin: 0 }}>
+            このページは、共有されている<strong>教育観モデル</strong>を一覧で見て
+            <strong>参考・比較</strong>できる場所です。
+            作成者本人はここから内容の編集や「共有から外す（公開停止）」ができます。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            「共有から外す」は<strong>削除ではありません</strong>（データは残ります）。後で「共有にする」を押せば再公開できます。
+          </p>
+        </section>
 
         {/* 並び替え */}
-        <label style={{ display: "block", marginBottom: 16, fontSize: isMobile ? 14 : 16 }}>
-          並び替え：
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value as any)}
-            style={{ marginLeft: 8, padding: 6, fontSize: isMobile ? 14 : 16 }}
-          >
-            <option value="newest">新着順</option>
-            <option value="nameAsc">名前順</option>
-          </select>
-        </label>
+        <div style={controlRowStyle}>
+          <label>
+            並び替え：
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as any)}
+              style={{ ...selectStyle, marginLeft: 8 }}
+            >
+              <option value="newest">新着順</option>
+              <option value="nameAsc">名前順</option>
+            </select>
+          </label>
+        </div>
 
-        {/* エラー表示 */}
+        {/* エラー */}
         {error && (
-          <p
-            style={{
-              color: "red",
-              marginBottom: 16,
-              fontWeight: "bold",
-              fontSize: isMobile ? 14 : 16,
-            }}
-          >
-            {error}
-          </p>
+          <p style={{ color: "#d32f2f", marginBottom: 12, fontWeight: 700 }}>{error}</p>
         )}
 
-        {/* モデル一覧 */}
+        {/* 一覧 */}
         {models.length === 0 ? (
-          <p style={{ fontSize: isMobile ? 14 : 16 }}>まだモデルがありません。</p>
+          <p style={{ color: "#666" }}>表示できるモデルがありません。</p>
         ) : (
-          models.map((m) => (
-            <div key={m.id} style={cardStyle}>
-              <h3 style={{ marginTop: 0, fontSize: isMobile ? 18 : 20 }}>{m.name}</h3>
-              <p style={{ fontSize: isMobile ? 14 : 16 }}>
-                <strong>作成者：</strong> {m.creatorName}
-              </p>
-              <p style={{ fontSize: isMobile ? 14 : 16 }}>
-                <strong>教育観：</strong> {m.philosophy}
-              </p>
-              <p style={{ fontSize: isMobile ? 14 : 16 }}>
-                <strong>評価観点：</strong> {m.evaluationFocus}
-              </p>
-              <p style={{ fontSize: isMobile ? 14 : 16 }}>
-                <strong>言語活動：</strong> {m.languageFocus}
-              </p>
-              <p style={{ fontSize: isMobile ? 14 : 16 }}>
-                <strong>育てたい子どもの姿：</strong> {m.childFocus}
-              </p>
-              <p
-                style={{
-                  fontSize: isMobile ? 12 : 14,
-                  color: "#666",
-                }}
-              >
-                更新日時: {new Date(m.updatedAt).toLocaleString()}
-              </p>
-
-              {/* PDF保存用非表示DOM */}
-              <div
-                ref={(el) => {
-                  if (el) {
-                    pdfRefs.current.set(m.id, el);
-                  } else {
-                    pdfRefs.current.delete(m.id);
-                  }
-                }}
-                style={{
-                  position: "absolute",
-                  left: "-9999px",
-                  width: "210mm",
-                  maxWidth: "100%",
-                  padding: "20mm 15mm",
-                  backgroundColor: "white",
-                  color: "#222",
-                  fontFamily:
-                    "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  boxSizing: "border-box",
-                  wordBreak: "break-word",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                <h1
-                  style={{
-                    fontSize: 28,
-                    fontWeight: "bold",
-                    marginBottom: 24,
-                    borderBottom: "2px solid #1976d2",
-                    paddingBottom: 8,
-                    color: "#1976d2",
-                  }}
-                >
+          models.map((m) => {
+            const shared = m.isShared !== false; // 未設定は共有中
+            return (
+              <div key={m.id} style={cardStyle}>
+                <h3 style={{ marginTop: 0, fontSize: isMobile ? 18 : 20 }}>
                   {m.name}
-                </h1>
-                <p
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "600",
-                    marginBottom: 12,
-                    color: "#555",
-                  }}
-                >
-                  作成者：{m.creatorName}
+                  <span style={statusChip} title={shared ? "共有中" : "非公開"}>
+                    {shared ? "公開中" : "非公開"}
+                  </span>
+                </h3>
+
+                <p><strong>作成者：</strong> {m.creatorName}</p>
+                <p><strong>教育観：</strong> {m.philosophy}</p>
+                <p><strong>評価観点：</strong> {m.evaluationFocus}</p>
+                <p><strong>言語活動：</strong> {m.languageFocus}</p>
+                <p><strong>育てたい子どもの姿：</strong> {m.childFocus}</p>
+                <p style={{ fontSize: 12, color: "#666" }}>
+                  更新日時：{new Date(m.updatedAt).toLocaleString()}
                 </p>
 
-                <section style={{ marginBottom: 24 }}>
-                  <h2
-                    style={{
-                      fontSize: 20,
-                      fontWeight: "bold",
-                      marginBottom: 12,
-                      borderBottom: "1px solid #ccc",
-                      paddingBottom: 6,
-                      color: "#1565c0",
-                    }}
-                  >
-                    教育観
-                  </h2>
-                  <p style={{ whiteSpace: "pre-wrap" }}>{m.philosophy}</p>
-                </section>
-
-                <section style={{ marginBottom: 24 }}>
-                  <h2
-                    style={{
-                      fontSize: 20,
-                      fontWeight: "bold",
-                      marginBottom: 12,
-                      borderBottom: "1px solid #ccc",
-                      paddingBottom: 6,
-                      color: "#1565c0",
-                    }}
-                  >
-                    評価観点の重視点
-                  </h2>
-                  <p style={{ whiteSpace: "pre-wrap" }}>{m.evaluationFocus}</p>
-                </section>
-
-                <section style={{ marginBottom: 24 }}>
-                  <h2
-                    style={{
-                      fontSize: 20,
-                      fontWeight: "bold",
-                      marginBottom: 12,
-                      borderBottom: "1px solid #ccc",
-                      paddingBottom: 6,
-                      color: "#1565c0",
-                    }}
-                  >
-                    言語活動の重視点
-                  </h2>
-                  <p style={{ whiteSpace: "pre-wrap" }}>{m.languageFocus}</p>
-                </section>
-
-                <section style={{ marginBottom: 24 }}>
-                  <h2
-                    style={{
-                      fontSize: 20,
-                      fontWeight: "bold",
-                      marginBottom: 12,
-                      borderBottom: "1px solid #ccc",
-                      paddingBottom: 6,
-                      color: "#1565c0",
-                    }}
-                  >
-                    育てたい子どもの姿
-                  </h2>
-                  <p style={{ whiteSpace: "pre-wrap" }}>{m.childFocus}</p>
-                </section>
-              </div>
-
-              {/* ボタン群 */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  marginTop: 16,
-                  flexWrap: "wrap",
-                }}
-              >
-                {m.creatorId === userId && (
-                  <>
-                    <button onClick={() => startEdit(m)} style={buttonPrimary}>
-                      編集
-                    </button>
-                    <button
-                      onClick={() => handleDelete(m.id)}
-                      style={{ ...buttonPrimary, backgroundColor: "#e53935" }}
-                    >
-                      削除
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => handlePdfSave(m.id)}
-                  style={{ ...buttonPrimary, backgroundColor: "#ff9800" }}
-                >
-                  PDF保存
-                </button>
-                <button
-                  onClick={() => router.push(`/plan?styleId=${m.id}`)}
-                  style={{ ...buttonPrimary, backgroundColor: "#2196f3" }}
-                >
-                  このモデルで授業案を作成
-                </button>
-              </div>
-
-              {/* 編集フォーム */}
-              {editId === m.id && (
-                <section
+                {/* PDF保存用（非表示DOM） */}
+                <div
+                  ref={(el) => {
+                    if (el) pdfRefs.current.set(m.id, el);
+                    else pdfRefs.current.delete(m.id);
+                  }}
                   style={{
-                    ...cardStyle,
-                    marginTop: 12,
-                    backgroundColor: "#f9f9f9",
+                    position: "absolute",
+                    left: "-9999px",
+                    width: "210mm",
+                    maxWidth: "100%",
+                    padding: "20mm 15mm",
+                    backgroundColor: "white",
+                    color: "#222",
+                    fontFamily: "'Yu Gothic','游ゴシック','Noto Sans JP',sans-serif",
+                    fontSize: 14,
+                    lineHeight: 1.7,
+                    boxSizing: "border-box",
+                    wordBreak: "break-word",
+                    whiteSpace: "pre-wrap",
                   }}
                 >
-                  <h4 style={{ fontSize: isMobile ? 18 : 20 }}>編集モード</h4>
+                  <h1
+                    style={{
+                      fontSize: 28,
+                      fontWeight: "bold",
+                      marginBottom: 24,
+                      borderBottom: "2px solid #1976d2",
+                      paddingBottom: 8,
+                      color: "#1976d2",
+                    }}
+                  >
+                    {m.name}
+                  </h1>
+                  <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "#555" }}>
+                    作成者：{m.creatorName}
+                  </p>
+                  <section style={{ marginBottom: 24 }}>
+                    <h2 style={pdfH2}>教育観</h2>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{m.philosophy}</p>
+                  </section>
+                  <section style={{ marginBottom: 24 }}>
+                    <h2 style={pdfH2}>評価観点の重視点</h2>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{m.evaluationFocus}</p>
+                  </section>
+                  <section style={{ marginBottom: 24 }}>
+                    <h2 style={pdfH2}>言語活動の重視点</h2>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{m.languageFocus}</p>
+                  </section>
+                  <section style={{ marginBottom: 24 }}>
+                    <h2 style={pdfH2}>育てたい子どもの姿</h2>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{m.childFocus}</p>
+                  </section>
+                </div>
 
-                  <label style={editSectionTitleStyle}>作成者名（必須）</label>
-                  <input
-                    placeholder="作成者名"
-                    value={form.creatorName}
-                    onChange={(e) => handleChange("creatorName", e.target.value)}
-                    style={inputStyle}
-                  />
+                {/* ボタン群 */}
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  {m.creatorId === userId && (
+                    <>
+                      <button onClick={() => startEdit(m)} style={buttonBase}>
+                        ✏️ 編集
+                      </button>
+                      <button
+                        onClick={() => toggleShare(m)}
+                        style={{
+                          ...buttonBase,
+                          backgroundColor: shared ? "#757575" : "#43a047",
+                        }}
+                        title={shared ? "共有をオフにします" : "共有をオンにします"}
+                      >
+                        {shared ? "共有から外す" : "共有にする"}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => handlePdfSave(m.id)}
+                    style={{ ...buttonBase, backgroundColor: "#ff9800" }}
+                  >
+                    📄 PDF保存
+                  </button>
+                  <button
+                    onClick={() => router.push(`/plan?styleId=${m.id}`)}
+                    style={{ ...buttonBase, backgroundColor: "#2196f3" }}
+                  >
+                    🧩 このモデルで授業案を作成
+                  </button>
+                </div>
 
-                  <label style={editSectionTitleStyle}>モデル名（必須）</label>
-                  <input
-                    placeholder="モデル名"
-                    value={form.name}
-                    onChange={(e) => handleChange("name", e.target.value)}
-                    style={inputStyle}
-                  />
+                {/* 編集フォーム */}
+                {editId === m.id && (
+                  <section
+                    style={{
+                      border: "1px solid #bcd4ff",
+                      borderRadius: 10,
+                      padding: 12,
+                      marginTop: 12,
+                      background: "#f9fbff",
+                    }}
+                  >
+                    <h4 style={{ marginTop: 0 }}>編集モード</h4>
 
-                  <label style={editSectionTitleStyle}>教育観（必須）</label>
-                  <textarea
-                    placeholder="教育観"
-                    rows={2}
-                    value={form.philosophy}
-                    onChange={(e) => handleChange("philosophy", e.target.value)}
-                    style={inputStyle}
-                  />
+                    <label style={labelEdit}>作成者名（必須）</label>
+                    <input
+                      placeholder="作成者名"
+                      value={form.creatorName}
+                      onChange={(e) => handleChange("creatorName", e.target.value)}
+                      style={inputStyle}
+                    />
 
-                  <label style={editSectionTitleStyle}>評価観点の重視点（必須）</label>
-                  <textarea
-                    placeholder="評価観点の重視点"
-                    rows={2}
-                    value={form.evaluationFocus}
-                    onChange={(e) =>
-                      handleChange("evaluationFocus", e.target.value)
-                    }
-                    style={inputStyle}
-                  />
+                    <label style={labelEdit}>モデル名（必須）</label>
+                    <input
+                      placeholder="モデル名"
+                      value={form.name}
+                      onChange={(e) => handleChange("name", e.target.value)}
+                      style={inputStyle}
+                    />
 
-                  <label style={editSectionTitleStyle}>言語活動の重視点（必須）</label>
-                  <textarea
-                    placeholder="言語活動の重視点"
-                    rows={2}
-                    value={form.languageFocus}
-                    onChange={(e) => handleChange("languageFocus", e.target.value)}
-                    style={inputStyle}
-                  />
+                    <label style={labelEdit}>教育観（必須）</label>
+                    <textarea
+                      placeholder="教育観"
+                      rows={3}
+                      value={form.philosophy}
+                      onChange={(e) => handleChange("philosophy", e.target.value)}
+                      style={inputStyle}
+                    />
 
-                  <label style={editSectionTitleStyle}>育てたい子どもの姿（必須）</label>
-                  <textarea
-                    placeholder="育てたい子どもの姿"
-                    rows={2}
-                    value={form.childFocus}
-                    onChange={(e) => handleChange("childFocus", e.target.value)}
-                    style={inputStyle}
-                  />
+                    <label style={labelEdit}>評価観点の重視点（必須）</label>
+                    <textarea
+                      placeholder="評価観点の重視点"
+                      rows={3}
+                      value={form.evaluationFocus}
+                      onChange={(e) => handleChange("evaluationFocus", e.target.value)}
+                      style={inputStyle}
+                    />
 
-                  <div style={{ marginTop: 16 }}>
-                    <button
-                      onClick={async () => {
-                        const success = await saveModel();
-                        if (success) setError("");
-                      }}
-                      style={buttonPrimary}
-                    >
-                      保存
-                    </button>
-                    <button
-                      onClick={cancelEdit}
-                      style={{
-                        ...buttonPrimary,
-                        backgroundColor: "#757575",
-                        marginLeft: 8,
-                      }}
-                    >
-                      キャンセル
-                    </button>
-                  </div>
-                </section>
-              )}
-            </div>
-          ))
+                    <label style={labelEdit}>言語活動の重視点（必須）</label>
+                    <textarea
+                      placeholder="言語活動の重視点"
+                      rows={3}
+                      value={form.languageFocus}
+                      onChange={(e) => handleChange("languageFocus", e.target.value)}
+                      style={inputStyle}
+                    />
+
+                    <label style={labelEdit}>育てたい子どもの姿（必須）</label>
+                    <textarea
+                      placeholder="育てたい子どもの姿"
+                      rows={3}
+                      value={form.childFocus}
+                      onChange={(e) => handleChange("childFocus", e.target.value)}
+                      style={inputStyle}
+                    />
+
+                    <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                      <button
+                        onClick={async () => {
+                          const ok = await saveModel();
+                          if (ok) setError("");
+                        }}
+                        style={{ ...buttonBase, backgroundColor: "#4caf50" }}
+                      >
+                        保存
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        style={{ ...buttonBase, backgroundColor: "#757575" }}
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                  </section>
+                )}
+              </div>
+            );
+          })
         )}
       </main>
     </>
   );
 }
+
+/* ===== PDF見出しスタイルだけ共通化 ===== */
+const pdfH2: React.CSSProperties = {
+  fontSize: 20,
+  fontWeight: "bold",
+  marginBottom: 12,
+  borderBottom: "1px solid #ccc",
+  paddingBottom: 6,
+  color: "#1565c0",
+};
+
+const labelEdit: React.CSSProperties = {
+  display: "block",
+  margin: "8px 0 4px",
+  fontWeight: 600,
+  color: "#455a64",
+};

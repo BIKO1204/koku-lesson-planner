@@ -593,7 +593,7 @@ export default function EducationModelsPage() {
           {/* 育てたい子どもの姿 */}
           <label style={labelStyle}>
             育てたい子どもの姿（必須）
-            <div style={helperStyle}>例）自分で進んで思いや考えを表現できる子、友だちの意見を大切にする子。</div>
+            <div style={helperStyle}>例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。</div>
             <textarea
               rows={3}
               value={form.childFocus}
