@@ -31,12 +31,11 @@ type EducationHistory = {
   note?: string;
   creatorId: string;
 
-  // ▼ ポートフォリオ拡張（マイルストーンはUIから除去）
+  // ▼ ポートフォリオ拡張（タグは廃止）
   triggerType?: string;
   triggerText?: string;
   reason?: string;
   reflection?: string;
-  tags?: string[];
   portfolioUpdatedAt?: any;
 };
 
@@ -155,18 +154,11 @@ const TRIGGER_OPTIONS = [
   "その他",
 ] as const;
 
-function parseTags(input: string): string[] {
-  return input
-    .split(/[,\s]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-}
-const toTagString = (tags?: string[]) => (tags ?? []).join(", ");
 const sanitizeFilename = (name: string) =>
   (name || "教育観ポートフォリオ").trim().replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 120);
 
 /* =========================
- * ポートフォリオ編集（マイルストーン欄は削除）
+ * ポートフォリオ編集（タグUIは削除）
  * ======================= */
 function PortfolioEditor({
   data,
@@ -181,7 +173,6 @@ function PortfolioEditor({
   const [triggerText, setTriggerText] = useState<string>(data.triggerText ?? "");
   const [reason, setReason] = useState<string>(data.reason ?? "");
   const [reflection, setReflection] = useState<string>(data.reflection ?? "");
-  const [tagsInput, setTagsInput] = useState<string>(toTagString(data.tags));
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -192,7 +183,6 @@ function PortfolioEditor({
         triggerText: triggerText || undefined,
         reason: reason || undefined,
         reflection: reflection || undefined,
-        tags: parseTags(tagsInput),
         portfolioUpdatedAt: serverTimestamp(),
       };
       await updateDoc(doc(db, "educationModelsHistory", data.id), payload as any);
@@ -252,18 +242,6 @@ function PortfolioEditor({
         />
       </div>
 
-      <div style={editorRowStyle}>
-        <label style={labelStyle}>タグ</label>
-        <input
-          type="text"
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-          placeholder="例）評価, 特別活動, 対話, 失敗から学ぶ"
-          style={inputStyle}
-        />
-        <small style={{ color: "#666" }}>※カンマまたは空白で区切り</small>
-      </div>
-
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button onClick={handleSave} style={{ ...buttonBaseStyle, backgroundColor: "#4caf50" }}>
           保存
@@ -287,10 +265,9 @@ export default function GroupedHistoryPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // フィルタ／検索（マイルストーン関連は削除）
+  // フィルタ／検索（タグ関連は削除）
   const [qText, setQText] = useState("");
   const [filterTrigger, setFilterTrigger] = useState<string>("");
-  const [filterTag, setFilterTag] = useState<string>("");
 
   // 展開状態を永続化
   useEffect(() => {
@@ -368,60 +345,18 @@ export default function GroupedHistoryPage() {
     }
   };
 
-  // タグの×削除
-  const removeTag = async (h: EducationHistory, tag: string) => {
-    const current = h.tags ?? [];
-    const next = current.filter((t) => t !== tag);
-    try {
-      await updateDoc(doc(db, "educationModelsHistory", h.id), { tags: next });
-      setGroupedHistories((prev) =>
-        prev.map((g) =>
-          g.modelId !== h.modelId
-            ? g
-            : { ...g, histories: g.histories.map((x) => (x.id === h.id ? { ...x, tags: next } : x)) }
-        )
-      );
-    } catch (e) {
-      console.error(e);
-      alert("タグの削除に失敗しました");
-    }
-  };
-
-  // PDF出力
-  const exportPdf = async (elementId: string, filename: string) => {
-    const el = document.getElementById(elementId);
-    if (!el) return alert("PDF化対象の要素が見つかりませんでした。");
-    const { default: html2pdf } = await import("html2pdf.js");
-    const scale = window.innerWidth <= 820 ? 2.0 : 2.6;
-    await (html2pdf() as any)
-      .from(el)
-      .set({
-        margin: [6, 6, 6, 6],
-        filename: `${sanitizeFilename(filename)}.pdf`,
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        html2canvas: { useCORS: true, scale },
-        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-      })
-      .save();
-  };
-
-  // 全タグ／全きっかけ候補を算出（フィルタUI用）
-  const allTags = useMemo(() => {
-    const set = new Set<string>();
-    groupedHistories.forEach((g) => g.histories.forEach((h) => (h.tags ?? []).forEach((t) => set.add(t))));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
-  }, [groupedHistories]);
-
+  // 全きっかけ（分類）候補を算出（フィルタUI用）
   const allTriggers = useMemo(() => {
     const set = new Set<string>();
-    groupedHistories.forEach((g) => g.histories.forEach((h) => h.triggerType && set.add(h.triggerType)));
+    groupedHistories.forEach((g) =>
+      g.histories.forEach((h) => h.triggerType && set.add(h.triggerType))
+    );
     return Array.from(set);
   }, [groupedHistories]);
 
   // フィルタリング＆検索
   function matchFilters(h: EducationHistory) {
     if (filterTrigger && h.triggerType !== filterTrigger) return false;
-    if (filterTag && !(h.tags ?? []).includes(filterTag)) return false;
     if (qText.trim()) {
       const hay = [
         h.name,
@@ -433,7 +368,6 @@ export default function GroupedHistoryPage() {
         h.reason ?? "",
         h.reflection ?? "",
         h.triggerText ?? "",
-        (h.tags ?? []).join(" "),
       ]
         .join(" ")
         .toLowerCase();
@@ -462,6 +396,10 @@ export default function GroupedHistoryPage() {
         </p>
       </div>
     );
+  }
+
+  function exportPdf(arg0: string, arg1: string): void {
+    throw new Error("Function not implemented.");
   }
 
   return (
@@ -535,7 +473,7 @@ export default function GroupedHistoryPage() {
 
       {/* メイン */}
       <main style={mainStyle} id="portfolio-root">
-        <h1 style={titleStyle}>📁 教育観モデル（教育観ポートフォリオ）</h1>
+        <h1 style={titleStyle}>🕒 教育観履歴（教育観ポートフォリオ）</h1>
 
         {/* ページの価値（説明） */}
         <section style={valueNoteStyle}>
@@ -550,28 +488,23 @@ export default function GroupedHistoryPage() {
           </p>
         </section>
 
-        {/* フィルタ＆操作バー（マイルストーンのチェックは削除） */}
+        {/* フィルタ＆操作バー（タグUIなし／きっかけ分類で絞り込み可能） */}
         <section style={filterBarStyle}>
           <input
             type="text"
-            placeholder="キーワード検索（本文・メモ・タグなど）"
+            placeholder="キーワード検索（本文・メモなど）"
             value={qText}
             onChange={(e) => setQText(e.target.value)}
             style={filterInputStyle}
           />
 
-          <select value={filterTrigger} onChange={(e) => setFilterTrigger(e.target.value)} style={filterSelectStyle}>
+          <select
+            value={filterTrigger}
+            onChange={(e) => setFilterTrigger(e.target.value)}
+            style={filterSelectStyle}
+          >
             <option value="">きっかけ（すべて）</option>
             {allTriggers.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-
-          <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} style={filterSelectStyle}>
-            <option value="">タグ（すべて）</option>
-            {allTags.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
@@ -670,21 +603,6 @@ export default function GroupedHistoryPage() {
                               <p style={rowP}>
                                 <strong>振り返りメモ：</strong>
                                 <span style={{ whiteSpace: "pre-wrap" }}>{h.reflection || "—"}</span>
-                              </p>
-                              <p style={{ ...rowP, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                <strong>タグ：</strong>
-                                {(h.tags ?? []).length ? (
-                                  (h.tags ?? []).map((t) => (
-                                    <span key={t} style={tagChipStyle} title="クリックで削除">
-                                      #{t}
-                                      <button aria-label={`${t} を削除`} onClick={() => removeTag(h, t)} style={chipCloseBtnStyle}>
-                                        ×
-                                      </button>
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span>—</span>
-                                )}
                               </p>
 
                               <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
@@ -933,29 +851,6 @@ const portfolioViewStyle: CSSProperties = {
 
 const rowP: CSSProperties = {
   margin: "4px 0",
-};
-
-const tagChipStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  background: "#e8f0ff",
-  border: "1px solid #b6ccff",
-  color: "#2a4aa0",
-  borderRadius: 999,
-  padding: "0 6px 0 8px",
-  fontSize: 12,
-};
-
-const chipCloseBtnStyle: CSSProperties = {
-  border: "none",
-  background: "transparent",
-  color: "#2a4aa0",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 12,
-  lineHeight: 1,
-  padding: "2px 2px 3px",
 };
 
 const editorWrapStyle: CSSProperties = {
