@@ -25,6 +25,9 @@ type PracticeRecord = {
   unitName?: string;
   authorName?: string;
   modelType: string; // lesson_plans_*
+  // ▼ 追加：確認メタデータ（ローカル保持用）
+  confirmedNoPersonalInfo?: boolean;
+  imagesSignature?: string;
 };
 
 type LessonPlan = {
@@ -59,6 +62,23 @@ const toStrArray = (v: unknown): string[] => {
   if (typeof v === "string") return [v];
   return [];
 };
+
+/* ======================= 確認メタ：シグネチャ ======================= */
+// 依存ライブラリなしの軽量ハッシュ（djb2）
+function hashString(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 33) ^ input.charCodeAt(i);
+  }
+  // 32bit符号付を符号なしへ
+  return (hash >>> 0).toString(16);
+}
+function calcImagesSignature(imgs: BoardImage[]): string {
+  const combined = imgs
+    .map((i) => `${i.name || ""}|${(i.src || "").slice(0, 256)}`) // フルbase64は重いので先頭だけ
+    .join("||");
+  return hashString(combined);
+}
 
 /* ======================= IndexedDB ======================= */
 const DB_NAME = "PracticeDB";
@@ -139,8 +159,7 @@ function resizeAndCompressFile(
 
 /* ---- 画像srcの形式判定 ---- */
 const isDataUrl = (s: string) =>
-  typeof s === "string" &&
-  /^data:image\/(png|jpe?g|gif|webp);base64,/.test(s);
+  typeof s === "string" && /^data:image\/(png|jpe?g|gif|webp);base64,/.test(s);
 const isBlobUrl = (s: string) => typeof s === "string" && s.startsWith("blob:");
 const isHttpUrl = (s: string) => typeof s === "string" && /^https?:\/\//.test(s);
 const isFirebaseStorageUrl = (s: string) =>
@@ -230,8 +249,12 @@ export default function PracticeAddPage() {
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // ★ 追加：児童の個人情報（顔・氏名など）が写っていないことの確認
+  // ▼ 追加：確認関連
   const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
+  const [currentSignature, setCurrentSignature] = useState<string>("");
+  const [previousSignature, setPreviousSignature] = useState<string>("");
+  const [needsReconfirm, setNeedsReconfirm] = useState<boolean>(true);
+  const POLICY_VERSION = "2025-09-02"; // 任意の版番号/日付
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
@@ -278,6 +301,14 @@ export default function PracticeAddPage() {
       setGenre(existing.genre || "");
       setUnitName(existing.unitName || "");
       setModelType(existing.modelType || "lesson_plans_reading");
+
+      // ▼ ローカル保存に確認メタがあれば拾う
+      if (existing.imagesSignature) {
+        setPreviousSignature(existing.imagesSignature);
+      }
+      if (existing.confirmedNoPersonalInfo) {
+        setConfirmNoPersonalInfo(true);
+      }
     });
   }, [id]);
 
@@ -321,7 +352,14 @@ export default function PracticeAddPage() {
           genre: data.genre || "",
           unitName: data.unitName || "",
           modelType: lessonType,
+          confirmedNoPersonalInfo: data.confirmedNoPersonalInfo ?? undefined,
+          imagesSignature: data.imagesSignature ?? undefined,
         });
+
+        // ▼ Firestoreに保存されているシグネチャ
+        if (data.imagesSignature) {
+          setPreviousSignature(String(data.imagesSignature));
+        }
         break; // 見つかったら終わり
       }
     }
@@ -329,7 +367,7 @@ export default function PracticeAddPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, modelTypeParam]);
 
-  /* ---- 画像選択 ---- */
+  /* ---- 画像の選択・削除で再確認が必要に ---- */
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -351,12 +389,20 @@ export default function PracticeAddPage() {
     setBoardImages((prev) => [...prev, ...newFullImages]);
     setCompressedImages((prev) => [...prev, ...newCompressedImages]);
 
+    // 画像変更 → 再確認必要
+    setConfirmNoPersonalInfo(false);
+    setNeedsReconfirm(true);
+
     e.target.value = "";
   };
 
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
+
+    // 画像変更 → 再確認必要
+    setConfirmNoPersonalInfo(false);
+    setNeedsReconfirm(true);
   };
 
   /* ---- プレビュー生成 ---- */
@@ -374,11 +420,28 @@ export default function PracticeAddPage() {
       genre,
       unitName,
       modelType,
+      confirmedNoPersonalInfo: confirmNoPersonalInfo,
+      imagesSignature: currentSignature,
     });
   };
 
+  /* ---- 現在の画像シグネチャを算出して、以前と同じなら自動で確認済みに ---- */
+  useEffect(() => {
+    const imgs = (compressedImages?.length ? compressedImages : boardImages) || [];
+    const sig = calcImagesSignature(imgs);
+    setCurrentSignature(sig);
+    if (previousSignature && sig === previousSignature) {
+      // 以前と同じ画像構成 → 自動で「再確認不要」
+      setNeedsReconfirm(false);
+    } else {
+      setNeedsReconfirm(true);
+    }
+  }, [boardImages, compressedImages, previousSignature]);
+
   /* ---- Firestore保存 ---- */
-  async function saveRecordToFirestore(rec: PracticeRecord & { compressedImages: BoardImage[] }) {
+  async function saveRecordToFirestore(
+    rec: PracticeRecord & { compressedImages: BoardImage[] }
+  ) {
     const uid = auth.currentUser?.uid;
     const userEmail = session?.user?.email;
     if (!uid || !userEmail) {
@@ -408,6 +471,11 @@ export default function PracticeAddPage() {
     const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
+    // ここで最終的なシグネチャを計算（アップロード後のURLで再計算してもOKだが、
+    // プレビュー時に算出した currentSignature を使っても実務上十分）
+    const finalSignature =
+      rec.imagesSignature || calcImagesSignature(sourceImages);
+
     await setDoc(
       docRef,
       {
@@ -423,6 +491,14 @@ export default function PracticeAddPage() {
         unitName: rec.unitName || "",
         modelType: rec.modelType, // lesson_plans_*
         createdAt: serverTimestamp(),
+
+        // ▼ 追加：確認メタデータ
+        confirmedNoPersonalInfo: true,
+        confirmedAt: serverTimestamp(),
+        confirmedByUid: uid,
+        confirmedByEmail: userEmail,
+        policyVersion: POLICY_VERSION,
+        imagesSignature: finalSignature,
       },
       { merge: true }
     );
@@ -434,16 +510,30 @@ export default function PracticeAddPage() {
       alert("プレビューを作成してください");
       return;
     }
-    // ★ 追加：個人情報確認チェックが未承認なら保存しない
+
+    // ▼ 確認チェックが未完了なら保存させない
     if (!confirmNoPersonalInfo) {
-      alert("保存前に「児童の顔・氏名など個人情報が写っていないこと」を確認してください。写り込みがある場合は必ずマスキング等で隠してください。");
+      alert("保存前に「児童の顔・氏名など個人情報が写っていない」ことの確認にチェックしてください。");
       return;
     }
 
     setUploading(true);
     try {
-      await saveRecordToIndexedDB(record);
-      await saveRecordToFirestore({ ...record, compressedImages });
+      // ローカルにも確認メタを保存
+      const toSaveLocal: PracticeRecord = {
+        ...record,
+        confirmedNoPersonalInfo: true,
+        imagesSignature: currentSignature,
+      };
+      await saveRecordToIndexedDB(toSaveLocal);
+
+      await saveRecordToFirestore({
+        ...record,
+        compressedImages,
+        confirmedNoPersonalInfo: true,
+        imagesSignature: currentSignature,
+      });
+
       alert("ローカルとFirebaseに保存しました");
       router.push("/practice/history");
     } catch (e) {
@@ -572,30 +662,18 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        <p style={{ color: "#e53935", fontSize: 14, marginBottom: 16 }}>
+        <p style={{ color: "#e53935", fontSize: 14, marginBottom: 12 }}>
           ※板書の写真を追加・削除した場合は、必ず「プレビューを生成」ボタンを押してください
         </p>
 
-        {/* ★ 追加：個人情報に関する注意ボックス */}
-        <div
-          style={{
-            border: "1px solid #ffcdd2",
-            background: "#fff5f5",
-            color: "#b71c1c",
-            padding: "12px",
-            borderRadius: 8,
-            marginBottom: 16,
-            lineHeight: 1.6,
-          }}
-        >
-          <strong>【重要】児童の個人情報を含む画像はアップロードしないでください。</strong>
+        {/* ▼ 追加：アップロード前の注意書き */}
+        <div style={noticeBoxStyle}>
+          <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
-            <li>顔・氏名・学籍番号・連絡先・住所・保護者名など個人を特定できる情報</li>
-            <li>名簿・提出物・成績等の写り込み</li>
+            <li>児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、手書きの名前等）が写っていないこと。</li>
+            <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
+            <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
           </ul>
-          <div style={{ marginTop: 6 }}>
-            写り込んだ場合は、<strong>投稿前に必ずマスキングやぼかしで隠してください。</strong>
-          </div>
         </div>
 
         <form onSubmit={handlePreview}>
@@ -745,16 +823,36 @@ export default function PracticeAddPage() {
             ))}
           </div>
 
+          {/* ▼ 追加：確認チェック（画像が変わったら再確認） */}
+          <div style={confirmBoxStyle}>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={confirmNoPersonalInfo}
+                onChange={(e) => setConfirmNoPersonalInfo(e.target.checked)}
+                aria-describedby="confirm-help"
+              />
+              <span>
+                児童の<strong>顔・氏名・その他個人を特定できる情報</strong>が写っていないことを確認しました。
+                {needsReconfirm && (
+                  <em style={{ color: "#e53935", marginLeft: 8 }}>
+                    （画像を変更したため、再確認が必要です）
+                  </em>
+                )}
+              </span>
+            </label>
+            <div id="confirm-help" style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
+              ポリシー版：{POLICY_VERSION}／シグネチャ：{currentSignature || "-"}
+            </div>
+          </div>
+
           <button type="submit" style={primaryBtnStyle} disabled={uploading}>
             {uploading ? "アップロード中..." : "プレビューを生成"}
           </button>
         </form>
 
         {record && (
-          <section
-            id="practice-preview"
-            style={previewBoxStyle}
-          >
+          <section id="practice-preview" style={previewBoxStyle}>
             <h2>{lessonTitle}</h2>
 
             {lessonPlan?.result && typeof lessonPlan.result === "object" && (
@@ -935,40 +1033,19 @@ export default function PracticeAddPage() {
           </section>
         )}
 
-        {/* ★ 追加：保存前の確認チェック */}
-        <div
-          style={{
-            marginTop: 16,
-            padding: 12,
-            border: "1px solid #f5b7b1",
-            background: "#fff8f8",
-            borderRadius: 8,
-            lineHeight: 1.6,
-          }}
-        >
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={confirmNoPersonalInfo}
-              onChange={(e) => setConfirmNoPersonalInfo(e.target.checked)}
-              style={{ marginTop: 3 }}
-            />
-            <span>
-              児童の<strong>顔・氏名・連絡先・学籍番号</strong>、名簿や成績など
-              <strong>個人情報が写っていない</strong>ことを確認しました。写り込みがある場合は
-              <strong>マスキング（塗りつぶし）やぼかし</strong>を行いました。
-            </span>
-          </label>
-        </div>
-
         <button
           onClick={handleSaveBoth}
           style={{
             ...primaryBtnStyle,
-            opacity: uploading || !confirmNoPersonalInfo ? 0.6 : 1,
-            cursor: uploading || !confirmNoPersonalInfo ? "not-allowed" : "pointer",
+            backgroundColor: confirmNoPersonalInfo ? "#4caf50" : "#9e9e9e",
+            cursor: confirmNoPersonalInfo ? "pointer" : "not-allowed",
           }}
           disabled={uploading || !confirmNoPersonalInfo}
+          title={
+            confirmNoPersonalInfo
+              ? undefined
+              : "保存するには「個人情報が写っていない」チェックが必要です"
+          }
         >
           {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
         </button>
@@ -1066,6 +1143,14 @@ const containerStyle: React.CSSProperties = {
   fontFamily: "sans-serif",
   paddingTop: 72,
 };
+const noticeBoxStyle: React.CSSProperties = {
+  border: "2px solid #ff7043",
+  backgroundColor: "#fff3e0",
+  color: "#5d4037",
+  borderRadius: 6,
+  padding: 12,
+  marginBottom: 16,
+};
 const uploadLabelStyle: React.CSSProperties = {
   display: "block",
   marginBottom: 8,
@@ -1102,6 +1187,13 @@ const boxStyle: React.CSSProperties = {
   borderRadius: 6,
   padding: 12,
   marginBottom: 16,
+};
+const confirmBoxStyle: React.CSSProperties = {
+  border: "1px solid #9e9e9e",
+  borderRadius: 6,
+  padding: 12,
+  marginTop: 12,
+  background: "#fafafa",
 };
 const previewBoxStyle: React.CSSProperties = {
   marginTop: 24,
