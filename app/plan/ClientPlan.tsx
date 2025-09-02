@@ -297,7 +297,7 @@ export default function ClientPlan() {
         };
         if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
-        }
+      }
       })
       .catch(() => {});
   }, [grade, genre]);
@@ -449,7 +449,6 @@ ${languageActivities}
         body: JSON.stringify({ prompt }),
       });
 
-      // API が JSON を返すなら： const data = await res.json();
       const text = await res.text();
       if (!res.ok) {
         throw new Error(text || res.statusText);
@@ -572,6 +571,27 @@ ${languageActivities}
           timestamp: serverTimestamp(), // サーバー時刻
           usedStyleName: selectedStyleName || author.label,
           author: session?.user?.email || "",
+          // ★ ここから最小追加の“モデル識別メタ”
+          modelId: selectedStyleId || null,
+          modelName: selectedStyleName || null,
+          modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
+          modelSnapshot: selectedStyleId
+            ? (styleModels.find((m) => m.id === selectedStyleId)
+                ? {
+                    kind: "user-model",
+                    id: selectedStyleId,
+                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
+                    at: new Date().toISOString(),
+                  }
+                : authors.find((a) => a.id === selectedStyleId)
+                ? {
+                    kind: "builtin",
+                    id: selectedStyleId,
+                    name: authors.find((a) => a.id === selectedStyleId)!.label,
+                    at: new Date().toISOString(),
+                  }
+                : null)
+            : null,
         },
         { merge: true }
       );
@@ -689,6 +709,18 @@ ${languageActivities}
     marginBottom: "0.5rem",
   };
 
+  // ★ 追加：注釈ボックスのスタイル
+  const infoNoteStyle: CSSProperties = {
+    background: "#fffef7",
+    border: "1px solid #ffecb3",
+    borderRadius: 8,
+    padding: "12px",
+    color: "#604a00",
+    marginBottom: "12px",
+    lineHeight: 1.6,
+    fontSize: "0.95rem",
+  };
+
   return (
     <>
       {/* PDF分割回避CSSを注入 */}
@@ -753,6 +785,20 @@ ${languageActivities}
       </div>
 
       <main style={{ ...containerStyle, paddingTop: 56 }}>
+        {/* ★ ここが新しい注釈ボックス */}
+        <section style={infoNoteStyle} role="note">
+          <p style={{ margin: 0 }}>
+            授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても
+            <strong>理想となる授業案は作成されません</strong>。コパイロット（副操縦士）にはなれません。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            みなさんの作成した授業案、後に作成する授業実践案を学習させることで、AIモードで
+            <strong>面白い国語の授業案</strong>が生成されることでしょう。そんな未来が待っています。
+            まずは、一緒に<strong>手動モード</strong>で授業案をたくさん生成していきましょう。
+            モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
+          </p>
+        </section>
+
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "1rem" }}>
             <label style={{ marginRight: "1rem" }}>
