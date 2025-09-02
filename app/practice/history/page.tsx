@@ -13,6 +13,9 @@ import {
   where,
   doc,
   deleteDoc as deleteDocFs,
+  setDoc,            // ← 追加
+  getDoc,            // ← 追加
+  serverTimestamp,   // ← 追加
 } from "firebase/firestore";
 
 // ---------- 型 ----------
@@ -25,9 +28,11 @@ type PracticeRecord = {
   reflection: string;
   boardImages: BoardImage[];
   grade?: string;
-  modelType?: string; // lesson_plans_XXX / practiceRecords_XXX の短縮識別 (reading/writing/...)
-  author?: string; // 保存時のメール
-  authorName?: string; // 表示用
+  genre?: string;       // ← 追加
+  unitName?: string;    // ← 追加
+  modelType?: string;   // lesson_plans_XXX / practiceRecords_XXX の短縮識別 (reading/writing/...)
+  author?: string;      // 保存時のメール
+  authorName?: string;  // 表示用
 };
 
 type LessonPlan = {
@@ -97,6 +102,8 @@ async function fetchRemotePracticeRecords(
         reflection: data.reflection || "",
         boardImages: Array.isArray(data.boardImages) ? data.boardImages : [],
         grade: data.grade || "",
+        genre: data.genre || "",            // ← 追加
+        unitName: data.unitName || "",      // ← 追加
         modelType: normalizeModelType(data.modelType || coll), // => reading など
         author: data.author || "",
         authorName: data.authorName || "",
@@ -124,9 +131,10 @@ async function fetchAllLessonPlans(): Promise<LessonPlan[]> {
 function isSmallDevice(): boolean {
   if (typeof window === "undefined") return false;
   const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
-  const narrow = typeof window.matchMedia === "function"
-    ? window.matchMedia("(max-width: 820px)").matches
-    : window.innerWidth <= 820;
+  const narrow =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 820px)").matches
+      : window.innerWidth <= 820;
   return touch && narrow;
 }
 
@@ -163,6 +171,7 @@ export default function PracticeHistoryPage() {
   >("practiceDate");
   const [menuOpen, setMenuOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null); // ← 追加
 
   const router = useRouter();
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -243,6 +252,94 @@ export default function PracticeHistoryPage() {
       alert("削除に失敗しました。");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // ← 追加：実践記録から授業案を復元
+  async function handleRestoreFromPractice(rec: PracticeRecord) {
+    const short = normalizeModelType(rec.modelType || "reading");
+    const coll = `lesson_plans_${short}`;
+    const unit = rec.unitName || rec.lessonTitle || "";
+
+    // 念のため Firestore 最新を確認（既に存在したらスキップ）
+    try {
+      const existing = await getDoc(doc(db, coll, rec.lessonId));
+      if (existing.exists()) {
+        alert("この授業案は既に存在します。");
+        // 一覧の補助データも更新しておく
+        setLessonPlans((prev) =>
+          prev.some((p) => p.id === rec.lessonId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: rec.lessonId,
+                  modelType: short,
+                  result: (existing.data() as any)?.result ?? {},
+                },
+              ]
+        );
+        return;
+      }
+    } catch {
+      /* 読み取り失敗時は続行して作成を試みる */
+    }
+
+    if (
+      !confirm(
+        `実践記録から授業案を復元します。\n\n作成先: ${coll}\n単元名: ${unit || "（未設定）"}\n学年: ${
+          rec.grade || "（未設定）"
+        }\nジャンル: ${rec.genre || "（未設定）"}\n\nよろしいですか？`
+      )
+    ) {
+      return;
+    }
+
+    setRestoringId(rec.lessonId);
+    try {
+      const authorEmail = rec.author || userEmail || "";
+      const resultPayload = {
+        "教科書名": "",
+        "学年": rec.grade || "",
+        "ジャンル": rec.genre || "",
+        "単元名": unit,
+        "授業時間数": "",
+        "単元の目標": "",
+        "育てたい子どもの姿": "",
+        "言語活動の工夫": "",
+        "授業の流れ": "",
+      };
+
+      await setDoc(
+        doc(db, coll, rec.lessonId),
+        {
+          author: authorEmail,
+          grade: rec.grade || "",
+          genre: rec.genre || "",
+          unit: unit,
+          subject: "",               // 不明なため空で作成
+          hours: "",                 // 不明なため空で作成
+          languageActivities: "",    // 不明なため空で作成
+          usedStyleName: null,
+          timestamp: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          result: resultPayload,
+        },
+        { merge: true }
+      );
+
+      // UI側の補助データにも追加
+      setLessonPlans((prev) => [
+        ...prev,
+        { id: rec.lessonId, modelType: short, result: resultPayload },
+      ]);
+
+      alert("授業案を復元しました。授業案一覧から編集できます。");
+    } catch (e) {
+      console.error(e);
+      alert("授業案の復元に失敗しました。");
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -372,6 +469,10 @@ export default function PracticeHistoryPage() {
     ...buttonBaseStyle,
     backgroundColor: "#f44336",
   };
+  const restoreBtn: CSSProperties = {
+    ...buttonBaseStyle,
+    backgroundColor: "#673ab7", // 紫系
+  };
 
   const planBlockStyle: CSSProperties = {
     backgroundColor: "#fafafa",
@@ -443,53 +544,25 @@ export default function PracticeHistoryPage() {
           <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
           </Link>
-          <Link
-            href="/plan"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
           </Link>
-          <Link
-            href="/models/create"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
-          <Link
-            href="/models"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
@@ -538,11 +611,14 @@ export default function PracticeHistoryPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {records.map((r) => {
-              const plan = lessonPlans.find(
+              // ※ 表示用 detail は modelType が一致する plan を優先
+              const planForDisplay = lessonPlans.find(
                 (p) =>
                   p.id === r.lessonId &&
                   p.modelType === normalizeModelType(r.modelType || "")
               );
+              // 存在チェックはコレクション横断（id 一致のみで判定）
+              const planAny = lessonPlans.find((p) => p.id === r.lessonId);
 
               // 編集ページへ modelType を付けて渡す（別端末同期を確実・高速化）
               const editHref = `/practice/add/${r.lessonId}?modelType=practiceRecords_${normalizeModelType(
@@ -564,29 +640,29 @@ export default function PracticeHistoryPage() {
                       {r.lessonTitle || "タイトルなし"}
                     </h3>
 
-                    {plan && typeof plan.result === "object" && (
+                    {planForDisplay && typeof planForDisplay.result === "object" && (
                       <div className="h2pdf-avoid h2pdf-block" style={planBlockStyle}>
                         <strong>授業案</strong>
                         <div>
                           <p>
                             <strong>教科書名：</strong>
-                            {plan.result["教科書名"] || "－"}
+                            {planForDisplay.result["教科書名"] || "－"}
                           </p>
                           <p>
                             <strong>単元名：</strong>
-                            {plan.result["単元名"] || "－"}
+                            {planForDisplay.result["単元名"] || "－"}
                           </p>
                           <p>
                             <strong>授業時間数：</strong>
-                            {plan.result["授業時間数"] ?? "－"}時間
+                            {planForDisplay.result["授業時間数"] ?? "－"}時間
                           </p>
                           <p style={{ whiteSpace: "pre-wrap" }}>
                             <strong>単元の目標：</strong>
-                            {plan.result["単元の目標"] || "－"}
+                            {planForDisplay.result["単元の目標"] || "－"}
                           </p>
 
                           {/* ▼ 評価の観点 */}
-                          {plan.result["評価の観点"] && (
+                          {planForDisplay.result["評価の観点"] && (
                             <div style={{ marginTop: 8 }}>
                               <div style={{ fontWeight: "bold", marginBottom: 4 }}>
                                 評価の観点
@@ -596,7 +672,7 @@ export default function PracticeHistoryPage() {
                                 <strong>知識・技能</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                                   {asArray(
-                                    plan.result["評価の観点"]?.["知識・技能"]
+                                    planForDisplay.result["評価の観点"]?.["知識・技能"]
                                   ).map((v, i) => (
                                     <li
                                       key={`eval-k-${r.lessonId}-${i}`}
@@ -613,7 +689,7 @@ export default function PracticeHistoryPage() {
                                 <strong>思考・判断・表現</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                                   {asArray(
-                                    plan.result["評価の観点"]?.["思考・判断・表現"]
+                                    planForDisplay.result["評価の観点"]?.["思考・判断・表現"]
                                   ).map((v, i) => (
                                     <li
                                       key={`eval-t-${r.lessonId}-${i}`}
@@ -630,9 +706,9 @@ export default function PracticeHistoryPage() {
                                 <strong>主体的に学習に取り組む態度</strong>
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                                   {asArray(
-                                    plan.result["評価の観点"]?.[
+                                    planForDisplay.result["評価の観点"]?.[
                                       "主体的に学習に取り組む態度"
-                                    ] ?? plan.result["評価の観点"]?.["態度"]
+                                    ] ?? planForDisplay.result["評価の観点"]?.["態度"]
                                   ).map((v, i) => (
                                     <li
                                       key={`eval-a-${r.lessonId}-${i}`}
@@ -651,34 +727,34 @@ export default function PracticeHistoryPage() {
                           {/* ▼ 育てたい子どもの姿 */}
                           <p style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
                             <strong>育てたい子どもの姿：</strong>
-                            {plan.result["育てたい子どもの姿"] || "－"}
+                            {planForDisplay.result["育てたい子どもの姿"] || "－"}
                           </p>
                           {/* ▲ */}
 
                           {/* ▼ 言語活動の工夫 */}
                           <p style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>
                             <strong>言語活動の工夫：</strong>
-                            {plan.result["言語活動の工夫"] || "－"}
+                            {planForDisplay.result["言語活動の工夫"] || "－"}
                           </p>
                           {/* ▲ */}
                         </div>
 
                         {/* ▼ 授業の流れ（PDFにも入る） */}
-                        {plan.result["授業の流れ"] && (
+                        {planForDisplay.result["授業の流れ"] && (
                           <div style={{ marginTop: 12 }} className="h2pdf-avoid">
                             <div style={{ fontWeight: "bold", marginBottom: 6 }}>
                               授業の流れ
                             </div>
 
-                            {typeof plan.result["授業の流れ"] === "string" && (
+                            {typeof planForDisplay.result["授業の流れ"] === "string" && (
                               <p style={{ whiteSpace: "pre-wrap" }}>
-                                {plan.result["授業の流れ"]}
+                                {planForDisplay.result["授業の流れ"]}
                               </p>
                             )}
 
-                            {Array.isArray(plan.result["授業の流れ"]) && (
+                            {Array.isArray(planForDisplay.result["授業の流れ"]) && (
                               <ul style={{ margin: 0, paddingLeft: 16 }}>
-                                {plan.result["授業の流れ"].map(
+                                {planForDisplay.result["授業の流れ"].map(
                                   (item: any, i: number) => (
                                     <li
                                       key={`flow-${r.lessonId}-${i}`}
@@ -694,11 +770,11 @@ export default function PracticeHistoryPage() {
                               </ul>
                             )}
 
-                            {typeof plan.result["授業の流れ"] === "object" &&
-                              !Array.isArray(plan.result["授業の流れ"]) && (
+                            {typeof planForDisplay.result["授業の流れ"] === "object" &&
+                              !Array.isArray(planForDisplay.result["授業の流れ"]) && (
                                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                                   {Object.entries(
-                                    plan.result["授業の流れ"]
+                                    planForDisplay.result["授業の流れ"]
                                   )
                                     .sort((a, b) => {
                                       const numA = parseInt(
@@ -737,6 +813,10 @@ export default function PracticeHistoryPage() {
                     <p className="h2pdf-avoid">
                       <strong>作成者：</strong> {r.authorName || "不明"}
                     </p>
+                    <p className="h2pdf-avoid">
+                      <strong>学年：</strong> {r.grade || "－"}
+                      {r.genre ? `　/　ジャンル：${r.genre}` : ""}
+                    </p>
                     <p style={{ whiteSpace: "pre-wrap" }} className="h2pdf-avoid">
                       <strong>振り返り：</strong>
                       <br />
@@ -754,7 +834,11 @@ export default function PracticeHistoryPage() {
                         className="h2pdf-avoid"
                       >
                         {r.boardImages.map((img, i) => (
-                          <div key={`${img.name}-${i}`} style={{ width: "100%" }} className="h2pdf-avoid h2pdf-block">
+                          <div
+                            key={`${img.name}-${i}`}
+                            style={{ width: "100%" }}
+                            className="h2pdf-avoid h2pdf-block"
+                          >
                             <div style={{ marginBottom: 6, fontWeight: "bold" }}>
                               板書{i + 1}
                             </div>
@@ -807,7 +891,6 @@ export default function PracticeHistoryPage() {
                                 orientation: "portrait",
                               },
                               html2canvas: { useCORS: true, scale: scaleVal },
-                              // CSS指定 + レガシー + 全体avoid を併用
                               pagebreak: { mode: ["css", "legacy", "avoid-all"] },
                             })
                             .save();
@@ -863,6 +946,18 @@ export default function PracticeHistoryPage() {
                     >
                       ☁️ Drive保存
                     </button>
+
+                    {/* 授業案が見つからない時だけ 復元ボタンを表示 */}
+                    {!planAny && (
+                      <button
+                        onClick={() => handleRestoreFromPractice(r)}
+                        style={restoreBtn}
+                        disabled={restoringId === r.lessonId}
+                        title="実践記録の基本情報から授業案を再作成します"
+                      >
+                        {restoringId === r.lessonId ? "復元中..." : "🔁 授業案を復元"}
+                      </button>
+                    )}
 
                     <Link href={editHref}>
                       <button style={actionBtn}>✏️ 編集</button>

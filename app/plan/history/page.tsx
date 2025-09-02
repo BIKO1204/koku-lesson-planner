@@ -12,6 +12,7 @@ import {
   where,
   doc,
   deleteDoc,
+  getDoc, // ← 追加
 } from "firebase/firestore";
 
 /* ---------- レスポンシブ判定 ---------- */
@@ -88,12 +89,48 @@ const LESSON_PLAN_COLLECTIONS = [
   "lesson_plans_language_activity",
 ];
 
+/* ---------- 実践記録コレクション & 警告用ラベル ---------- */
+const PRACTICE_COLLECTIONS = [
+  "practiceRecords_reading",
+  "practiceRecords_writing",
+  "practiceRecords_discussion",
+  "practiceRecords_language_activity",
+] as const;
+
+const PRACTICE_LABELS: Record<string, string> = {
+  practiceRecords_reading: "読解（実践記録）",
+  practiceRecords_writing: "作文（実践記録）",
+  practiceRecords_discussion: "話し合い（実践記録）",
+  practiceRecords_language_activity: "言語活動（実践記録）",
+};
+
+/** 授業案 id に紐づく実践記録の有無を横断チェック（自分の記録のみ） */
+async function findLinkedPracticeRecords(id: string, userEmail: string) {
+  const linked: string[] = [];
+  for (const coll of PRACTICE_COLLECTIONS) {
+    try {
+      const snap = await getDoc(doc(db, coll, id));
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        if (!userEmail || data?.author === userEmail) {
+          linked.push(PRACTICE_LABELS[coll] || coll);
+        }
+      }
+    } catch {
+      /* 読み取りできないコレクションはスキップ */
+    }
+  }
+  return linked;
+}
+
 export default function HistoryPage() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
 
   const [plans, setPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">("timestamp");
+  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">(
+    "timestamp"
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -185,9 +222,20 @@ export default function HistoryPage() {
 
   const sortedPlans = plans; // すでに sort 済み
 
-  // Firestore 横断削除
+  // Firestore 横断削除（事前に実践記録の存在を警告）
   const handleDeleteBoth = async (id: string) => {
-    if (!confirm("この授業案を本当に削除しますか？")) return;
+    // 紐づく実践記録を事前チェック
+    const linked = await findLinkedPracticeRecords(id, userEmail);
+
+    const warnMsg = linked.length
+      ? `この授業案に紐づく「実践記録」が見つかりました。\n${linked
+          .map((l) => `・${l}`)
+          .join(
+            "\n"
+          )}\n\n授業案を削除すると、これらの実践記録は残り、以後「授業案から編集」ができなくなります。\n（必要であれば「実践履歴」から個別に削除してください）\n\n授業案のみ削除してよろしいですか？`
+      : "この授業案を本当に削除しますか？";
+
+    if (!confirm(warnMsg)) return;
 
     let remoteDeleted = false;
     try {
@@ -218,7 +266,13 @@ export default function HistoryPage() {
       } catch {}
     }
 
-    alert(`削除しました（${remoteDeleted ? "Firestore・" : ""}ローカル）。`);
+    alert(
+      `削除しました（${remoteDeleted ? "Firestore・" : ""}ローカル）。${
+        linked.length
+          ? "\n※実践記録は残っています。必要に応じて「実践履歴」から削除してください。"
+          : ""
+      }`
+    );
   };
 
   /* ---------- 共通ボタンスタイル ---------- */
