@@ -56,7 +56,7 @@ export default function EducationModelsPage() {
     if (!editId) setForm((prev) => ({ ...prev, creatorName: userName }));
   }, [userName, editId]);
 
-  // 一覧の取得（内容はそのまま）
+  // 一覧の取得（既存ロジックのまま）
   useEffect(() => {
     if (!userId) {
       setModels([]);
@@ -68,7 +68,10 @@ export default function EducationModelsPage() {
         const qy = query(
           colRef,
           where("creatorId", "==", userId),
-          orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+          orderBy(
+            sortOrder === "newest" ? "updatedAt" : "name",
+            sortOrder === "newest" ? "desc" : "asc"
+          )
         );
         const snapshot = await getDocs(qy);
         const data = snapshot.docs.map((d) => ({
@@ -143,6 +146,7 @@ export default function EducationModelsPage() {
       let newModel: EducationModel;
 
       if (editId) {
+        // 既存モデルの更新
         const docRef = doc(db, "educationModels", editId);
         await updateDoc(docRef, {
           name: form.name.trim(),
@@ -154,6 +158,8 @@ export default function EducationModelsPage() {
           creatorId: userId,
           updatedAt: now,
         });
+
+        // 履歴コレクションに編集履歴を追加
         await addDoc(collection(db, "educationModelsHistory"), {
           modelId: editId,
           name: form.name.trim(),
@@ -166,6 +172,7 @@ export default function EducationModelsPage() {
           updatedAt: now,
           note: "編集",
         });
+
         newModel = {
           id: editId,
           name: form.name.trim(),
@@ -178,6 +185,7 @@ export default function EducationModelsPage() {
           updatedAt: now,
         };
       } else {
+        // 新規モデル作成
         const colRef = collection(db, "educationModels");
         const docRef = await addDoc(colRef, {
           name: form.name.trim(),
@@ -189,6 +197,8 @@ export default function EducationModelsPage() {
           creatorId: userId,
           updatedAt: now,
         });
+
+        // 履歴コレクションに新規作成履歴を追加
         await addDoc(collection(db, "educationModelsHistory"), {
           modelId: docRef.id,
           name: form.name.trim(),
@@ -201,6 +211,7 @@ export default function EducationModelsPage() {
           updatedAt: now,
           note: "新規作成",
         });
+
         newModel = {
           id: docRef.id,
           name: form.name.trim(),
@@ -214,14 +225,20 @@ export default function EducationModelsPage() {
         };
       }
 
-      const updatedLocalModels = editId ? models.map((m) => (m.id === editId ? newModel : m)) : [newModel, ...models];
-      localStorage.setItem("educationStylesHistory", JSON.stringify(updatedLocalModels));
+      const updatedLocalModels = editId
+        ? models.map((m) => (m.id === editId ? newModel : m))
+        : [newModel, ...models];
+
+      localStorage.setItem(
+        "educationStylesHistory",
+        JSON.stringify(updatedLocalModels)
+      );
       setModels(updatedLocalModels);
 
       setError("");
       setSuccessMessage(editId ? "更新しました！" : "作成しました！");
 
-      // 2秒だけ成功メッセージ→/modelsへ
+      // ✅ 2秒だけ成功メッセージを表示 → 一覧へ
       setTimeout(() => {
         setSuccessMessage("");
         router.push("/models");
@@ -377,6 +394,16 @@ export default function EducationModelsPage() {
     backgroundColor: "#fff",
     border: "1px solid #e0e7ff",
   };
+  const valueNoteStyle: React.CSSProperties = {
+    background: "#fffef7",
+    border: "1px solid #ffecb3",
+    borderRadius: 8,
+    padding: 10,
+    color: "#604a00",
+    marginBottom: 12,
+    lineHeight: 1.6,
+    fontSize: 14,
+  };
   const labelStyle: React.CSSProperties = {
     display: "block",
     marginBottom: 12,
@@ -461,7 +488,9 @@ export default function EducationModelsPage() {
           <span style={barStyle} />
           <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
       {/* メニューオーバーレイ */}
@@ -510,6 +539,36 @@ export default function EducationModelsPage() {
       <main style={mainContainerStyle}>
         <h1 style={pageTitleStyle}>{editId ? "✏️ 教育観モデルを編集" : "✏️ 新しい教育観モデルを作成"}</h1>
 
+        {/* ページの意義（注釈・“既存”表現ナシ、児童で統一） */}
+        <section style={valueNoteStyle}>
+          <p style={{ margin: 0 }}>
+            ここは<strong>教育観モデルを作成・編集</strong>するページです。授業の考え方を「モデル」として残し、
+            比較・共有・振り返りに活かせます。
+          </p>
+          <ul style={{ margin: "8px 0 0 1.2em" }}>
+            <li style={{ margin: "4px 0" }}>
+              モデル名は<strong>2通りの付け方</strong>どちらでもOKです：
+              <ul style={{ margin: "6px 0 0 1.2em" }}>
+                <li style={{ margin: "2px 0" }}>
+                  <strong>📚 教育観一覧</strong>に出ている<strong>公開モデル名に合わせる</strong>
+                  …同じ名前に記録が集まり、横断で見比べやすくなります
+                </li>
+                <li style={{ margin: "2px 0" }}>
+                  <strong>新しいモデル名で作る</strong>
+                  …新しい視点として共有できます。あとから同名で投稿する人が増えるほどデータが育ちます
+                </li>
+              </ul>
+            </li>
+            <li style={{ margin: "4px 0" }}>
+              できれば<strong>「他の方と同じモデル名」</strong>でご自身の思いや考えを共有してください（比較や集約がしやすくなります）。
+              もちろん<strong>新しい名前</strong>でも大歓迎です。
+            </li>
+            <li style={{ margin: "4px 0" }}>
+              将来の検索・生成の質向上のために活用する場合があります。個人情報や<strong>特定の児童名</strong>は書かないでください。
+            </li>
+          </ul>
+        </section>
+
         {/* ソート（一覧取得はそのまま使う） */}
         <section style={toolbarStyle} aria-label="一覧表示設定">
           <label style={{ fontSize: 14, color: "#455a64" }}>
@@ -548,8 +607,17 @@ export default function EducationModelsPage() {
           {/* モデル名 */}
           <label style={labelStyle}>
             モデル名（必須）
-            <div style={helperStyle}>例）面白い授業、対話型授業、音読重視 など</div>
-            <input type="text" value={form.name} onChange={(e) => handleChange("name", e.target.value)} style={inputStyle} />
+            <div style={helperStyle}>
+              例）面白い授業、対話型授業、音読重視 など。　
+              <strong>📚 教育観一覧の公開モデル名に合わせても、新しい名前でもOK</strong>です。
+              同じ名前が増えるほどデータが集まり、分析・比較がしやすくなります。
+            </div>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+              style={inputStyle}
+            />
           </label>
 
           {/* 教育観 */}
@@ -569,7 +637,9 @@ export default function EducationModelsPage() {
           {/* 評価観点 */}
           <label style={labelStyle}>
             評価観点の重視点（必須）
-            <div style={helperStyle}>例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。</div>
+            <div style={helperStyle}>
+              例）思考力・判断力を育てる評価を重視し、子ども同士の対話や個人の振り返りから評価する。
+            </div>
             <textarea
               rows={3}
               value={form.evaluationFocus}
@@ -581,7 +651,9 @@ export default function EducationModelsPage() {
           {/* 言語活動 */}
           <label style={labelStyle}>
             言語活動の重視点（必須）
-            <div style={helperStyle}>例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。</div>
+            <div style={helperStyle}>
+              例）対話や発表の機会を多く設け、自分の言葉で考えを伝える力を育成する。
+            </div>
             <textarea
               rows={3}
               value={form.languageFocus}
@@ -593,7 +665,9 @@ export default function EducationModelsPage() {
           {/* 育てたい子どもの姿 */}
           <label style={labelStyle}>
             育てたい子どもの姿（必須）
-            <div style={helperStyle}>例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。</div>
+            <div style={helperStyle}>
+              例）自分で進んで思いや考えを表現できる子ども、友だちの意見を大切にする子ども。
+            </div>
             <textarea
               rows={3}
               value={form.childFocus}
