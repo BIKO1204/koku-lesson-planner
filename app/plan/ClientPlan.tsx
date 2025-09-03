@@ -1348,7 +1348,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              🧹 下書きをクリア
+              🧹 下書きと入力をクリア
             </button>
           </div>
         </form>

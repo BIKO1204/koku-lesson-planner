@@ -300,6 +300,8 @@ export default function PracticeAddPage() {
 
   // 復元→自動保存の競合抑止
   const restoringRef = useRef(true);
+  // ★ クリア直後の1回だけ自動保存を抑止
+  const skipAutoSaveOnceRef = useRef(false);
 
   // 状態
   const [practiceDate, setPracticeDate] = useState("");
@@ -335,7 +337,6 @@ export default function PracticeAddPage() {
 
   /* ---- 授業案（ローカル）＆ローカル下書き（起動時） ---- */
   useEffect(() => {
-    // 授業案（ローカル履歴）
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[] = [];
     try {
@@ -546,9 +547,45 @@ export default function PracticeAddPage() {
     }
   };
 
+  /* ===== 画面入力をすべてリセット ===== */
+  const resetAllInputs = () => {
+    // テキスト系
+    setPracticeDate("");
+    setAuthorName("");
+    setReflection("");
+
+    // 画像系
+    setBoardImages([]);
+    setCompressedImages([]);
+
+    // 確認メタ
+    setConfirmNoPersonalInfo(false);
+    setCurrentSignature("");
+    setPreviousSignature("");
+    setNeedsReconfirm(true);
+
+    // プレビューも消す
+    setRecord(null);
+
+    // 授業案があればメタは授業案由来に戻す（なければ空）
+    const r = (lessonPlan?.result as ParsedResult) || {};
+    const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
+    const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
+    const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+    setGrade(planGrade);
+    setGenre(planGenre);
+    setUnitName(planUnit);
+    setLessonTitle(planUnit || "");
+  };
+
   /* ===================== 下書き：自動保存（デバウンス） ===================== */
   useEffect(() => {
     if (restoringRef.current) return;
+    // ★ 下書きクリア直後は一度だけ自動保存をスキップ
+    if (skipAutoSaveOnceRef.current) {
+      skipAutoSaveOnceRef.current = false;
+      return;
+    }
     const t = setTimeout(() => {
       const draft = buildDraft();
       saveDraftLocal(draft);
@@ -1186,6 +1223,7 @@ export default function PracticeAddPage() {
             <button
               type="button"
               onClick={async () => {
+                // ストレージの下書きを削除
                 try {
                   localStorage.removeItem(draftKey(id));
                 } catch {}
@@ -1198,12 +1236,16 @@ export default function PracticeAddPage() {
                     );
                   } catch {}
                 }
-                // 下書きのクリアはストレージのみ（UIの入力値は保持）
-                alert("下書きをクリアしました（ローカル＋クラウド）");
+
+                // ★ 直後の自動保存を一度だけ無効化し、入力もリセット
+                skipAutoSaveOnceRef.current = true;
+                resetAllInputs();
+
+                alert("下書きと画面入力をクリアしました（ローカル＋クラウド）");
               }}
               style={{ ...secondaryBtnStyle, backgroundColor: "#bc181885", color: "#fff" }}
             >
-              🧹 下書きをクリア
+              🧹 下書きと入力をクリア
             </button>
           </div>
 
