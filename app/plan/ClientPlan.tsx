@@ -1,15 +1,27 @@
 "use client";
 
-import { useState, useEffect, CSSProperties, FormEvent } from "react";
+import { useState, useEffect, useMemo, useRef, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { db, auth } from "../firebaseConfig";
-import { doc, setDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  collection,
+  getDocs,
+  serverTimestamp,
+  onSnapshot,
+  deleteDoc,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { useSession } from "next-auth/react";
 
-const EDIT_KEY = "editLessonPlan";
+/* ===================== 定数 ===================== */
+const EDIT_KEY = "editLessonPlan"; // 画面固有のドラフトキー
+const DEVICE_ID_KEY = "deviceId";  // 端末識別（任意）
 
+/* ===================== 固定モデル ===================== */
 const authors = [
   { label: "読解", id: "reading-model-id", collection: "lesson_plans_reading" },
   { label: "話し合い", id: "discussion-model-id", collection: "lesson_plans_discussion" },
@@ -17,6 +29,7 @@ const authors = [
   { label: "言語活動", id: "language-activity-model-id", collection: "lesson_plans_language_activity" },
 ];
 
+/* ===================== 型 ===================== */
 type StyleModel = {
   id: string;
   name: string;
@@ -33,7 +46,7 @@ type ParsedResult = {
     "知識・技能": string[] | string;
     "思考・判断・表現": string[] | string;
     "主体的に学習に取り組む態度": string[] | string;
-    態度?: string[];
+    態度?: string[]; // 互換用
   };
 };
 
@@ -81,6 +94,8 @@ type LessonPlanDraft = {
   result?: ParsedResult | null;
   timestamp: string;
   isDraft: true;
+  /** 追加：LWW 用のクライアント保存時刻（ms） */
+  updatedAtMs?: number;
 };
 
 /* ===================== 学習用のMarkdown構築ヘルパ ===================== */
@@ -123,7 +138,7 @@ function toAssistantPlanMarkdown(r: ParsedResult): string {
   return parts.join("\n\n").trim();
 }
 
-// 入力値からユーザープロンプト（学習用）を組み立てる
+/* 入力値からユーザープロンプト（学習用）を組み立てる */
 function buildUserPromptFromInputs(args: {
   styleName: string;
   subject: string;
@@ -188,19 +203,37 @@ function buildUserPromptFromInputs(args: {
     .join("\n");
 }
 
-// ========================================================================
-
+/* ===================== 本体 ===================== */
 export default function ClientPlan() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams() as unknown as URLSearchParams;
 
+  /* Firebase Auth UID を安定取得 */
+  const [uid, setUid] = useState<string | null>(null);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  /* 端末ID（任意） */
+  const deviceIdRef = useRef<string>("");
+  useEffect(() => {
+    const existed = localStorage.getItem(DEVICE_ID_KEY);
+    if (existed) {
+      deviceIdRef.current = existed;
+    } else {
+      const id = crypto?.randomUUID?.() ?? `dev_${Math.random().toString(36).slice(2)}`;
+      deviceIdRef.current = id;
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+  }, []);
+
+  /* 状態 */
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
-
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
   const [selectedStyleName, setSelectedStyleName] = useState<string>("");
-
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
 
   const [subject, setSubject] = useState("東京書籍");
@@ -229,10 +262,16 @@ export default function ClientPlan() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  // ★ 追加：学習用に保存するユーザープロンプト
+  // 学習用に保存するユーザープロンプト
   const [lastPrompt, setLastPrompt] = useState<string>("");
 
-  // 教育観モデルの取得（拡張フィールドも取得）
+  /* クラウド同期状態 */
+  const [cloudStatus, setCloudStatus] = useState<"idle" | "saving" | "saved" | "error" | "offline">("idle");
+  const skipNextCloudSaveRef = useRef(false);
+  const lastRemoteMsRef = useRef<number>(0);
+  const lastLocalMsRef = useRef<number>(0);
+
+  /* ===================== Firestore: 教育観モデル読み込み ===================== */
   useEffect(() => {
     async function fetchStyleModels() {
       try {
@@ -259,46 +298,51 @@ export default function ClientPlan() {
     fetchStyleModels();
   }, []);
 
-  // 編集復元 & URLパラメータ反映
+  /* ===================== 共有関数: DraftをSTATEへ反映 ===================== */
+  function applyDraftToState(plan: LessonPlanDraft | LessonPlanStored) {
+    setEditId((plan as any).id ?? null);
+    setSubject(plan.subject);
+    setGrade(plan.grade);
+    setGenre(plan.genre);
+    setUnit(plan.unit);
+    setHours(String(plan.hours));
+    setUnitGoal(plan.unitGoal);
+    setEvaluationPoints(plan.evaluationPoints);
+    setChildVision(plan.childVision);
+    setLanguageActivities(plan.languageActivities);
+    setLessonPlanList(plan.lessonPlanList || []);
+    setSelectedStyleId(plan.selectedStyleId || "");
+    setSelectedStyleName((plan as any).selectedStyleName || "");
+
+    if ("selectedAuthorId" in plan) {
+      setSelectedAuthorId((plan as LessonPlanDraft).selectedAuthorId ?? null);
+    }
+    if ("mode" in plan) {
+      setMode((plan as LessonPlanDraft).mode);
+    } else {
+      setMode("ai");
+    }
+    if ((plan as any).result) {
+      setParsedResult((plan as any).result);
+    } else {
+      setParsedResult(null);
+    }
+    setInitialData((plan as any).isDraft ? null : (plan as LessonPlanStored));
+  }
+
+  /* ===================== 初期復元（ローカル優先 → URL反映） ===================== */
   useEffect(() => {
     const storedEdit = typeof window !== "undefined" ? localStorage.getItem(EDIT_KEY) : null;
     if (storedEdit) {
       try {
         const plan = JSON.parse(storedEdit) as LessonPlanDraft | LessonPlanStored;
-        // 共通項目
-        setEditId((plan as any).id ?? null);
-        setSubject(plan.subject);
-        setGrade(plan.grade);
-        setGenre(plan.genre);
-        setUnit(plan.unit);
-        setHours(String(plan.hours));
-        setUnitGoal(plan.unitGoal);
-        setEvaluationPoints(plan.evaluationPoints);
-        setChildVision(plan.childVision);
-        setLanguageActivities(plan.languageActivities);
-        setLessonPlanList(plan.lessonPlanList || []);
-        setSelectedStyleId(plan.selectedStyleId || "");
-        setSelectedStyleName((plan as any).selectedStyleName || "");
-
-        // 重要：作成モデルの復元（修正）
-        if ("selectedAuthorId" in plan) {
-          setSelectedAuthorId((plan as LessonPlanDraft).selectedAuthorId ?? null);
-        }
-
-        // 重要：モード復元（AI / 手動）
-        if ("mode" in plan) {
-          setMode((plan as LessonPlanDraft).mode);
-        } else {
-          setMode("ai");
-        }
-
-        if ((plan as any).result) {
-          setParsedResult((plan as any).result);
-        } else {
-          setParsedResult(null);
-        }
-
-        setInitialData((plan as any).isDraft ? null : (plan as LessonPlanStored));
+        applyDraftToState(plan);
+        // LWW比較用
+        const localMs =
+          typeof (plan as LessonPlanDraft).updatedAtMs === "number"
+            ? (plan as LessonPlanDraft).updatedAtMs!
+            : Date.parse((plan as any).timestamp ?? "") || 0;
+        lastLocalMsRef.current = localMs || 0;
       } catch {
         setEditId(null);
         setInitialData(null);
@@ -306,12 +350,10 @@ export default function ClientPlan() {
       }
     }
     const styleIdParam = (searchParams as any)?.get?.("styleId");
-    if (styleIdParam) {
-      setSelectedStyleId(styleIdParam);
-    }
+    if (styleIdParam) setSelectedStyleId(styleIdParam);
   }, [searchParams, styleModels]);
 
-  // 学年×ジャンルの評価観点テンプレを CSV から自動補完
+  /* ===================== CSVテンプレ補完 ===================== */
   useEffect(() => {
     fetch("/templates.csv")
       .then((res) => res.text())
@@ -330,7 +372,7 @@ export default function ClientPlan() {
       .catch(() => {});
   }, [grade, genre]);
 
-  // ===== 一時保存：共通セーブ関数 & 自動保存（デバウンス） =====
+  /* ===================== 下書きオブジェクト構築 ===================== */
   const buildDraft = (): LessonPlanDraft => ({
     id: editId ?? null,
     mode,
@@ -352,19 +394,61 @@ export default function ClientPlan() {
     isDraft: true,
   });
 
-  const saveDraft = () => {
+  /* ===================== クラウド保存関数 ===================== */
+  const cloudDocRef = useMemo(() => {
+    if (!uid) return null;
+    return doc(db, "users", uid, "drafts", EDIT_KEY);
+  }, [uid]);
+
+  async function saveDraftToCloud(d: LessonPlanDraft) {
+    if (!cloudDocRef || !uid) return;
+    if (skipNextCloudSaveRef.current) return; // 直近の受信直後は保存抑制
+
     try {
-      localStorage.setItem(EDIT_KEY, JSON.stringify(buildDraft()));
+      setCloudStatus("saving");
+      await setDoc(
+        cloudDocRef,
+        {
+          ownerUid: uid,
+          ...d,
+          updatedAtMs: d.updatedAtMs ?? Date.now(),
+          updatedAt: serverTimestamp(),
+          deviceId: deviceIdRef.current,
+        },
+        { merge: true }
+      );
+      setCloudStatus("saved");
     } catch (e) {
-      console.error("一時保存に失敗:", e);
+      console.error("Cloud save failed:", e);
+      setCloudStatus(navigator.onLine ? "error" : "offline");
     }
-  };
+  }
+
+  /* ===================== 自動保存（ローカル & クラウド） ===================== */
+  function localSave(d: LessonPlanDraft) {
+    try {
+      localStorage.setItem(EDIT_KEY, JSON.stringify(d));
+    } catch (e) {
+      console.error("ローカル一時保存に失敗:", e);
+    }
+  }
 
   useEffect(() => {
-    const t = setTimeout(saveDraft, 800); // 0.8秒デバウンス
+    const t = setTimeout(() => {
+      const updatedAtMs = Date.now();
+      const draft = { ...buildDraft(), updatedAtMs };
+      // LWW用にローカル時刻を更新
+      lastLocalMsRef.current = updatedAtMs;
+
+      // ローカル保存
+      localSave(draft);
+      // クラウド保存（ログイン時のみ）
+      if (uid) saveDraftToCloud(draft);
+    }, 800); // 0.8秒デバウンス
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    uid,
     mode,
     subject,
     grade,
@@ -382,6 +466,34 @@ export default function ClientPlan() {
     parsedResult,
   ]);
 
+  /* ===================== クラウド→ローカル 受信同期 ===================== */
+  useEffect(() => {
+    if (!cloudDocRef) return;
+    const unsub = onSnapshot(cloudDocRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as any;
+      const remoteMs = typeof data.updatedAtMs === "number" ? data.updatedAtMs : 0;
+
+      // 受信が自分より古ければ無視（LWW）
+      const localMs = lastLocalMsRef.current || 0;
+      const alreadyAppliedMs = lastRemoteMsRef.current || 0;
+      if (remoteMs <= localMs || remoteMs <= alreadyAppliedMs) return;
+
+      // 反映
+      const plan = data as LessonPlanDraft;
+      applyDraftToState(plan);
+
+      // 受信直後の自動保存ループを抑制
+      lastRemoteMsRef.current = remoteMs;
+      skipNextCloudSaveRef.current = true;
+      setTimeout(() => {
+        skipNextCloudSaveRef.current = false;
+      }, 1200);
+    });
+    return () => unsub();
+  }, [cloudDocRef]);
+
+  /* ===================== 入力系ハンドラ ===================== */
   const handleAddPoint = (f: keyof EvaluationPoints) =>
     setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
   const handleRemovePoint = (f: keyof EvaluationPoints, i: number) =>
@@ -397,6 +509,7 @@ export default function ClientPlan() {
     setLessonPlanList(arr);
   };
 
+  /* ===================== 生成 ===================== */
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
@@ -404,7 +517,6 @@ export default function ClientPlan() {
       alert("作成モデルを選択してください");
       return;
     }
-
     setLoading(true);
     setParsedResult(null);
 
@@ -412,7 +524,7 @@ export default function ClientPlan() {
     const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
     setLessonPlanList(newList);
 
-    // 入力値から学習用プロンプトを先に作っておく（手動/AI共通で保存できるように）
+    // 学習用プロンプト
     const userPromptFromInputs = buildUserPromptFromInputs({
       styleName: selectedStyleName,
       subject,
@@ -451,9 +563,7 @@ export default function ClientPlan() {
         結果: "",
       };
 
-      // 手動モードでも学習用にユーザープロンプトを保存できるように
       setLastPrompt(userPromptFromInputs);
-
       setParsedResult(manualResult);
       setLoading(false);
       return;
@@ -461,8 +571,6 @@ export default function ClientPlan() {
 
     try {
       const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
-
-      // ——— フェーズ1：教育観の全フィールドをプロンプトに注入 ———
       const modelExtras = selectedModel
         ? [
             `【モデル名】${selectedModel.name}`,
@@ -532,7 +640,6 @@ ${languageActivities}
 }
       `.trim();
 
-      // ★ 保存用：このプロンプトも持っておく
       setLastPrompt(prompt);
 
       const res = await fetch("/api/generate", {
@@ -542,9 +649,7 @@ ${languageActivities}
       });
 
       const text = await res.text();
-      if (!res.ok) {
-        throw new Error(text || res.statusText);
-      }
+      if (!res.ok) throw new Error(text || res.statusText);
 
       let data: ParsedResult;
       try {
@@ -552,7 +657,6 @@ ${languageActivities}
       } catch {
         throw new Error("サーバーから無効なJSONが返ってきました");
       }
-
       setParsedResult(data);
     } catch (e: any) {
       alert(`生成に失敗しました：${e.message}`);
@@ -561,6 +665,7 @@ ${languageActivities}
     }
   };
 
+  /* ===================== 正式保存（本番コレクション） ===================== */
   const handleSave = async () => {
     if (!parsedResult) {
       alert("まず授業案を生成してください");
@@ -571,9 +676,8 @@ ${languageActivities}
       return;
     }
 
-    // ★ Firebase Auth のユーザーを確認（Firestore ルール: request.auth != null）
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
       alert("認証中です。数秒後に再度お試しください。");
       return;
     }
@@ -589,10 +693,9 @@ ${languageActivities}
     }
     const collectionName = author.collection;
 
-    // ★ 学習用：assistantの“完成テキスト”を用意
     const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
 
-    // --- ローカルにもミラー保存
+    // ローカルにもミラー保存
     const existingArr: LessonPlanStored[] = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     if (isEdit) {
       const newArr = existingArr.map((p) =>
@@ -639,12 +742,12 @@ ${languageActivities}
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
-    // --- Firestore へ保存（正本）
+    // Firestore へ保存（正本）
     try {
       await setDoc(
         doc(db, collectionName, idToUse),
         {
-          ownerUid: uid, // 認可に使う
+          ownerUid: currentUid,
           subject,
           grade,
           genre,
@@ -657,13 +760,11 @@ ${languageActivities}
           languageActivities,
           selectedStyleId,
           result: parsedResult,
-          // ★ 追加フィールド（学習で使う）
           assistantPlanMarkdown, // 教師データ: assistant 側
           userPromptText: lastPrompt, // 教師データ: user 側
-          timestamp: serverTimestamp(), // サーバー時刻
+          timestamp: serverTimestamp(),
           usedStyleName: selectedStyleName || author.label,
           author: session?.user?.email || "",
-          // ★ ここから最小追加の“モデル識別メタ”
           modelId: selectedStyleId || null,
           modelName: selectedStyleName || null,
           modelNameCanonical:
@@ -694,13 +795,20 @@ ${languageActivities}
       return;
     }
 
-    // 正式保存後は下書きをクリア
+    // 正式保存後はドラフトをクリア（ローカル＆クラウド）
     localStorage.removeItem(EDIT_KEY);
+    if (cloudDocRef) {
+      try {
+        await deleteDoc(cloudDocRef);
+      } catch (e) {
+        console.warn("クラウド下書き削除に失敗（無視可）:", e);
+      }
+    }
     alert("一括保存しました（ローカル・Firestore）");
     router.push("/plan/history");
   };
 
-  // スタイル定義
+  /* ===================== スタイル ===================== */
   const containerStyle: CSSProperties = { maxWidth: 800, margin: "auto", padding: "1rem" };
   const cardStyle: CSSProperties = {
     border: "1px solid #ddd",
@@ -741,11 +849,7 @@ ${languageActivities}
     flexDirection: "column",
     justifyContent: "space-between",
   };
-  const barStyle: CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
+  const barStyle: CSSProperties = { height: 4, backgroundColor: "white", borderRadius: 2 };
   const menuWrapperStyle: CSSProperties = {
     position: "fixed",
     top: 56,
@@ -760,12 +864,7 @@ ${languageActivities}
     display: "flex",
     flexDirection: "column",
   };
-  const menuScrollStyle: CSSProperties = {
-    flex: 1,
-    overflowY: "auto",
-    padding: "1rem",
-    paddingBottom: 0,
-  };
+  const menuScrollStyle: CSSProperties = { flex: 1, overflowY: "auto", padding: "1rem", paddingBottom: 0 };
   const logoutButtonStyle: CSSProperties = {
     padding: "0.75rem 1rem",
     backgroundColor: "#e53935",
@@ -779,7 +878,6 @@ ${languageActivities}
     position: "relative",
     zIndex: 1000,
   };
-
   const overlayStyle: CSSProperties = {
     position: "fixed",
     top: 56,
@@ -802,8 +900,6 @@ ${languageActivities}
     textDecoration: "none",
     marginBottom: "0.5rem",
   };
-
-  // 注釈ボックス
   const infoNoteStyle: CSSProperties = {
     background: "#fffef7",
     border: "1px solid #ffecb3",
@@ -815,6 +911,7 @@ ${languageActivities}
     fontSize: "0.95rem",
   };
 
+  /* ===================== UI ===================== */
   return (
     <>
       <nav style={navBarStyle}>
@@ -830,9 +927,7 @@ ${languageActivities}
           <span style={barStyle}></span>
           <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
-          国語授業プランナー
-        </h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
       </nav>
 
       <div style={overlayStyle} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
@@ -919,8 +1014,7 @@ ${languageActivities}
                 } else {
                   const foundStyle = styleModels.find((m) => m.id === val);
                   setSelectedStyleName(foundStyle ? foundStyle.name : "");
-                  // 教育観モデル選択時は保存カテゴリは未選択のまま
-                  setSelectedAuthorId(null);
+                  setSelectedAuthorId(null); // 教育観モデル選択時は保存カテゴリは未選択のまま
                 }
               }}
               style={inputStyle}
@@ -1006,9 +1100,7 @@ ${languageActivities}
                     onChange={(e) => handleChangePoint(f, i, e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   />
-                  <button type="button" onClick={() => handleRemovePoint(f, i)}>
-                    🗑
-                  </button>
+                  <button type="button" onClick={() => handleRemovePoint(f, i)}>🗑</button>
                 </div>
               ))}
               <button
@@ -1060,9 +1152,8 @@ ${languageActivities}
                   key={author.id}
                   type="button"
                   onClick={() => {
-                    // ★ 保存先カテゴリのみ設定。selectedStyleId は上書きしない（教育観モデルと独立）
                     setSelectedAuthorId(author.id);
-                    setSelectedStyleName(author.label); // 表示名（usedStyleName用）
+                    setSelectedStyleName(author.label);
                   }}
                   style={{
                     flex: 1,
@@ -1081,7 +1172,7 @@ ${languageActivities}
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <button
               type="submit"
               disabled={!selectedAuthorId}
@@ -1100,7 +1191,9 @@ ${languageActivities}
             <button
               type="button"
               onClick={() => {
-                saveDraft();
+                const draft = { ...buildDraft(), updatedAtMs: Date.now() };
+                localSave(draft);
+                lastLocalMsRef.current = draft.updatedAtMs!;
                 alert("下書きを保存しました（この端末のローカルのみ）");
               }}
               style={{
@@ -1113,12 +1206,43 @@ ${languageActivities}
               📝 一時保存（ローカル）
             </button>
 
-            {/* 下書きクリア（任意） */}
+            {/* 明示的にクラウド保存 */}
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
+                if (!uid) {
+                  alert("ログインが必要です。");
+                  return;
+                }
+                const draft = { ...buildDraft(), updatedAtMs: Date.now() };
+                localSave(draft);
+                lastLocalMsRef.current = draft.updatedAtMs!;
+                await saveDraftToCloud(draft);
+                alert("下書きを保存しました（クラウド）");
+              }}
+              style={{
+                ...inputStyle,
+                backgroundColor: "#4DB6AC",
+                color: "white",
+                marginBottom: 0,
+              }}
+            >
+              ☁ 一時保存（クラウド）
+            </button>
+
+            {/* 下書きクリア（ローカル＋クラウド） */}
+            <button
+              type="button"
+              onClick={async () => {
                 localStorage.removeItem(EDIT_KEY);
-                alert("下書きを削除しました");
+                if (cloudDocRef) {
+                  try {
+                    await deleteDoc(cloudDocRef);
+                  } catch (e) {
+                    console.warn("クラウド下書き削除エラー:", e);
+                  }
+                }
+                alert("下書きを削除しました（ローカル・クラウド）");
               }}
               style={{
                 ...inputStyle,
@@ -1129,6 +1253,20 @@ ${languageActivities}
             >
               🧹 下書きをクリア
             </button>
+
+            {/* 同期ステータス表示 */}
+            <span style={{ fontSize: "0.9rem", color: "#555" }}>
+              同期:{" "}
+              {cloudStatus === "saving"
+                ? "保存中…"
+                : cloudStatus === "saved"
+                ? "保存済み"
+                : cloudStatus === "offline"
+                ? "オフライン（ローカル保存中）"
+                : cloudStatus === "error"
+                ? "エラー（後で再試行）"
+                : "待機中"}
+            </span>
           </div>
         </form>
 
@@ -1153,7 +1291,7 @@ ${languageActivities}
               </button>
             </div>
 
-            {/* 表示領域（PDF機能は削除済み） */}
+            {/* 表示領域 */}
             <div
               id="result-content"
               style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
