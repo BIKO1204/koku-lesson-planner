@@ -1229,7 +1229,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              🧹 下書きをクリア
+              🧹 下書きをクリアする
             </button>
           </div>
         </form>

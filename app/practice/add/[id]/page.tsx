@@ -583,7 +583,7 @@ export default function PracticeAddPage() {
     );
   }
 
-  /* ---- 💾　授業実践案を保存する ---- */
+  /* ---- ローカル + Firestore 保存 ---- */
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
@@ -1188,7 +1188,7 @@ export default function PracticeAddPage() {
               : "学年・ジャンル・単元名の入力が必要です"
           }
         >
-          {uploading ? "保存中..." : "ローカル＋Firebaseに保存"}
+          {uploading ? "保存中..." : "💾 実践記録を保存する"}
         </button>
       </main>
     </>
