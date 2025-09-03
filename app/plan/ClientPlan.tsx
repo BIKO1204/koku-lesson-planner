@@ -61,9 +61,10 @@ type LessonPlanStored = {
 function isSmallDevice(): boolean {
   if (typeof window === "undefined") return false;
   const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
-  const narrow = typeof window.matchMedia === "function"
-    ? window.matchMedia("(max-width: 820px)").matches
-    : window.innerWidth <= 820;
+  const narrow =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 820px)").matches
+      : window.innerWidth <= 820;
   return touch && narrow;
 }
 
@@ -137,7 +138,19 @@ function buildUserPromptFromInputs(args: {
   languageActivities: string;
   lessonPlanList: string[];
 }): string {
-  const { styleName, subject, grade, genre, unit, hours, unitGoal, evaluationPoints, childVision, languageActivities, lessonPlanList } = args;
+  const {
+    styleName,
+    subject,
+    grade,
+    genre,
+    unit,
+    hours,
+    unitGoal,
+    evaluationPoints,
+    childVision,
+    languageActivities,
+    lessonPlanList,
+  } = args;
 
   const flowLines = Array.from({ length: hours }, (_, i) => {
     const step = lessonPlanList[i] || "";
@@ -297,12 +310,13 @@ export default function ClientPlan() {
         };
         if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
-      }
+        }
       })
       .catch(() => {});
   }, [grade, genre]);
 
-  const handleAddPoint = (f: keyof EvaluationPoints) => setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
+  const handleAddPoint = (f: keyof EvaluationPoints) =>
+    setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
   const handleRemovePoint = (f: keyof EvaluationPoints, i: number) =>
     setEvaluationPoints((p) => ({ ...p, [f]: p[f].filter((_, idx) => idx !== i) }));
   const handleChangePoint = (f: keyof EvaluationPoints, i: number, v: string) => {
@@ -353,21 +367,21 @@ export default function ClientPlan() {
       });
 
       const manualResult: ParsedResult = {
-        "教科書名": subject,
-        "学年": grade,
-        "ジャンル": genre,
-        "単元名": unit,
-        "授業時間数": count,
-        "単元の目標": unitGoal,
-        "評価の観点": {
+        教科書名: subject,
+        学年: grade,
+        ジャンル: genre,
+        単元名: unit,
+        授業時間数: count,
+        単元の目標: unitGoal,
+        評価の観点: {
           "知識・技能": evaluationPoints.knowledge,
           "思考・判断・表現": evaluationPoints.thinking,
           "主体的に学習に取り組む態度": evaluationPoints.attitude,
         },
-        "育てたい子どもの姿": childVision,
-        "授業の流れ": manualFlow,
-        "言語活動の工夫": languageActivities,
-        "結果": "",
+        育てたい子どもの姿: childVision,
+        授業の流れ: manualFlow,
+        言語活動の工夫: languageActivities,
+        結果: "",
       };
 
       // 手動モードでも学習用にユーザープロンプトを保存できるように
@@ -566,7 +580,7 @@ ${languageActivities}
           selectedStyleId,
           result: parsedResult,
           // ★ 追加フィールド（学習で使う）
-          assistantPlanMarkdown,      // 教師データ: assistant 側
+          assistantPlanMarkdown, // 教師データ: assistant 側
           userPromptText: lastPrompt, // 教師データ: user 側
           timestamp: serverTimestamp(), // サーバー時刻
           usedStyleName: selectedStyleName || author.label,
@@ -574,23 +588,24 @@ ${languageActivities}
           // ★ ここから最小追加の“モデル識別メタ”
           modelId: selectedStyleId || null,
           modelName: selectedStyleName || null,
-          modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
+          modelNameCanonical:
+            (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
           modelSnapshot: selectedStyleId
-            ? (styleModels.find((m) => m.id === selectedStyleId)
-                ? {
-                    kind: "user-model",
-                    id: selectedStyleId,
-                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
-                    at: new Date().toISOString(),
-                  }
-                : authors.find((a) => a.id === selectedStyleId)
-                ? {
-                    kind: "builtin",
-                    id: selectedStyleId,
-                    name: authors.find((a) => a.id === selectedStyleId)!.label,
-                    at: new Date().toISOString(),
-                  }
-                : null)
+            ? styleModels.find((m) => m.id === selectedStyleId)
+              ? {
+                  kind: "user-model",
+                  id: selectedStyleId,
+                  name: styleModels.find((m) => m.id === selectedStyleId)!.name,
+                  at: new Date().toISOString(),
+                }
+              : authors.find((a) => a.id === selectedStyleId)
+              ? {
+                  kind: "builtin",
+                  id: selectedStyleId,
+                  name: authors.find((a) => a.id === selectedStyleId)!.label,
+                  at: new Date().toISOString(),
+                }
+              : null
             : null,
         },
         { merge: true }
@@ -789,17 +804,16 @@ ${languageActivities}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
             授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても
-            <strong>理想となる授業案は作成されません</strong>。
+            <strong>理想となる授業案は作成されません</strong>。コパイロット（副操縦士）にはなれません。
           </p>
           <p style={{ margin: "6px 0 0" }}>
             みなさんの作成した授業案、後に作成する授業実践案を学習させることで、AIモードで
-          <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
+            <strong>面白い国語の授業案</strong>が生成されることでしょう。そんな未来が待っています。
           </p>
           <p style={{ margin: "6px 0 0" }}>
-            まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
-            作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
+            まずは、<strong>手動モード</strong>で授業案をたくさん生成していきましょう。モデルは
+            <strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
-
         </section>
 
         <form onSubmit={handleSubmit}>
@@ -969,9 +983,9 @@ ${languageActivities}
                   key={author.id}
                   type="button"
                   onClick={() => {
+                    // ★ 最小変更：保存先カテゴリのみを設定。selectedStyleId は上書きしない！
                     setSelectedAuthorId(author.id);
-                    setSelectedStyleId(author.id); // 固定モデルは styleId と同一にしておくと一貫
-                    setSelectedStyleName(author.label);
+                    setSelectedStyleName(author.label); // 表示名としては保持（usedStyleNameに利用）
                   }}
                   style={{
                     flex: 1,
@@ -1069,13 +1083,17 @@ ${languageActivities}
               className="h2pdf-root h2pdf-avoid"
               style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
             >
-              <div style={titleStyle} className="h2pdf-avoid">授業の概要</div>
+              <div style={titleStyle} className="h2pdf-avoid">
+                授業の概要
+              </div>
               <p className="h2pdf-avoid">教科書名：{parsedResult["教科書名"]}</p>
               <p className="h2pdf-avoid">学年：{parsedResult["学年"]}</p>
               <p className="h2pdf-avoid">ジャンル：{parsedResult["ジャンル"]}</p>
               <p className="h2pdf-avoid">単元名：{parsedResult["単元名"]}</p>
               <p className="h2pdf-avoid">授業時間数：{parsedResult["授業時間数"]}時間</p>
-              <p className="h2pdf-avoid">育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
+              <p className="h2pdf-avoid">
+                育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}
+              </p>
 
               <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
                 <div style={titleStyle}>単元の目標</div>
@@ -1094,7 +1112,9 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["知識・技能"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`knowledge-${i}`} className="h2pdf-avoid">{v}</li>
+                    <li key={`knowledge-${i}`} className="h2pdf-avoid">
+                      {v}
+                    </li>
                   ))}
                 </ul>
 
@@ -1107,7 +1127,9 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["思考・判断・表現"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`thinking-${i}`} className="h2pdf-avoid">{v}</li>
+                    <li key={`thinking-${i}`} className="h2pdf-avoid">
+                      {v}
+                    </li>
                   ))}
                 </ul>
 
@@ -1120,7 +1142,9 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["主体的に学習に取り組む態度"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`attitude-${i}`} className="h2pdf-avoid">{v}</li>
+                    <li key={`attitude-${i}`} className="h2pdf-avoid">
+                      {v}
+                    </li>
                   ))}
                 </ul>
               </div>

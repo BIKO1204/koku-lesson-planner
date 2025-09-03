@@ -70,7 +70,7 @@ function Dashboard() {
     { href: "/plan/history", emoji: "📖", label: "保存された授業案を見る", bg: "#00BCD4" },
     { href: "/practice/history", emoji: "📷", label: "授業実践の記録を見る", bg: "#009688" },
     { href: "/practice/share", emoji: "🌐", label: "共有版実践記録を見る", bg: "#9C27B0" },
-    { href: "/models/create", emoji: "✏️", label: "新しい教育観モデルを登録する", bg: "#66BB6A" },
+    { href: "/models/create", emoji: "✏️", label: "新しい教育観モデルを作成する", bg: "#66BB6A" },
     { href: "/models", emoji: "🌱", label: "教育観モデルを一覧で見る", bg: "#AED581" },
     { href: "/models/history", emoji: "🕒", label: "教育観モデル履歴を見る", bg: "#E53935" },
   ];
