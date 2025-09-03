@@ -1216,7 +1216,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              💾 一時保存（ローカル＋クラウド）
+              📝 下書き保存（ローカル＋クラウド）
             </button>
 
             {/* 下書きクリア（ローカル＋クラウド） */}
@@ -1276,7 +1276,7 @@ ${languageActivities}
                   cursor: "pointer",
                 }}
               >
-                💾 一括保存 (ローカル・Firestore)
+                💾 保存 (ローカル・Firestore)
               </button>
             </div>
 
