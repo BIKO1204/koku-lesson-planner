@@ -43,7 +43,7 @@ type ParsedResult = {
     "知識・技能": string[] | string;
     "思考・判断・表現": string[] | string;
     "主体的に学習に取り組む態度": string[] | string;
-    態度?: string[];
+    態度?: string[] | string;
   };
 };
 
@@ -139,6 +139,7 @@ function buildUserPromptFromInputs(args: {
   languageActivities: string;
   lessonPlanList: string[];
 }): string {
+
   const {
     styleName,
     subject,
@@ -188,6 +189,88 @@ function buildUserPromptFromInputs(args: {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/* ========== 変換ユーティリティ（生成結果→入力欄へ反映） ========== */
+const toStrArray = (v: any): string[] =>
+  Array.isArray(v) ? v.map((x) => String(x)) : v != null && String(v).trim() ? [String(v)] : [];
+
+const sortedFlowEntries = (flow: any): string[] => {
+  // flow が { "1時間目": "...", "2時間目": "..." } の場合を想定。配列/文字列にも一応対応
+  if (!flow) return [];
+  if (Array.isArray(flow)) return flow.map((x) => String(x));
+  if (typeof flow === "string") {
+    // 1行1コマに分割
+    return flow.split(/\r?\n/).map((s) => s.replace(/^\s*\d+\s*時間目[:：]?\s*/, "").trim());
+  }
+  if (typeof flow === "object") {
+    return Object.entries(flow)
+      .sort((a, b) => {
+        const na = parseInt(String(a[0]).match(/\d+/)?.[0] ?? "0", 10);
+        const nb = parseInt(String(b[0]).match(/\d+/)?.[0] ?? "0", 10);
+        return na - nb;
+      })
+      .map(([, v]) => String(v));
+  }
+  return [];
+};
+
+function applyParsedResultToInputs(
+  data: ParsedResult,
+  setters: {
+    setSubject: (v: string) => void;
+    setGrade: (v: string) => void;
+    setGenre: (v: string) => void;
+    setUnit: (v: string) => void;
+    setHours: (v: string) => void;
+    setUnitGoal: (v: string) => void;
+    setChildVision: (v: string) => void;
+    setLanguageActivities: (v: string) => void;
+    setEvaluationPoints: (v: EvaluationPoints) => void;
+    setLessonPlanList: (v: string[]) => void;
+  }
+) {
+  const {
+    setSubject,
+    setGrade,
+    setGenre,
+    setUnit,
+    setHours,
+    setUnitGoal,
+    setChildVision,
+    setLanguageActivities,
+    setEvaluationPoints,
+    setLessonPlanList,
+  } = setters;
+
+  const subject = String(data["教科書名"] ?? "").trim();
+  const grade = String(data["学年"] ?? "").trim();
+  const genre = String(data["ジャンル"] ?? "").trim();
+  const unit = String(data["単元名"] ?? "").trim();
+  const hours = Number(data["授業時間数"] ?? 0);
+  const unitGoal = String(data["単元の目標"] ?? "").trim();
+  const childVision = String(data["育てたい子どもの姿"] ?? "").trim();
+  const languageActivities = String(data["言語活動の工夫"] ?? "").trim();
+
+  const evalObj = (data["評価の観点"] ?? {}) as ParsedResult["評価の観点"];
+  const knowledge = toStrArray(evalObj?.["知識・技能"]);
+  const thinking = toStrArray(evalObj?.["思考・判断・表現"]);
+  const attitude = toStrArray(evalObj?.["主体的に学習に取り組む態度"] ?? evalObj?.["態度"]);
+
+  const flowList = sortedFlowEntries(data["授業の流れ"]);
+  const finalHours = hours || flowList.length || 0;
+  const paddedFlow = Array.from({ length: finalHours }, (_, i) => flowList[i] ?? "");
+
+  if (subject) setSubject(subject);
+  if (grade) setGrade(grade);
+  if (genre) setGenre(genre);
+  if (unit) setUnit(unit);
+  if (finalHours >= 0) setHours(String(finalHours));
+  setUnitGoal(unitGoal);
+  setChildVision(childVision);
+  setLanguageActivities(languageActivities);
+  setEvaluationPoints({ knowledge, thinking, attitude });
+  setLessonPlanList(paddedFlow);
 }
 
 /* ===================== メイン ===================== */
@@ -551,6 +634,21 @@ export default function ClientPlan() {
 
       setLastPrompt(userPromptFromInputs);
       setParsedResult(manualResult);
+
+      // ★ ここで入力欄へも反映（保存時の空欄を防ぐ）
+      applyParsedResultToInputs(manualResult, {
+        setSubject,
+        setGrade,
+        setGenre,
+        setUnit,
+        setHours,
+        setUnitGoal,
+        setChildVision,
+        setLanguageActivities,
+        setEvaluationPoints,
+        setLessonPlanList,
+      });
+
       setLoading(false);
       return;
     }
@@ -645,6 +743,20 @@ ${languageActivities}
         throw new Error("サーバーから無効なJSONが返ってきました");
       }
       setParsedResult(data);
+
+      // ★ ここで入力欄を生成結果で更新（保存時の空欄を防ぐ）
+      applyParsedResultToInputs(data, {
+        setSubject,
+        setGrade,
+        setGenre,
+        setUnit,
+        setHours,
+        setUnitGoal,
+        setChildVision,
+        setLanguageActivities,
+        setEvaluationPoints,
+        setLessonPlanList,
+      });
     } catch (e: any) {
       alert(`生成に失敗しました：${e.message}`);
     } finally {
@@ -680,7 +792,7 @@ ${languageActivities}
 
     const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
 
-    // ローカル履歴へ
+    // ローカル履歴へ（入力欄が既に同期されているため空欄にならない）
     const existingArr: LessonPlanStored[] = JSON.parse(
       typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
     );
