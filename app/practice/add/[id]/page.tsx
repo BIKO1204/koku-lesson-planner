@@ -1465,7 +1465,7 @@ export default function PracticeAddPage() {
               : "学年・ジャンル・単元名の入力が必要です"
           }
         >
-          {uploading ? "保存中..." : "💾 実践記録に保存・共有する"}
+          {uploading ? "保存中..." : "💾 実践記録を保存・共有する"}
         </button>
       </main>
     </>
