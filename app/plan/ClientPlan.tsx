@@ -950,6 +950,9 @@ ${languageActivities}
             まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
+           <p style={{ margin: "6px 0 0" }}>
+            <strong>下書きを保存する際は、必ず📝下書き保存ボタンを押してください。</strong>
+          </p>
         </section>
 
         <form onSubmit={handleSubmit}>
@@ -1160,7 +1163,7 @@ ${languageActivities}
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#757575",
+                backgroundColor: "#1bdf91ff",
                 color: "white",
                 marginBottom: 0,
               }}
@@ -1187,7 +1190,7 @@ ${languageActivities}
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#BDBDBD",
+                backgroundColor: "#8b8e83ff",
                 color: "white",
                 marginBottom: 0,
               }}
