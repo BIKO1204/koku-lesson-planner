@@ -970,7 +970,7 @@ export default function PracticeAddPage() {
             <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
           </ul>
           <p style={{ marginTop: 8 }}>
-            <strong>※下書きを保存する際は、必ず📝 下書きを保存ボタンを押してください。</strong>別の端末では、板書画像は下書きに反映されません。
+            <strong>※下書きを保存する際は、必ず📝 下書きを保存ボタンを押してください。別の端末では、板書画像は下書きに反映されません。</strong>
           </p>
         </div>
 
@@ -1465,7 +1465,7 @@ export default function PracticeAddPage() {
               : "学年・ジャンル・単元名の入力が必要です"
           }
         >
-          {uploading ? "保存中..." : "💾 実践記録に保存する"}
+          {uploading ? "保存中..." : "💾 実践記録に保存・共有する"}
         </button>
       </main>
     </>
