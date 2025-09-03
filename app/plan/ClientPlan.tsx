@@ -75,7 +75,6 @@ type LessonPlanStored = {
 };
 
 type LessonPlanDraft = {
-  // 下書き用（未生成でもOKな緩い型）
   id?: string | null;
   mode: "ai" | "manual";
   subject: string;
@@ -223,7 +222,7 @@ export default function ClientPlan() {
     if (existed) {
       deviceIdRef.current = existed;
     } else {
-      const id = crypto?.randomUUID?.() ?? `dev_${Math.random().toString(36).slice(2)}`;
+      const id = (globalThis as any).crypto?.randomUUID?.() ?? `dev_${Math.random().toString(36).slice(2)}`;
       deviceIdRef.current = id;
       localStorage.setItem(DEVICE_ID_KEY, id);
     }
@@ -808,6 +807,25 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
+  /* ===================== クリックで即時 一時保存（ローカル＋クラウド） ===================== */
+  const quickSave = async () => {
+    const draft = { ...buildDraft(), updatedAtMs: Date.now() };
+    // ローカルは常に
+    try {
+      localStorage.setItem(EDIT_KEY, JSON.stringify(draft));
+      lastLocalMsRef.current = draft.updatedAtMs!;
+    } catch (e) {
+      console.error("ローカル保存失敗:", e);
+    }
+    // ログイン済みならクラウドも
+    if (uid) {
+      await saveDraftToCloud(draft);
+      alert("下書きを保存しました（ローカル＋クラウド）");
+    } else {
+      alert("下書きを保存しました（ローカルのみ）。ログインでクラウドにも保存されます。");
+    }
+  };
+
   /* ===================== スタイル ===================== */
   const containerStyle: CSSProperties = { maxWidth: 800, margin: "auto", padding: "1rem" };
   const cardStyle: CSSProperties = {
@@ -1187,39 +1205,10 @@ ${languageActivities}
               {mode === "manual" ? "授業案を表示する" : "授業案を生成する"}
             </button>
 
-            {/* 手動の一時保存（ローカルのみ） */}
+            {/* 一本化：クリック即時 一時保存（ローカル＋クラウド） */}
             <button
               type="button"
-              onClick={() => {
-                const draft = { ...buildDraft(), updatedAtMs: Date.now() };
-                localSave(draft);
-                lastLocalMsRef.current = draft.updatedAtMs!;
-                alert("下書きを保存しました（この端末のローカルのみ）");
-              }}
-              style={{
-                ...inputStyle,
-                backgroundColor: "#757575",
-                color: "white",
-                marginBottom: 0,
-              }}
-            >
-              📝 一時保存（ローカル）
-            </button>
-
-            {/* 明示的にクラウド保存 */}
-            <button
-              type="button"
-              onClick={async () => {
-                if (!uid) {
-                  alert("ログインが必要です。");
-                  return;
-                }
-                const draft = { ...buildDraft(), updatedAtMs: Date.now() };
-                localSave(draft);
-                lastLocalMsRef.current = draft.updatedAtMs!;
-                await saveDraftToCloud(draft);
-                alert("下書きを保存しました（クラウド）");
-              }}
+              onClick={quickSave}
               style={{
                 ...inputStyle,
                 backgroundColor: "#4DB6AC",
@@ -1227,7 +1216,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              ☁ 一時保存（クラウド）
+              💾 一時保存（ローカル＋クラウド）
             </button>
 
             {/* 下書きクリア（ローカル＋クラウド） */}
