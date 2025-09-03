@@ -346,6 +346,12 @@ export default function ClientPlan() {
 
   /* ===== 学年×ジャンルの評価観点テンプレ（CSV） ===== */
   useEffect(() => {
+    // ▼ 追加：ジャンル「その他」はテンプレを使わず空で初期化
+    if (genre === "その他") {
+      setEvaluationPoints({ knowledge: [""], thinking: [""], attitude: [""] });
+      return;
+    }
+
     const controller = new AbortController();
     (async () => {
       try {
@@ -1059,6 +1065,7 @@ ${languageActivities}
               <option>物語文</option>
               <option>説明文</option>
               <option>詩</option>
+              <option>その他</option> {/* 追加 */}
             </select>
           </label>
 

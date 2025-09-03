@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, ChangeEvent, FormEvent } from "react";
+import React, { useState, useEffect, useRef, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { openDB } from "idb";
 import { signOut, useSession } from "next-auth/react";
+import { onAuthStateChanged } from "firebase/auth";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { db, auth, storage } from "../../../firebaseConfig";
 import { ref, uploadString, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -25,9 +26,27 @@ type PracticeRecord = {
   unitName?: string;
   authorName?: string;
   modelType: string; // lesson_plans_*
-  // ▼ 追加：確認メタデータ（ローカル保持用）
+  // ▼ 確認メタデータ（ローカル保持用）
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
+};
+
+type PracticeDraft = {
+  lessonId: string;
+  practiceDate: string;
+  reflection: string;
+  // 下書きはサイズ抑制のため「圧縮画像のみ」を持つ
+  compressedImages: BoardImage[];
+  lessonTitle: string;
+  grade: string;
+  genre: string;
+  unitName: string;
+  authorName: string;
+  modelType: string; // lesson_plans_*
+  confirmedNoPersonalInfo: boolean;
+  imagesSignature?: string;
+  timestamp: string;
+  isDraft: true;
 };
 
 type LessonPlan = {
@@ -63,7 +82,7 @@ const toStrArray = (v: unknown): string[] => {
   return [];
 };
 
-/** ★ 授業案の値で欠けを自動補完するフォールバック */
+/** 授業案の値で欠けを自動補完するフォールバック */
 function pickMetaWithFallback(
   gradeState: string,
   genreState: string,
@@ -113,7 +132,7 @@ function calcImagesSignature(imgs: BoardImage[]): string {
   return hashString(combined);
 }
 
-/* ======================= IndexedDB ======================= */
+/* ======================= IndexedDB（確定保存） ======================= */
 const DB_NAME = "PracticeDB";
 const STORE_NAME = "practiceRecords";
 const DB_VERSION = 1;
@@ -252,6 +271,19 @@ function normalizeToPracticeCollection(
   return undefined;
 }
 
+/* ======================= 下書き（ローカル＋クラウド） ======================= */
+const DRAFT_COLLECTION = "practice_record_drafts";
+const DRAFT_KEY_BASE = "editPracticeRecord";
+const draftKey = (lessonId: string) => `${DRAFT_KEY_BASE}:${lessonId}`;
+
+function pickLatestDraft<T extends { timestamp?: string }>(a: T | null, b: T | null) {
+  const ta = a?.timestamp ? Date.parse(a.timestamp) : -1;
+  const tb = b?.timestamp ? Date.parse(b.timestamp) : -1;
+  if (ta < 0 && tb < 0) return null;
+  if (tb > ta) return b;
+  return a ?? b ?? null;
+}
+
 /* =========================================================
  * コンポーネント
  * ======================================================= */
@@ -262,6 +294,17 @@ export default function PracticeAddPage() {
   const modelTypeParam = searchParams?.get("modelType") || "";
   const { data: session } = useSession();
 
+  // 認証UID（クラウド下書き保存用）
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    return () => unsub();
+  }, []);
+
+  // 復元→自動保存の競合抑止
+  const restoringRef = useRef(true);
+
+  // 状態
   const [practiceDate, setPracticeDate] = useState("");
   const [reflection, setReflection] = useState("");
   const [boardImages, setBoardImages] = useState<BoardImage[]>([]);
@@ -278,13 +321,13 @@ export default function PracticeAddPage() {
   const [uploading, setUploading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // ▼ モデルタイプ固定フラグ
+  // モデルタイプ固定フラグ
   const [modelLocked, setModelLocked] = useState<boolean>(false);
 
-  // ▼ 学年・ジャンル・単元名：固定 or 手動
+  // 学年・ジャンル・単元名：固定 or 手動
   const [lockMeta, setLockMeta] = useState<boolean>(true);
 
-  // ▼ 追加：確認関連
+  // 確認関連
   const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
   const [currentSignature, setCurrentSignature] = useState<string>("");
   const [previousSignature, setPreviousSignature] = useState<string>("");
@@ -293,8 +336,9 @@ export default function PracticeAddPage() {
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
-  /* ---- 授業案（ローカル）＆ローカル下書き ---- */
+  /* ---- 授業案（ローカル）＆ローカル下書き（起動時） ---- */
   useEffect(() => {
+    // 授業案（ローカル履歴）
     const plansJson = localStorage.getItem("lessonPlans") || "[]";
     let plans: LessonPlan[] = [];
     try {
@@ -316,53 +360,21 @@ export default function PracticeAddPage() {
     } else {
       setLessonTitle("");
     }
-
-    getRecord(id).then((existing) => {
-      if (!existing) return;
-      setPracticeDate(existing.practiceDate);
-      setReflection(existing.reflection);
-
-      if (existing.compressedImages && existing.compressedImages.length > 0) {
-        setBoardImages(existing.compressedImages);
-        setCompressedImages(existing.compressedImages);
-      } else {
-        setBoardImages(existing.boardImages || []);
-        setCompressedImages(existing.boardImages || []);
-      }
-
-      setRecord({ ...existing, lessonTitle: existing.lessonTitle || "" });
-      setAuthorName(existing.authorName || "");
-      setGrade(existing.grade || "");
-      setGenre(existing.genre || "");
-      setUnitName(existing.unitName || "");
-      setModelType(existing.modelType || "lesson_plans_reading");
-
-      // ▼ ローカル保存に確認メタがあれば拾う
-      if (existing.imagesSignature) {
-        setPreviousSignature(existing.imagesSignature);
-      }
-      if (existing.confirmedNoPersonalInfo) {
-        setConfirmNoPersonalInfo(true);
-      }
-    });
   }, [id]);
 
-  /* ---- Firestoreから 実践記録 をロード（別端末同期） ---- */
+  /* ---- 実践記録（Firestore）読み込み（別端末同期） ---- */
   useEffect(() => {
     async function loadFromFirestore() {
       const preferred = normalizeToPracticeCollection(modelTypeParam);
-      const targetCollections = preferred ? [preferred] : PRACTICE_COLLECTIONS;
+      const target = preferred ? [preferred] : PRACTICE_COLLECTIONS;
 
-      for (const coll of targetCollections) {
+      for (const coll of target) {
         const snap = await getDoc(doc(db, coll, id));
         if (!snap.exists()) continue;
 
         const data = snap.data() as any;
-        const lessonType = data.modelType
-          ? String(data.modelType) // lesson_plans_*
-          : toLessonFromPractice(coll);
+        const lessonType = data.modelType ? String(data.modelType) : toLessonFromPractice(coll);
 
-        // 既存実践記録がある = そのモデルに固定
         setModelType(lessonType);
         setModelLocked(true);
 
@@ -394,9 +406,7 @@ export default function PracticeAddPage() {
           imagesSignature: data.imagesSignature ?? undefined,
         });
 
-        if (data.imagesSignature) {
-          setPreviousSignature(String(data.imagesSignature));
-        }
+        if (data.imagesSignature) setPreviousSignature(String(data.imagesSignature));
         break;
       }
     }
@@ -404,49 +414,40 @@ export default function PracticeAddPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, modelTypeParam]);
 
-  /* ---- 授業案から モデルタイプ を自動特定（クエリ or lesson_plans_* 横断） ---- */
+  /* ---- モデルタイプを自動特定（授業案コレクション横断 or クエリ） ---- */
   useEffect(() => {
-    if (modelLocked) return; // 既に固定済みなら何もしない
+    if (modelLocked) return;
 
     (async () => {
-      // 1) クエリ ?modelType=lesson_plans_xxx があればそれを採用
       if (modelTypeParam && modelTypeParam.startsWith("lesson_plans_")) {
         setModelType(modelTypeParam);
         setModelLocked(true);
         return;
       }
-
-      // 2) Firestore の授業案コレクションを横断して存在確認
       for (const coll of LESSON_PLAN_COLLECTIONS) {
         const snap = await getDoc(doc(db, coll, id));
         if (snap.exists()) {
           setModelType(coll);
           setModelLocked(true);
-
-          // 授業案の単元名やメタを補完
           const data = snap.data() as any;
           const result = data?.result;
           setLessonPlan({ id, result });
-          if (result && typeof result === "object") {
-            if (result["単元名"]) setLessonTitle(String(result["単元名"]));
+          if (result && typeof result === "object" && result["単元名"]) {
+            setLessonTitle(String(result["単元名"]));
           }
           return;
         }
       }
-      // 3) 見つからなければ未固定（授業案未登録 or 直打ちアクセスの想定）
     })();
   }, [id, modelLocked, modelTypeParam]);
 
-  /* ---- 学年・ジャンル・単元名：固定 or 手動を決定（既存 or 授業案があれば固定） ---- */
+  /* ---- 学年・ジャンル・単元名：固定 or 手動 ---- */
   useEffect(() => {
-    // 既存実践記録で値があれば固定
     const hasExisting = Boolean(grade || genre || unitName);
     if (hasExisting) {
       setLockMeta(true);
       return;
     }
-
-    // 授業案から取り出せれば固定
     const r = (lessonPlan?.result as ParsedResult) || undefined;
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
@@ -458,12 +459,123 @@ export default function PracticeAddPage() {
       if (!unitName) setUnitName(planUnit);
       setLockMeta(true);
     } else {
-      // どちらも無ければ手動入力OK
       setLockMeta(false);
     }
   }, [lessonPlan, grade, genre, unitName]);
 
-  /* ---- 画像の選択・削除で再確認が必要に ---- */
+  /* ===================== 下書き：復元（ローカル＋クラウドの新しい方） ===================== */
+  useEffect(() => {
+    (async () => {
+      let localDraft: PracticeDraft | null = null;
+      try {
+        const raw = localStorage.getItem(draftKey(id));
+        if (raw) localDraft = JSON.parse(raw) as PracticeDraft;
+      } catch {}
+
+      let cloudDraft: PracticeDraft | null = null;
+      const u = uid || auth.currentUser?.uid || null;
+      if (u) {
+        try {
+          const snap = await getDoc(doc(db, DRAFT_COLLECTION, `${u}_${id}`));
+          if (snap.exists()) {
+            const payload = (snap.data() as any)?.payload;
+            if (payload?.isDraft) cloudDraft = payload as PracticeDraft;
+          }
+        } catch {}
+      }
+
+      const chosen = pickLatestDraft(localDraft, cloudDraft);
+      if (chosen) {
+        // 圧縮画像をプレビューにも適用
+        setCompressedImages(chosen.compressedImages || []);
+        setBoardImages(chosen.compressedImages || []);
+        setPracticeDate(chosen.practiceDate || "");
+        setReflection(chosen.reflection || "");
+        setLessonTitle(chosen.lessonTitle || "");
+        setAuthorName(chosen.authorName || "");
+        setGrade(chosen.grade || "");
+        setGenre(chosen.genre || "");
+        setUnitName(chosen.unitName || "");
+        setModelType(chosen.modelType || "lesson_plans_reading");
+        setConfirmNoPersonalInfo(!!chosen.confirmedNoPersonalInfo);
+        if (chosen.imagesSignature) setPreviousSignature(chosen.imagesSignature);
+      }
+
+      restoringRef.current = false; // 復元完了→以降オート保存
+    })();
+  }, [id, uid]);
+
+  /* ===================== 下書き：ビルド＆保存ヘルパ ===================== */
+  const buildDraft = (): PracticeDraft => {
+    const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
+    return {
+      lessonId: id,
+      practiceDate,
+      reflection,
+      // 下書きは圧縮画像のみ保持（容量対策）
+      compressedImages,
+      lessonTitle,
+      authorName,
+      grade: meta.grade,
+      genre: meta.genre,
+      unitName: meta.unitName,
+      modelType,
+      confirmedNoPersonalInfo: confirmNoPersonalInfo,
+      imagesSignature: currentSignature,
+      timestamp: new Date().toISOString(),
+      isDraft: true,
+    };
+  };
+
+  const saveDraftLocal = (draft: PracticeDraft) => {
+    try {
+      localStorage.setItem(draftKey(id), JSON.stringify(draft));
+    } catch (e) {
+      console.warn("ローカル下書き保存失敗:", e);
+    }
+  };
+
+  const saveDraftCloud = async (draft: PracticeDraft) => {
+    const u = uid || auth.currentUser?.uid || null;
+    if (!u) return;
+    try {
+      await setDoc(
+        doc(db, DRAFT_COLLECTION, `${u}_${id}`),
+        { ownerUid: u, lessonId: id, payload: draft, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn("クラウド下書き保存失敗:", e);
+    }
+  };
+
+  /* ===================== 下書き：自動保存（デバウンス） ===================== */
+  useEffect(() => {
+    if (restoringRef.current) return;
+    const t = setTimeout(() => {
+      const draft = buildDraft();
+      saveDraftLocal(draft);
+      void saveDraftCloud(draft);
+    }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    uid,
+    practiceDate,
+    reflection,
+    lessonTitle,
+    authorName,
+    grade,
+    genre,
+    unitName,
+    modelType,
+    confirmNoPersonalInfo,
+    currentSignature,
+    // 画像の変更（追加・削除・並び替え・圧縮再生成）
+    compressedImages,
+  ]);
+
+  /* ===================== 画像の追加・削除・並び替え ===================== */
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -499,11 +611,26 @@ export default function PracticeAddPage() {
     setNeedsReconfirm(true);
   };
 
+  const moveItem = <T,>(arr: T[], from: number, to: number): T[] => {
+    const copy = arr.slice();
+    const item = copy.splice(from, 1)[0];
+    copy.splice(to, 0, item);
+    return copy;
+  };
+
+  const handleMoveImage = (i: number, dir: -1 | 1) => {
+    const to = i + dir;
+    if (to < 0 || to >= boardImages.length) return;
+    setBoardImages((prev) => moveItem(prev, i, to));
+    setCompressedImages((prev) => moveItem(prev, i, to));
+    setConfirmNoPersonalInfo(false);
+    setNeedsReconfirm(true);
+  };
+
   /* ---- プレビュー生成 ---- */
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
 
-    // ★ 授業案で欠けを補完し、state も上書き
     const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
     if (meta.grade !== grade) setGrade(meta.grade);
     if (meta.genre !== genre) setGenre(meta.genre);
@@ -526,7 +653,7 @@ export default function PracticeAddPage() {
     });
   };
 
-  /* ---- 現在の画像シグネチャを算出して、以前と同じなら自動で確認済みに ---- */
+  /* ---- 現在の画像シグネチャを算出 ---- */
   useEffect(() => {
     const imgs = (compressedImages?.length ? compressedImages : boardImages) || [];
     const sig = calcImagesSignature(imgs);
@@ -538,26 +665,22 @@ export default function PracticeAddPage() {
     }
   }, [boardImages, compressedImages, previousSignature]);
 
-  /* ---- Firestore保存 ---- */
+  /* ---- Firestore保存（確定） ---- */
   async function saveRecordToFirestore(
     rec: PracticeRecord & { compressedImages: BoardImage[] }
   ) {
-    const uid = auth.currentUser?.uid;
+    const u = auth.currentUser?.uid;
     const userEmail = session?.user?.email;
-    if (!uid || !userEmail) {
+    if (!u || !userEmail) {
       alert("ログインが必要です。");
       throw new Error("Not logged in");
     }
 
-    // モデルタイプが固定されていない場合は保存不可（誤紐づけ防止）
     if (!modelLocked) {
-      alert(
-        "授業案からモデルタイプが自動設定されていません。授業案から本ページに遷移するか、共有一覧の「編集」から開いてください。"
-      );
+      alert("授業案からモデルタイプが自動設定されていません。");
       throw new Error("Model type not locked");
     }
 
-    // 画像ソース：compressed があればそちら、なければ board
     const sourceImages =
       (rec.compressedImages?.length ? rec.compressedImages : rec.boardImages) || [];
 
@@ -570,7 +693,7 @@ export default function PracticeAddPage() {
           /[^a-zA-Z0-9._-]/g,
           "_"
         )}`;
-        const url = await uploadImageToStorageFromAny(img.src, safeName, uid);
+        const url = await uploadImageToStorageFromAny(img.src, safeName, u);
         return { name: img.name, src: url };
       })
     );
@@ -578,13 +701,12 @@ export default function PracticeAddPage() {
     const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
-    const finalSignature =
-      rec.imagesSignature || calcImagesSignature(sourceImages);
+    const finalSignature = rec.imagesSignature || calcImagesSignature(sourceImages);
 
     await setDoc(
       docRef,
       {
-        ownerUid: uid,
+        ownerUid: u,
         practiceDate: rec.practiceDate,
         reflection: rec.reflection,
         boardImages: uploadedUrls,
@@ -594,13 +716,13 @@ export default function PracticeAddPage() {
         grade: rec.grade || "",
         genre: rec.genre || "",
         unitName: rec.unitName || "",
-        modelType: rec.modelType, // lesson_plans_*
+        modelType: rec.modelType,
         createdAt: serverTimestamp(),
 
-        // ▼ 追加：確認メタデータ
+        // 確認メタ
         confirmedNoPersonalInfo: true,
         confirmedAt: serverTimestamp(),
-        confirmedByUid: uid,
+        confirmedByUid: u,
         confirmedByEmail: userEmail,
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
@@ -609,30 +731,25 @@ export default function PracticeAddPage() {
     );
   }
 
-  /* ---- ローカル + Firestore 保存 ---- */
+  /* ---- 確定保存（ローカル + Firestore） ---- */
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");
       return;
     }
 
-    // ★ 保存直前にも欠けを補完（安全策）
     const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
 
     if (!confirmNoPersonalInfo) {
-      alert("保存前に「児童の顔・氏名など個人情報が写っていない」ことの確認にチェックしてください。");
+      alert("保存前に「児童の顔・氏名など個人情報が写っていない」ことを確認してください。");
       return;
     }
-
     if (!modelLocked) {
-      alert(
-        "授業案からモデルタイプが自動設定されていません。授業案から本ページに遷移するか、共有一覧の「編集」から開いてください。"
-      );
+      alert("授業案からモデルタイプが自動設定されていません。");
       return;
     }
-
     if (!meta.grade || !meta.genre || !meta.unitName) {
-      alert("学年・ジャンル・単元名が未入力です。授業案が無い場合は手動で入力してください。");
+      alert("学年・ジャンル・単元名が未入力です（授業案が無い場合は手動入力が必要です）。");
       return;
     }
 
@@ -653,7 +770,21 @@ export default function PracticeAddPage() {
         compressedImages,
       });
 
-      alert("ローカルとFirebaseに保存しました");
+      // 確定保存後は下書きをクリア
+      try {
+        localStorage.removeItem(draftKey(id));
+      } catch {}
+      if (uid) {
+        try {
+          await setDoc(
+            doc(db, DRAFT_COLLECTION, `${uid}_${id}`),
+            { ownerUid: uid, lessonId: id, payload: null, updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        } catch {}
+      }
+
+      alert("保存しました（ローカル＋Firebase）");
       router.push("/practice/history");
     } catch (e) {
       console.error(e);
@@ -666,7 +797,6 @@ export default function PracticeAddPage() {
   /* =========================================================
    * UI
    * ======================================================= */
-  // ★ canSave もフォールバックで判定
   const metaForCanSave = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
   const canSave =
     !!record &&
@@ -791,13 +921,13 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        {/* ▼ アップロード前の注意書き（ここに統合） */}
+        {/* 注意書き */}
         <div style={noticeBoxStyle}>
           <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
             <li>
               <strong>
-                板書の写真を<strong>追加・削除</strong>した場合は、必ず
+                板書の写真を<strong>追加・削除・並び替え</strong>した場合は、必ず
                 「プレビューを生成」ボタンを押してください（保存内容を正しく反映するため）。
               </strong>
             </li>
@@ -807,6 +937,9 @@ export default function PracticeAddPage() {
             <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
             <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
           </ul>
+          <p style={{ marginTop: 8 }}>
+            ※ このページは入力内容を<strong>自動で一時保存</strong>します（ログイン時はクラウドにも下書き保存）。
+          </p>
         </div>
 
         <form onSubmit={handlePreview}>
@@ -915,7 +1048,7 @@ export default function PracticeAddPage() {
             )}
           </div>
 
-          {/* ▼ モデルタイプは自動セット＆編集不可 */}
+          {/* モデルタイプ（自動） */}
           <div style={boxStyle}>
             <label>
               モデルタイプ：
@@ -966,8 +1099,42 @@ export default function PracticeAddPage() {
 
           <div style={{ marginTop: 12 }}>
             {boardImages.map((img, i) => (
-              <div key={img.name + i} style={{ width: "100%", marginBottom: 12 }}>
-                <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
+              <div key={img.name + i} style={{ width: "100%", marginBottom: 12, position: "relative" }}>
+                <div style={{ marginBottom: 6, fontWeight: "bold", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>板書{i + 1}</span>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(i, -1)}
+                      disabled={i === 0}
+                      aria-label="画像を上に移動"
+                      style={reorderBtnStyle}
+                      title="上へ"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveImage(i, +1)}
+                      disabled={i === boardImages.length - 1}
+                      aria-label="画像を下に移動"
+                      style={reorderBtnStyle}
+                      title="下へ"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="画像を削除"
+                      onClick={() => handleRemoveImage(i)}
+                      style={removeImgBtnStyle}
+                      title="削除"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
                 <img
                   src={img.src}
                   alt={img.name}
@@ -980,19 +1147,11 @@ export default function PracticeAddPage() {
                     maxWidth: "100%",
                   }}
                 />
-                <button
-                  type="button"
-                  aria-label="画像を削除"
-                  onClick={() => handleRemoveImage(i)}
-                  style={removeImgBtnStyle}
-                >
-                  ×
-                </button>
               </div>
             ))}
           </div>
 
-          {/* ▼ 確認チェック（画像が変わったら再確認） */}
+          {/* 確認チェック */}
           <div style={confirmBoxStyle}>
             <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <input
@@ -1013,6 +1172,42 @@ export default function PracticeAddPage() {
             <div id="confirm-help" style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
               ポリシー版：{POLICY_VERSION}／シグネチャ：{currentSignature || "-"}
             </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => {
+                const draft = buildDraft();
+                saveDraftLocal(draft);
+                void saveDraftCloud(draft);
+                alert("下書きを保存しました（ローカル＋クラウド）");
+              }}
+              style={{ ...secondaryBtnStyle, backgroundColor: "#13f46d3f", color: "#0a6a33" }}
+            >
+              📝 下書きを保存
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  localStorage.removeItem(draftKey(id));
+                } catch {}
+                if (uid) {
+                  try {
+                    await setDoc(
+                      doc(db, DRAFT_COLLECTION, `${uid}_${id}`),
+                      { ownerUid: uid, lessonId: id, payload: null, updatedAt: serverTimestamp() },
+                      { merge: true }
+                    );
+                  } catch {}
+                }
+                alert("下書きをクリアしました（ローカル＋クラウド）");
+              }}
+              style={{ ...secondaryBtnStyle, backgroundColor: "#bc181885", color: "#fff" }}
+            >
+              🧹 下書きをクリア
+            </button>
           </div>
 
           <button type="submit" style={primaryBtnStyle} disabled={uploading}>
@@ -1107,7 +1302,7 @@ export default function PracticeAddPage() {
                   <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
                 </div>
 
-                {/* 授業の流れ（string / array / object 全対応） */}
+                {/* 授業の流れ */}
                 <div style={{ marginTop: 8 }}>
                   <strong>授業の流れ：</strong>
                   {(() => {
@@ -1160,7 +1355,7 @@ export default function PracticeAddPage() {
                 <strong>作成者：</strong> {record.authorName || "不明"}
               </p>
 
-              {/* ★ 学年・ジャンル・単元名を明示表示（補完後の値が入る） */}
+              {/* 学年・ジャンル・単元名（補完後） */}
               <p><strong>学年：</strong> {record.grade || grade || "—"}</p>
               <p><strong>ジャンル：</strong> {record.genre || genre || "—"}</p>
               <p><strong>単元名：</strong> {record.unitName || unitName || "—"}</p>
@@ -1225,7 +1420,7 @@ export default function PracticeAddPage() {
               : "学年・ジャンル・単元名の入力が必要です"
           }
         >
-          {uploading ? "保存中..." : "💾 実践記録を保存する"}
+          {uploading ? "保存中..." : "💾 授業実践案に保存する"}
         </button>
       </main>
     </>
@@ -1344,11 +1539,20 @@ const removeImgBtnStyle: React.CSSProperties = {
   border: "none",
   borderRadius: 4,
   color: "white",
-  width: 24,
-  height: 24,
+  width: 28,
+  height: 28,
   cursor: "pointer",
   fontWeight: "bold",
-  marginTop: 4,
+};
+const reorderBtnStyle: React.CSSProperties = {
+  backgroundColor: "#eeeeee",
+  border: "1px solid #ccc",
+  borderRadius: 4,
+  color: "#333",
+  width: 28,
+  height: 28,
+  cursor: "pointer",
+  fontWeight: "bold",
 };
 const primaryBtnStyle: React.CSSProperties = {
   padding: 12,
@@ -1359,6 +1563,13 @@ const primaryBtnStyle: React.CSSProperties = {
   width: "100%",
   cursor: "pointer",
   marginTop: 16,
+};
+const secondaryBtnStyle: React.CSSProperties = {
+  padding: 10,
+  border: "none",
+  borderRadius: 6,
+  width: "100%",
+  cursor: "pointer",
 };
 const boxStyle: React.CSSProperties = {
   border: "2px solid #1976d2",
