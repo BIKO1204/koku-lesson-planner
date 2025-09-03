@@ -123,6 +123,32 @@ async function findLinkedPracticeRecords(id: string, userEmail: string) {
   return linked;
 }
 
+/* ---------- PDF用ユーティリティ（PDF保存のみ） ---------- */
+function isSmallDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
+  const narrow =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 820px)").matches
+      : window.innerWidth <= 820;
+  return touch && narrow;
+}
+
+function sanitizeFilename(name?: string) {
+  const base = (name && name.trim()) || "授業案";
+  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 100);
+}
+
+// 印刷・PDF向けの簡易CSS
+const H2PDF_PRINT_CSS = `
+.h2pdf-avoid { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-root img, .h2pdf-root figure, .h2pdf-root .h2pdf-block { break-inside: avoid; page-break-inside: avoid; }
+.h2pdf-break-before { break-before: page; page-break-before: always; }
+.h2pdf-break-after { break-after: page; page-break-after: always; }
+.h2pdf-root img { max-width: 100%; height: auto; }
+.h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
+`;
+
 export default function HistoryPage() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
@@ -386,6 +412,9 @@ export default function HistoryPage() {
 
   return (
     <>
+      {/* ★ PDF分割回避用CSSを注入 */}
+      <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
+
       {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
@@ -495,231 +524,273 @@ export default function HistoryPage() {
           </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {sortedPlans.map((plan) => (
-              <article
-                key={plan.id}
-                style={{
-                  display: "flex",
-                  flexDirection: isMobile ? "column" : "row",
-                  gap: 16,
-                  backgroundColor: "#fdfdfd",
-                  border: "2px solid #ddd",
-                  borderRadius: 12,
-                  padding: 16,
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
-                }}
-              >
-                {/* 詳細 */}
-                <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-                  <h3
-                    style={{
-                      margin: "0 0 8px 0",
-                      fontSize: isMobile ? "1.1rem" : "1.4rem",
-                    }}
-                  >
-                    {plan.unit}
-                  </h3>
-                  <p>
-                    <strong>学年・ジャンル：</strong>
-                    {plan.grade}・{plan.genre}
-                  </p>
-                  <p>
-                    <strong>モデル：</strong>
-                    {plan.usedStyleName ?? "（未設定）"}
-                  </p>
-                  <p>
-                    <strong>時間数：</strong>
-                    {plan.hours}時間
-                  </p>
-                  <p style={{ fontSize: "0.9rem", color: "#555" }}>
-                    {plan.timestampMs
-                      ? new Date(plan.timestampMs).toLocaleString("ja-JP")
-                      : ""}
-                  </p>
+            {sortedPlans.map((plan) => {
+              const scaleVal = isSmallDevice() ? 2.2 : 2.6;
 
-                  {plan.result && (
-                    <>
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          授業の概要
-                        </div>
-                        <p>教科書名：{plan.result["教科書名"]}</p>
-                        <p>学年：{plan.result["学年"]}</p>
-                        <p>ジャンル：{plan.result["ジャンル"]}</p>
-                        <p>単元名：{plan.result["単元名"]}</p>
-                        <p>授業時間数：{plan.result["授業時間数"]}時間</p>
-                      </div>
-
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          単元の目標
-                        </div>
-                        <p>{plan.result["単元の目標"]}</p>
-                      </div>
-
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          評価の観点
-                        </div>
-
-                        <strong>知識・技能</strong>
-                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-                          {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
-                            ? plan.result["評価の観点"]["知識・技能"]
-                            : plan.result["評価の観点"]?.["知識・技能"]
-                            ? [plan.result["評価の観点"]["知識・技能"]]
-                            : []
-                          ).map((v: string, i: number) => (
-                            <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
-                          ))}
-                        </ul>
-
-                        <strong>思考・判断・表現</strong>
-                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-                          {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
-                            ? plan.result["評価の観点"]["思考・判断・表現"]
-                            : plan.result["評価の観点"]?.["思考・判断・表現"]
-                            ? [plan.result["評価の観点"]["思考・判断・表現"]]
-                            : []
-                          ).map((v: string, i: number) => (
-                            <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
-                          ))}
-                        </ul>
-
-                        <strong>主体的に学習に取り組む態度</strong>
-                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-                          {(Array.isArray(
-                            plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
-                          )
-                            ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
-                            : plan.result["評価の観点"]?.["態度"]
-                            ? [plan.result["評価の観点"]["態度"]]
-                            : []
-                          ).map((v: string, i: number) => (
-                            <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          育てたい子どもの姿
-                        </div>
-                        <p>{plan.result["育てたい子どもの姿"] || ""}</p>
-                      </div>
-
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          言語活動の工夫
-                        </div>
-                        <p>{plan.result["言語活動の工夫"]}</p>
-                      </div>
-
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          border: "1px solid #ddd",
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
-                          授業の流れ
-                        </div>
-                        <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-                          {plan.result["授業の流れ"] &&
-                            typeof plan.result["授業の流れ"] === "object" &&
-                            Object.entries(plan.result["授業の流れ"])
-                              .sort((a, b) => extractStepNumber(a[0]) - extractStepNumber(b[0]))
-                              .map(([key, val], i) => (
-                                <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
-                                  <strong>{key}：</strong> {String(val)}
-                                </li>
-                              ))}
-                        </ul>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* ボタン列：PC=縦／スマホ=横 */}
-                <div
+              return (
+                <article
+                  key={plan.id}
                   style={{
                     display: "flex",
-                    flexDirection: isMobile ? "row" : "column",
-                    gap: 12,
-                    width: isMobile ? "100%" : 140,
-                    flexShrink: 0,
-                    boxSizing: "border-box",
+                    flexDirection: isMobile ? "column" : "row",
+                    gap: 16,
+                    backgroundColor: "#fdfdfd",
+                    border: "2px solid #ddd",
+                    borderRadius: 12,
+                    padding: 16,
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
                   }}
                 >
-                  <button
-                    onClick={() => router.push(`/practice/add/${plan.id}`)}
-                    style={buttonStyle("#4caf50")}
+                  {/* ▼ PDF化対象ルート */}
+                  <div
+                    id={`plan-${plan.id}`}
+                    className="h2pdf-root h2pdf-avoid"
+                    style={{ flex: "1 1 auto", minWidth: 0 }}
                   >
-                    ✍️ 実践記録
-                  </button>
+                    {/* 詳細 */}
+                    <div>
+                      <h3
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: isMobile ? "1.1rem" : "1.4rem",
+                        }}
+                      >
+                        {plan.unit}
+                      </h3>
+                      <p>
+                        <strong>学年・ジャンル：</strong>
+                        {plan.grade}・{plan.genre}
+                      </p>
+                      <p>
+                        <strong>モデル：</strong>
+                        {plan.usedStyleName ?? "（未設定）"}
+                      </p>
+                      <p>
+                        <strong>時間数：</strong>
+                        {plan.hours}時間
+                      </p>
+                      <p style={{ fontSize: "0.9rem", color: "#555" }}>
+                        {plan.timestampMs
+                          ? new Date(plan.timestampMs).toLocaleString("ja-JP")
+                          : ""}
+                      </p>
 
-                  <button
-                    onClick={() => {
-                      localStorage.setItem("editLessonPlan", JSON.stringify(plan));
-                      router.push("/plan");
+                      {plan.result && (
+                        <>
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              授業の概要
+                            </div>
+                            <p>教科書名：{plan.result["教科書名"]}</p>
+                            <p>学年：{plan.result["学年"]}</p>
+                            <p>ジャンル：{plan.result["ジャンル"]}</p>
+                            <p>単元名：{plan.result["単元名"]}</p>
+                            <p>授業時間数：{plan.result["授業時間数"]}時間</p>
+                          </div>
+
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              単元の目標
+                            </div>
+                            <p>{plan.result["単元の目標"]}</p>
+                          </div>
+
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              評価の観点
+                            </div>
+
+                            <strong>知識・技能</strong>
+                            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+                              {(Array.isArray(plan.result["評価の観点"]?.["知識・技能"])
+                                ? plan.result["評価の観点"]["知識・技能"]
+                                : plan.result["評価の観点"]?.["知識・技能"]
+                                ? [plan.result["評価の観点"]["知識・技能"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`知識技能-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
+                            </ul>
+
+                            <strong>思考・判断・表現</strong>
+                            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+                              {(Array.isArray(plan.result["評価の観点"]?.["思考・判断・表現"])
+                                ? plan.result["評価の観点"]["思考・判断・表現"]
+                                : plan.result["評価の観点"]?.["思考・判断・表現"]
+                                ? [plan.result["評価の観点"]["思考・判断・表現"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`思考判断表現-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
+                            </ul>
+
+                            <strong>主体的に学習に取り組む態度</strong>
+                            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+                              {(Array.isArray(
+                                plan.result["評価の観点"]?.["主体的に学習に取り組む態度"]
+                              )
+                                ? plan.result["評価の観点"]["主体的に学習に取り組む態度"]
+                                : plan.result["評価の観点"]?.["態度"]
+                                ? [plan.result["評価の観点"]["態度"]]
+                                : []
+                              ).map((v: string, i: number) => (
+                                <li key={`主体的-${plan.id}-${v}-${i}`}>{v}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              育てたい子どもの姿
+                            </div>
+                            <p>{plan.result["育てたい子どもの姿"] || ""}</p>
+                          </div>
+
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              言語活動の工夫
+                            </div>
+                            <p>{plan.result["言語活動の工夫"]}</p>
+                          </div>
+
+                          <div
+                            className="h2pdf-avoid h2pdf-block"
+                            style={{
+                              backgroundColor: "#fafafa",
+                              border: "1px solid #ddd",
+                              borderRadius: 8,
+                              padding: 12,
+                              marginTop: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", marginBottom: 8, fontSize: "1rem" }}>
+                              授業の流れ
+                            </div>
+                            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+                              {plan.result["授業の流れ"] &&
+                                typeof plan.result["授業の流れ"] === "object" &&
+                                Object.entries(plan.result["授業の流れ"])
+                                  .sort((a, b) => extractStepNumber(a[0]) - extractStepNumber(b[0]))
+                                  .map(([key, val], i) => (
+                                    <li key={`授業の流れ-${plan.id}-${key}-${i}`}>
+                                      <strong>{key}：</strong> {String(val)}
+                                    </li>
+                                  ))}
+                            </ul>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {/* ▲ PDF化対象ここまで */}
+
+                  {/* ボタン列：PC=縦／スマホ=横 */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: isMobile ? "row" : "column",
+                      gap: 12,
+                      width: isMobile ? "100%" : 140,
+                      flexShrink: 0,
+                      boxSizing: "border-box",
+                      flexWrap: "wrap",
                     }}
-                    style={buttonStyle("#ffb300")}
                   >
-                    ✏️ 編集
-                  </button>
+                    <button
+                      onClick={() => router.push(`/practice/add/${plan.id}`)}
+                      style={buttonStyle("#4caf50")}
+                    >
+                      ✍️ 実践記録
+                    </button>
 
-                  <button
-                    onClick={() => handleDeleteBoth(plan.id)}
-                    style={buttonStyle("#f44336")}
-                  >
-                    🗑 削除
-                  </button>
-                </div>
-              </article>
-            ))}
+                    <button
+                      onClick={() => {
+                        localStorage.setItem("editLessonPlan", JSON.stringify(plan));
+                        router.push("/plan");
+                      }}
+                      style={buttonStyle("#ffb300")}
+                    >
+                      ✏️ 編集
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteBoth(plan.id)}
+                      style={buttonStyle("#f44336")}
+                    >
+                      🗑 削除
+                    </button>
+
+                    {/* ★ 追加：PDF保存のみ */}
+                    <button
+                      onClick={() => {
+                        import("html2pdf.js").then(({ default: html2pdf }) => {
+                          const el = document.getElementById(`plan-${plan.id}`);
+                          if (!el) return alert("PDF化用の要素が見つかりませんでした。");
+                          html2pdf()
+                            .from(el)
+                            .set({
+                              margin: [5, 5, 5, 5],
+                              filename: `${sanitizeFilename(plan.unit || plan.subject)}.pdf`,
+                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                              html2canvas: { useCORS: true, scale: scaleVal },
+                              pagebreak: { mode: ["css", "legacy", "avoid-all"] },
+                            })
+                            .save();
+                        });
+                      }}
+                      style={buttonStyle("#FF9800")}
+                    >
+                      📄 PDF保存
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </main>
