@@ -63,6 +63,25 @@ const toStrArray = (v: unknown): string[] => {
   return [];
 };
 
+/** ★ 授業案の値で欠けを自動補完するフォールバック */
+function pickMetaWithFallback(
+  gradeState: string,
+  genreState: string,
+  unitNameState: string,
+  lessonPlan: LessonPlan | null
+) {
+  const r = (lessonPlan?.result as ParsedResult) || undefined;
+  const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
+  const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
+  const planUnit  = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+
+  return {
+    grade: gradeState || planGrade || "",
+    genre: genreState || planGenre || "",
+    unitName: unitNameState || planUnit || "",
+  };
+}
+
 /* ======================= モデルタイプ自動判定関連 ======================= */
 const LESSON_PLAN_COLLECTIONS = [
   "lesson_plans_reading",
@@ -483,6 +502,13 @@ export default function PracticeAddPage() {
   /* ---- プレビュー生成 ---- */
   const handlePreview = (e: FormEvent) => {
     e.preventDefault();
+
+    // ★ 授業案で欠けを補完し、state も上書き
+    const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
+    if (meta.grade !== grade) setGrade(meta.grade);
+    if (meta.genre !== genre) setGenre(meta.genre);
+    if (meta.unitName !== unitName) setUnitName(meta.unitName);
+
     setRecord({
       lessonId: id,
       practiceDate,
@@ -491,9 +517,9 @@ export default function PracticeAddPage() {
       compressedImages,
       lessonTitle,
       authorName,
-      grade,
-      genre,
-      unitName,
+      grade: meta.grade,
+      genre: meta.genre,
+      unitName: meta.unitName,
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
@@ -590,6 +616,9 @@ export default function PracticeAddPage() {
       return;
     }
 
+    // ★ 保存直前にも欠けを補完（安全策）
+    const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
+
     if (!confirmNoPersonalInfo) {
       alert("保存前に「児童の顔・氏名など個人情報が写っていない」ことの確認にチェックしてください。");
       return;
@@ -602,7 +631,7 @@ export default function PracticeAddPage() {
       return;
     }
 
-    if (!grade || !genre || !unitName) {
+    if (!meta.grade || !meta.genre || !meta.unitName) {
       alert("学年・ジャンル・単元名が未入力です。授業案が無い場合は手動で入力してください。");
       return;
     }
@@ -611,16 +640,17 @@ export default function PracticeAddPage() {
     try {
       const toSaveLocal: PracticeRecord = {
         ...record,
+        grade: meta.grade,
+        genre: meta.genre,
+        unitName: meta.unitName,
         confirmedNoPersonalInfo: true,
         imagesSignature: currentSignature,
       };
       await saveRecordToIndexedDB(toSaveLocal);
 
       await saveRecordToFirestore({
-        ...record,
+        ...toSaveLocal,
         compressedImages,
-        confirmedNoPersonalInfo: true,
-        imagesSignature: currentSignature,
       });
 
       alert("ローカルとFirebaseに保存しました");
@@ -636,13 +666,15 @@ export default function PracticeAddPage() {
   /* =========================================================
    * UI
    * ======================================================= */
+  // ★ canSave もフォールバックで判定
+  const metaForCanSave = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
   const canSave =
     !!record &&
     !!confirmNoPersonalInfo &&
     !!modelLocked &&
-    !!grade &&
-    !!genre &&
-    !!unitName;
+    !!metaForCanSave.grade &&
+    !!metaForCanSave.genre &&
+    !!metaForCanSave.unitName;
 
   return (
     <>
@@ -1127,6 +1159,11 @@ export default function PracticeAddPage() {
               <p>
                 <strong>作成者：</strong> {record.authorName || "不明"}
               </p>
+
+              {/* ★ 学年・ジャンル・単元名を明示表示（補完後の値が入る） */}
+              <p><strong>学年：</strong> {record.grade || grade || "—"}</p>
+              <p><strong>ジャンル：</strong> {record.genre || genre || "—"}</p>
+              <p><strong>単元名：</strong> {record.unitName || unitName || "—"}</p>
 
               <p>
                 <strong>振り返り：</strong>

@@ -1231,7 +1231,7 @@ export default function PracticeSharePage() {
                       {r.boardImages.map((img, i) => (
                         <div key={`${img.name || "img"}-${i}`} style={boardImageContainerStyle}>
                           <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-                            板書{i + 1}
+                            板書（写真）{i + 1}
                           </div>
                           <img
                             src={img.src}
