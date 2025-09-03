@@ -84,10 +84,7 @@ const asArray = (v: any): string[] => {
 
 // HTMLエスケープ
 const escapeHtml = (s: string) =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export default function PracticeSharePage() {
   const { data: session } = useSession();
@@ -666,10 +663,18 @@ export default function PracticeSharePage() {
         lessonPlanHtml += `
           <h2 class="h2pdf-section h2pdf-avoid" style="color:#4CAF50; margin-top:8px; margin-bottom:8px;">授業案</h2>
           <div class="h2pdf-section h2pdf-avoid">
-            <p style="margin:4px 0;"><strong>教科書名：</strong> ${escapeHtml(plan.result["教科書名"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>単元名：</strong> ${escapeHtml(plan.result["単元名"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>授業時間数：</strong> ${escapeHtml(String(plan.result["授業時間数"] || "－"))}時間</p>
-            <p style="margin:4px 0;"><strong>単元の目標：</strong> ${escapeHtml(plan.result["単元の目標"] || "－")}</p>
+            <p style="margin:4px 0;"><strong>教科書名：</strong> ${escapeHtml(
+              plan.result["教科書名"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>単元名：</strong> ${escapeHtml(
+              plan.result["単元名"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>授業時間数：</strong> ${escapeHtml(
+              String(plan.result["授業時間数"] || "－")
+            )}時間</p>
+            <p style="margin:4px 0;"><strong>単元の目標：</strong> ${escapeHtml(
+              plan.result["単元の目標"] || "－"
+            )}</p>
         `;
         if (plan.result["評価の観点"]) {
           const knowledge = ar(plan.result["評価の観点"]?.["知識・技能"]);
@@ -683,28 +688,40 @@ export default function PracticeSharePage() {
               <strong>評価の観点：</strong>
               <p style="margin:4px 0;"><strong>知識・技能</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${knowledge.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${knowledge
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
               <p style="margin:4px 0;"><strong>思考・判断・表現</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${thinking.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${thinking
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
               <p style="margin:4px 0;"><strong>主体的に学習に取り組む態度</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${attitude.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${attitude
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
             </div>
           `;
         }
         lessonPlanHtml += `
-            <p style="margin:4px 0;"><strong>育てたい子どもの姿：</strong> ${escapeHtml(plan.result["育てたい子どもの姿"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>言語活動の工夫：</strong> ${escapeHtml(plan.result["言語活動の工夫"] || "－")}</p>
+            <p style="margin:4px 0;"><strong>育てたい子どもの姿：</strong> ${escapeHtml(
+              plan.result["育てたい子どもの姿"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>言語活動の工夫：</strong> ${escapeHtml(
+              plan.result["言語活動の工夫"] || "－"
+            )}</p>
         `;
         if (plan.result["授業の流れ"]) {
           const flow = plan.result["授業の流れ"];
           lessonPlanHtml += `<p style="margin:4px 0;"><strong>授業の流れ：</strong></p>`;
           if (typeof flow === "string") {
-            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(flow)}</p>`;
+            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(
+              flow
+            )}</p>`;
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul class="h2pdf-avoid" style="margin:0 0 4px; padding-left:16px;">
               ${flow
@@ -765,7 +782,11 @@ export default function PracticeSharePage() {
         commentsHtml += `<ul class="h2pdf-avoid" style="margin:0; padding-left:16px;">`;
         record.comments.forEach((c) => {
           const dateStr = c.createdAt ? new Date(c.createdAt).toLocaleString("ja-JP") : "";
-          commentsHtml += `<li style="margin-bottom:6px;"><strong>${escapeHtml(c.displayName || "匿名")}</strong> <small style="color:#666;">${escapeHtml(dateStr)}</small><br/>${escapeHtml(c.comment || "").replace(/\n/g, "<br/>")}</li>`;
+          commentsHtml += `<li style="margin-bottom:6px;"><strong>${escapeHtml(
+            c.displayName || "匿名"
+          )}</strong> <small style="color:#666;">${escapeHtml(dateStr)}</small><br/>${escapeHtml(
+            c.comment || ""
+          ).replace(/\n/g, "<br/>")}</li>`;
         });
         commentsHtml += `</ul>`;
       }
@@ -775,12 +796,18 @@ export default function PracticeSharePage() {
           ${escapeHtml(record.lessonTitle || safeUnitName)}
         </h1>
         <div class="h2pdf-section h2pdf-avoid">
-          <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(record.practiceDate || "－")}</p>
-          <p style="margin:4px 0 12px;"><strong>作成者：</strong> ${escapeHtml(record.authorName || "－")}</p>
+          <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(
+            record.practiceDate || "－"
+          )}</p>
+          <p style="margin:4px 0 12px;"><strong>作成者：</strong> ${escapeHtml(
+            record.authorName || "－"
+          )}</p>
         </div>
         ${lessonPlanHtml}
         <h2 class="h2pdf-section h2pdf-avoid" style="color:#4CAF50; margin-top:16px; margin-bottom:8px;">振り返り</h2>
-        <p class="h2pdf-section h2pdf-avoid" style="white-space: pre-wrap; margin:4px 0 12px;">${escapeHtml(record.reflection || "－")}</p>
+        <p class="h2pdf-section h2pdf-avoid" style="white-space: pre-wrap; margin:4px 0 12px;">${escapeHtml(
+          record.reflection || "－"
+        )}</p>
         ${boardImagesHtml}
         ${commentsHtml}
       `;
@@ -977,6 +1004,7 @@ export default function PracticeSharePage() {
               <option value="物語文">物語文</option>
               <option value="説明文">説明文</option>
               <option value="詩">詩</option>
+              <option value="その他">その他</option>
             </select>
           </div>
 
@@ -1560,7 +1588,7 @@ const lessonPlanSectionStyle: CSSProperties = {
   padding: 12,
   borderRadius: 6,
   marginBottom: 16,
-  wordBreak: "break-word", // 修正済み
+  wordBreak: "break-word",
   fontSize: "1rem",
   lineHeight: 1.5,
 };

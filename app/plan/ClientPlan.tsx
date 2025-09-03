@@ -986,7 +986,7 @@ ${languageActivities}
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
            <p style={{ margin: "6px 0 0" }}>
-            <strong>下書きを保存する際は、必ず📝下書き保存ボタンを押してください。</strong>
+            <strong>下書きを保存する際は、必ず📝下書きを保存ボタンを押してください。</strong>
           </p>
         </section>
 
@@ -1199,12 +1199,12 @@ ${languageActivities}
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#13cff4f7",
+                backgroundColor: "#13f46d3f",
                 color: "white",
                 marginBottom: 0,
               }}
             >
-              📝 下書き保存
+              📝 下書きを保存
             </button>
 
             <button
@@ -1236,7 +1236,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              🧹 下書きをクリアする
+              🧹 下書きをクリア
             </button>
           </div>
         </form>

@@ -12,7 +12,7 @@ import {
   where,
   doc,
   deleteDoc,
-  getDoc, // ← 追加
+  getDoc, // ← 利用中
 } from "firebase/firestore";
 
 /* ---------- レスポンシブ判定 ---------- */
@@ -30,19 +30,19 @@ function useIsMobile(breakpoint = 768) {
 /* ---------- Timestamp 正規化 ---------- */
 function normalizeTimestamp(input: any): number {
   if (!input) return 0;
-  if (typeof input === "object" && typeof input.toDate === "function") {
+  if (typeof input === "object" && typeof (input as any).toDate === "function") {
     try {
-      return input.toDate().getTime();
+      return (input as any).toDate().getTime();
     } catch {
       return 0;
     }
   }
   if (
     typeof input === "object" &&
-    typeof input.seconds === "number" &&
-    typeof input.nanoseconds === "number"
+    typeof (input as any).seconds === "number" &&
+    typeof (input as any).nanoseconds === "number"
   ) {
-    return input.seconds * 1000 + Math.floor(input.nanoseconds / 1e6);
+    return (input as any).seconds * 1000 + Math.floor((input as any).nanoseconds / 1e6);
   }
   if (typeof input === "number") {
     if (input > 1e12) return input; // ms
@@ -148,6 +148,57 @@ const H2PDF_PRINT_CSS = `
 .h2pdf-root img { max-width: 100%; height: auto; }
 .h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
 `;
+
+/* ===========================================================
+   ★ 追加：/plan が期待する「ドラフト形」に整形するヘルパー
+   =========================================================== */
+const toDraftFromPlan = (plan: any): any => {
+  const r = plan?.result || {};
+  const asArr = (v: any) => (Array.isArray(v) ? v : v ? [String(v)] : []);
+
+  const hoursNum = Number(plan?.hours) || 0;
+
+  // 授業の流れを配列化（1..hours順）
+  let lessonPlanList: string[] = [];
+  if (r["授業の流れ"] && typeof r["授業の流れ"] === "object" && !Array.isArray(r["授業の流れ"])) {
+    const entries = Object.entries(r["授業の流れ"]).sort((a, b) => {
+      const A = parseInt(String(a[0]).match(/\d+/)?.[0] ?? "0", 10);
+      const B = parseInt(String(b[0]).match(/\d+/)?.[0] ?? "0", 10);
+      return A - B;
+    });
+    lessonPlanList = Array.from({ length: hoursNum }, (_, i) => {
+      const item = entries[i]?.[1];
+      return typeof item === "string" ? item : item != null ? JSON.stringify(item) : "";
+    });
+  } else {
+    lessonPlanList = Array.from({ length: hoursNum }, () => "");
+  }
+
+  return {
+    id: String(plan?.id ?? ""),
+    mode: "manual", // 編集は手動モードへ
+    subject: String(plan?.subject ?? ""),
+    grade: String(plan?.grade ?? ""),
+    genre: String(plan?.genre ?? ""),
+    unit: String(plan?.unit ?? ""),
+    hours: hoursNum,
+    unitGoal: String(r["単元の目標"] ?? ""),
+    evaluationPoints: {
+      knowledge: asArr(r["評価の観点"]?.["知識・技能"]),
+      thinking: asArr(r["評価の観点"]?.["思考・判断・表現"]),
+      attitude: asArr(r["評価の観点"]?.["主体的に学習に取り組む態度"] ?? r["評価の観点"]?.["態度"]),
+    },
+    childVision: String(r["育てたい子どもの姿"] ?? ""),
+    languageActivities: String(r["言語活動の工夫"] ?? plan?.languageActivities ?? ""),
+    lessonPlanList,
+    selectedStyleId: "",
+    selectedStyleName: plan?.usedStyleName ?? "",
+    selectedAuthorId: null,
+    result: r || null,
+    timestamp: new Date().toISOString(), // ISO で最新判定を安定化
+    isDraft: true,
+  };
+};
 
 export default function HistoryPage() {
   const { data: session } = useSession();
@@ -670,7 +721,7 @@ export default function HistoryPage() {
                             className="h2pdf-avoid h2pdf-block"
                             style={{
                               backgroundColor: "#fafafa",
-                              border: "1px solid #ddd",
+                              border: "1px solid #ddd",  // ← 修正済み
                               borderRadius: 8,
                               padding: 12,
                               marginTop: 12,
@@ -748,9 +799,13 @@ export default function HistoryPage() {
                       ✍️ 実践記録
                     </button>
 
+                    {/* ★ 修正：「/plan」が読むドラフト形で保存してから遷移 */}
                     <button
                       onClick={() => {
-                        localStorage.setItem("editLessonPlan", JSON.stringify(plan));
+                        const draft = toDraftFromPlan(plan);
+                        try {
+                          localStorage.setItem("editLessonPlan", JSON.stringify(draft));
+                        } catch {}
                         router.push("/plan");
                       }}
                       style={buttonStyle("#4caf50")}
@@ -765,7 +820,7 @@ export default function HistoryPage() {
                       🗑 削除
                     </button>
 
-                    {/* ★ 追加：PDF保存のみ */}
+                    {/* ★ PDF保存 */}
                     <button
                       onClick={() => {
                         import("html2pdf.js").then(({ default: html2pdf }) => {
