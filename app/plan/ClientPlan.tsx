@@ -1002,6 +1002,7 @@ ${languageActivities}
           <p style={{ margin: "6px 0 0" }}>
             まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
+            <strong>※下書きを保存する場合は、📝下書き保存のボタンを必ず押してください。</strong>
           </p>
         </section>
 
@@ -1216,7 +1217,7 @@ ${languageActivities}
                 marginBottom: 0,
               }}
             >
-              📝 下書き保存（ローカル＋クラウド）
+              📝 下書き保存
             </button>
 
             {/* 下書きクリア（ローカル＋クラウド） */}
