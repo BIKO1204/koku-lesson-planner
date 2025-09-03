@@ -743,7 +743,7 @@ export default function HistoryPage() {
                   >
                     <button
                       onClick={() => router.push(`/practice/add/${plan.id}`)}
-                      style={buttonStyle("#4caf50")}
+                      style={buttonStyle("#1269da9a")}
                     >
                       ✍️ 実践記録
                     </button>
@@ -753,7 +753,7 @@ export default function HistoryPage() {
                         localStorage.setItem("editLessonPlan", JSON.stringify(plan));
                         router.push("/plan");
                       }}
-                      style={buttonStyle("#ffb300")}
+                      style={buttonStyle("#4caf50")}
                     >
                       ✏️ 編集
                     </button>

@@ -205,6 +205,8 @@ export default function ClientPlan() {
 
   /** 復元→自動保存の競合を抑止するためのフラグ */
   const restoringRef = useRef(true);
+  /** クリア直後に自動保存で空状態を書き戻さないための1回スキップ */
+  const skipAutoSaveOnceRef = useRef(false);
 
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
@@ -326,23 +328,19 @@ export default function ClientPlan() {
 
       const chosen = pickLatestDraft(local, cloud);
       if (chosen) {
-        // ローカルにも書いておく（次回用）
         try {
           localStorage.setItem(EDIT_KEY, JSON.stringify(chosen));
         } catch {}
         applyDraftToState(chosen);
       }
 
-      // URLパラメータの styleId があれば反映
       const styleIdParam = searchParams?.get?.("styleId");
       if (styleIdParam) {
         setSelectedStyleId(styleIdParam);
       }
 
-      // 復元完了。以降の自動保存を有効化。
       restoringRef.current = false;
     })();
-    // uidが確定した時点で実行
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
@@ -352,7 +350,7 @@ export default function ClientPlan() {
     (async () => {
       try {
         const res = await fetch("/templates.csv", { signal: controller.signal });
-        if (!res.ok) return; // サイレントに無視
+        if (!res.ok) return;
         const text = await res.text();
         const data = Papa.parse(text, { header: true }).data as any[];
         const matched = data.filter((r) => r.学年 === grade && r.ジャンル === genre);
@@ -418,6 +416,13 @@ export default function ClientPlan() {
 
   useEffect(() => {
     if (restoringRef.current) return; // 復元完了前は上書きしない
+
+    // ★ クリア直後の1回だけ、空状態を自動保存しない
+    if (skipAutoSaveOnceRef.current) {
+      skipAutoSaveOnceRef.current = false;
+      return;
+    }
+
     const t = setTimeout(() => {
       const draft = buildDraft();
       saveDraftLocal(draft);
@@ -458,6 +463,30 @@ export default function ClientPlan() {
     const arr = [...lessonPlanList];
     arr[i] = v;
     setLessonPlanList(arr);
+  };
+
+  /* ===== 画面の全入力＆生成結果を初期化（クリア用） ===== */
+  const resetAll = () => {
+    setEditId(null);
+    setMode("ai");
+    setSelectedStyleId("");
+    setSelectedStyleName("");
+    setSelectedAuthorId(null);
+
+    setSubject("東京書籍");
+    setGrade("1年");
+    setGenre("物語文");
+    setUnit("");
+    setHours("");
+    setUnitGoal("");
+
+    setEvaluationPoints({ knowledge: [""], thinking: [""], attitude: [""] });
+    setChildVision("");
+    setLanguageActivities("");
+    setLessonPlanList([]);
+
+    setParsedResult(null);
+    setLastPrompt("");
   };
 
   /* ===== 生成・表示 ===== */
@@ -1163,7 +1192,7 @@ ${languageActivities}
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#1bdf91ff",
+                backgroundColor: "#13f46d3f",
                 color: "white",
                 marginBottom: 0,
               }}
@@ -1186,11 +1215,16 @@ ${languageActivities}
                     );
                   } catch {}
                 }
-                alert("下書きを削除しました（ローカル＋クラウド）");
+
+                // ★ 自動保存の“空書き戻し”を1回だけ抑止し、画面もリセット
+                skipAutoSaveOnceRef.current = true;
+                resetAll();
+
+                alert("下書きを削除しました（ローカル＋クラウド／画面もクリア）");
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#8b8e83ff",
+                backgroundColor: "#bc181885",
                 color: "white",
                 marginBottom: 0,
               }}
@@ -1217,7 +1251,7 @@ ${languageActivities}
                   cursor: "pointer",
                 }}
               >
-                💾 一括保存 (ローカル・Firestore)
+                💾 授業案を保存する
               </button>
             </div>
 
