@@ -826,15 +826,15 @@ ${languageActivities}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
             授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても
-            <strong>理想となる授業案は作成されません</strong>。コパイロット（副操縦士）にはなれません。
+            <strong>理想となる授業案は作成されません</strong>。
           </p>
           <p style={{ margin: "6px 0 0" }}>
             みなさんの作成した授業案、後に作成する授業実践案を学習させることで、AIモードで
-            <strong>面白い国語の授業案</strong>が生成されることでしょう。そんな未来が待っています。
+          <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
           </p>
-          <p style={{ margin: "6px 0 0" }}>
-            まずは、<strong>手動モード</strong>で授業案をたくさん生成していきましょう。モデルは
-            <strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
+         <p style={{ margin: "6px 0 0" }}>
+            まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
+            作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
         </section>
 
