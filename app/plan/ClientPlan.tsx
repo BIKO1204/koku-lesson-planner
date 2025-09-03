@@ -33,7 +33,7 @@ type ParsedResult = {
     "知識・技能": string[] | string;
     "思考・判断・表現": string[] | string;
     "主体的に学習に取り組む態度": string[] | string;
-    態度?: string[]; // 任意キー対応
+    態度?: string[];
   };
 };
 
@@ -61,32 +61,27 @@ type LessonPlanStored = {
   usedStyleName?: string | null;
 };
 
-/* ===================== 追加: 端末別PDF最適化 & ファイル名サニタイズ ===================== */
-function isSmallDevice(): boolean {
-  if (typeof window === "undefined") return false;
-  const touch = "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
-  const narrow =
-    typeof window.matchMedia === "function"
-      ? window.matchMedia("(max-width: 820px)").matches
-      : window.innerWidth <= 820;
-  return touch && narrow;
-}
-
-function sanitizeFilename(name: string) {
-  const fallback = "授業案";
-  const base = (name || fallback).trim();
-  return base.replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 100);
-}
-
-// PDF分割回避のためのCSS（コンポーネント内に注入）
-const H2PDF_PRINT_CSS = `
-.h2pdf-avoid { break-inside: avoid; page-break-inside: avoid; }
-.h2pdf-root img, .h2pdf-root figure, .h2pdf-root .h2pdf-block { break-inside: avoid; page-break-inside: avoid; }
-.h2pdf-break-before { break-before: page; page-break-before: always; }
-.h2pdf-break-after { break-after: page; page-break-after: always; }
-.h2pdf-root img { max-width: 100%; height: auto; }
-.h2pdf-root li { break-inside: avoid; page-break-inside: avoid; }
-`;
+type LessonPlanDraft = {
+  // 下書き用（未生成でもOKな緩い型）
+  id?: string | null;
+  mode: "ai" | "manual";
+  subject: string;
+  grade: string;
+  genre: string;
+  unit: string;
+  hours: string | number;
+  unitGoal: string;
+  evaluationPoints: EvaluationPoints;
+  childVision: string;
+  languageActivities: string;
+  lessonPlanList: string[];
+  selectedStyleId: string;
+  selectedStyleName?: string;
+  selectedAuthorId?: string | null;
+  result?: ParsedResult | null;
+  timestamp: string;
+  isDraft: true;
+};
 
 /* ===================== 学習用のMarkdown構築ヘルパ ===================== */
 function toAssistantPlanMarkdown(r: ParsedResult): string {
@@ -269,8 +264,9 @@ export default function ClientPlan() {
     const storedEdit = typeof window !== "undefined" ? localStorage.getItem(EDIT_KEY) : null;
     if (storedEdit) {
       try {
-        const plan = JSON.parse(storedEdit) as LessonPlanStored;
-        setEditId(plan.id);
+        const plan = JSON.parse(storedEdit) as LessonPlanDraft | LessonPlanStored;
+        // 共通項目
+        setEditId((plan as any).id ?? null);
         setSubject(plan.subject);
         setGrade(plan.grade);
         setGenre(plan.genre);
@@ -280,21 +276,29 @@ export default function ClientPlan() {
         setEvaluationPoints(plan.evaluationPoints);
         setChildVision(plan.childVision);
         setLanguageActivities(plan.languageActivities);
-        setLessonPlanList(plan.lessonPlanList);
-        setSelectedStyleId(plan.selectedStyleId);
+        setLessonPlanList(plan.lessonPlanList || []);
+        setSelectedStyleId(plan.selectedStyleId || "");
+        setSelectedStyleName((plan as any).selectedStyleName || "");
 
-        const found = styleModels.find((m) => m.id === plan.selectedStyleId);
-        setSelectedStyleName(found ? found.name : "");
-
-        setParsedResult(plan.result);
-        setInitialData(plan);
-
-        const authorFromStyle = authors.find((a) => a.id === plan.selectedStyleId);
-        if (authorFromStyle) {
-          setSelectedAuthorId(authorFromStyle.id);
+        // 重要：作成モデルの復元（修正）
+        if ("selectedAuthorId" in plan) {
+          setSelectedAuthorId((plan as LessonPlanDraft).selectedAuthorId ?? null);
         }
 
-        setMode("ai");
+        // 重要：モード復元（AI / 手動）
+        if ("mode" in plan) {
+          setMode((plan as LessonPlanDraft).mode);
+        } else {
+          setMode("ai");
+        }
+
+        if ((plan as any).result) {
+          setParsedResult((plan as any).result);
+        } else {
+          setParsedResult(null);
+        }
+
+        setInitialData((plan as any).isDraft ? null : (plan as LessonPlanStored));
       } catch {
         setEditId(null);
         setInitialData(null);
@@ -325,6 +329,58 @@ export default function ClientPlan() {
       })
       .catch(() => {});
   }, [grade, genre]);
+
+  // ===== 一時保存：共通セーブ関数 & 自動保存（デバウンス） =====
+  const buildDraft = (): LessonPlanDraft => ({
+    id: editId ?? null,
+    mode,
+    subject,
+    grade,
+    genre,
+    unit,
+    hours,
+    unitGoal,
+    evaluationPoints,
+    childVision,
+    languageActivities,
+    lessonPlanList,
+    selectedStyleId,
+    selectedStyleName,
+    selectedAuthorId,
+    result: parsedResult ?? null,
+    timestamp: new Date().toISOString(),
+    isDraft: true,
+  });
+
+  const saveDraft = () => {
+    try {
+      localStorage.setItem(EDIT_KEY, JSON.stringify(buildDraft()));
+    } catch (e) {
+      console.error("一時保存に失敗:", e);
+    }
+  };
+
+  useEffect(() => {
+    const t = setTimeout(saveDraft, 800); // 0.8秒デバウンス
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mode,
+    subject,
+    grade,
+    genre,
+    unit,
+    hours,
+    unitGoal,
+    evaluationPoints,
+    childVision,
+    languageActivities,
+    lessonPlanList,
+    selectedStyleId,
+    selectedStyleName,
+    selectedAuthorId,
+    parsedResult,
+  ]);
 
   const handleAddPoint = (f: keyof EvaluationPoints) =>
     setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
@@ -638,6 +694,7 @@ ${languageActivities}
       return;
     }
 
+    // 正式保存後は下書きをクリア
     localStorage.removeItem(EDIT_KEY);
     alert("一括保存しました（ローカル・Firestore）");
     router.push("/plan/history");
@@ -746,7 +803,7 @@ ${languageActivities}
     marginBottom: "0.5rem",
   };
 
-  // ★ 追加：注釈ボックスのスタイル
+  // 注釈ボックス
   const infoNoteStyle: CSSProperties = {
     background: "#fffef7",
     border: "1px solid #ffecb3",
@@ -760,9 +817,6 @@ ${languageActivities}
 
   return (
     <>
-      {/* PDF分割回避CSSを注入 */}
-      <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
-
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -822,7 +876,7 @@ ${languageActivities}
       </div>
 
       <main style={{ ...containerStyle, paddingTop: 56 }}>
-        {/* ★ ここが新しい注釈ボックス */}
+        {/* 注釈ボックス */}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
             授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても
@@ -830,9 +884,9 @@ ${languageActivities}
           </p>
           <p style={{ margin: "6px 0 0" }}>
             みなさんの作成した授業案、後に作成する授業実践案を学習させることで、AIモードで
-          <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
+            <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
           </p>
-         <p style={{ margin: "6px 0 0" }}>
+          <p style={{ margin: "6px 0 0" }}>
             まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
@@ -865,6 +919,7 @@ ${languageActivities}
                 } else {
                   const foundStyle = styleModels.find((m) => m.id === val);
                   setSelectedStyleName(foundStyle ? foundStyle.name : "");
+                  // 教育観モデル選択時は保存カテゴリは未選択のまま
                   setSelectedAuthorId(null);
                 }
               }}
@@ -1026,18 +1081,55 @@ ${languageActivities}
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={!selectedAuthorId}
-            style={{
-              ...inputStyle,
-              backgroundColor: selectedAuthorId ? "#2196F3" : "#ccc",
-              color: "white",
-              cursor: selectedAuthorId ? "pointer" : "not-allowed",
-            }}
-          >
-            {mode === "manual" ? "授業案を表示する" : "授業案を生成する"}
-          </button>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button
+              type="submit"
+              disabled={!selectedAuthorId}
+              style={{
+                ...inputStyle,
+                backgroundColor: selectedAuthorId ? "#2196F3" : "#ccc",
+                color: "white",
+                cursor: selectedAuthorId ? "pointer" : "not-allowed",
+                marginBottom: 0,
+              }}
+            >
+              {mode === "manual" ? "授業案を表示する" : "授業案を生成する"}
+            </button>
+
+            {/* 手動の一時保存（ローカルのみ） */}
+            <button
+              type="button"
+              onClick={() => {
+                saveDraft();
+                alert("下書きを保存しました（この端末のローカルのみ）");
+              }}
+              style={{
+                ...inputStyle,
+                backgroundColor: "#757575",
+                color: "white",
+                marginBottom: 0,
+              }}
+            >
+              📝 一時保存（ローカル）
+            </button>
+
+            {/* 下書きクリア（任意） */}
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem(EDIT_KEY);
+                alert("下書きを削除しました");
+              }}
+              style={{
+                ...inputStyle,
+                backgroundColor: "#BDBDBD",
+                color: "white",
+                marginBottom: 0,
+              }}
+            >
+              🧹 下書きをクリア
+            </button>
+          </div>
         </form>
 
         {loading && <p>生成中…</p>}
@@ -1059,70 +1151,27 @@ ${languageActivities}
               >
                 💾 一括保存 (ローカル・Firestore)
               </button>
-
-              <button
-                onClick={async () => {
-                  if (!parsedResult) {
-                    alert("まず授業案を生成してください");
-                    return;
-                  }
-                  const el = document.getElementById("result-content");
-                  if (!el) return alert("PDF生成対象がありません");
-
-                  const html2pdf = (await import("html2pdf.js")).default;
-                  const scaleVal = isSmallDevice() ? 2.2 : 2.6; // 端末別に最適化
-
-                  setTimeout(() => {
-                    html2pdf()
-                      .from(el)
-                      .set({
-                        margin: 5,
-                        filename: `${sanitizeFilename(unit)}_授業案.pdf`,
-                        html2canvas: { scale: scaleVal, useCORS: true },
-                        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                        pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-                      })
-                      .save();
-                  }, 100);
-                }}
-                style={{
-                  padding: 12,
-                  backgroundColor: "#FF9800",
-                  color: "white",
-                  fontSize: "1.1rem",
-                  borderRadius: 8,
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                📄 PDFをダウンロード
-              </button>
             </div>
 
-            {/* ▼ PDF化対象に分割回避クラスを付与 */}
+            {/* 表示領域（PDF機能は削除済み） */}
             <div
               id="result-content"
-              className="h2pdf-root h2pdf-avoid"
               style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
             >
-              <div style={titleStyle} className="h2pdf-avoid">
-                授業の概要
-              </div>
-              <p className="h2pdf-avoid">教科書名：{parsedResult["教科書名"]}</p>
-              <p className="h2pdf-avoid">学年：{parsedResult["学年"]}</p>
-              <p className="h2pdf-avoid">ジャンル：{parsedResult["ジャンル"]}</p>
-              <p className="h2pdf-avoid">単元名：{parsedResult["単元名"]}</p>
-              <p className="h2pdf-avoid">授業時間数：{parsedResult["授業時間数"]}時間</p>
-              <p className="h2pdf-avoid">
-                育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}
-              </p>
+              <div style={titleStyle}>授業の概要</div>
+              <p>教科書名：{parsedResult["教科書名"]}</p>
+              <p>学年：{parsedResult["学年"]}</p>
+              <p>ジャンル：{parsedResult["ジャンル"]}</p>
+              <p>単元名：{parsedResult["単元名"]}</p>
+              <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
+              <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
 
-              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
+              <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>単元の目標</div>
                 <p>{parsedResult["単元の目標"]}</p>
               </div>
 
-              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
+              <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>評価の観点</div>
 
                 <strong>知識・技能</strong>
@@ -1134,9 +1183,7 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["知識・技能"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`knowledge-${i}`} className="h2pdf-avoid">
-                      {v}
-                    </li>
+                    <li key={`knowledge-${i}`}>{v}</li>
                   ))}
                 </ul>
 
@@ -1149,9 +1196,7 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["思考・判断・表現"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`thinking-${i}`} className="h2pdf-avoid">
-                      {v}
-                    </li>
+                    <li key={`thinking-${i}`}>{v}</li>
                   ))}
                 </ul>
 
@@ -1164,25 +1209,23 @@ ${languageActivities}
                       ? [parsedResult["評価の観点"]["主体的に学習に取り組む態度"]]
                       : []
                   ).map((v: string, i: number) => (
-                    <li key={`attitude-${i}`} className="h2pdf-avoid">
-                      {v}
-                    </li>
+                    <li key={`attitude-${i}`}>{v}</li>
                   ))}
                 </ul>
               </div>
 
-              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
+              <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>言語活動の工夫</div>
                 <p>{parsedResult["言語活動の工夫"]}</p>
               </div>
 
-              <div style={{ marginTop: 12 }} className="h2pdf-avoid h2pdf-block">
+              <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>授業の流れ</div>
                 <ul style={listStyle}>
                   {parsedResult["授業の流れ"] &&
                     typeof parsedResult["授業の流れ"] === "object" &&
                     Object.entries(parsedResult["授業の流れ"]).map(([key, val], i) => (
-                      <li key={`flow-${i}`} className="h2pdf-avoid">
+                      <li key={`flow-${i}`}>
                         <strong>{key}：</strong> {String(val)}
                       </li>
                     ))}
