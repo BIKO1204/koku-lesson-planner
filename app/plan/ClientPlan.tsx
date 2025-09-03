@@ -20,7 +20,11 @@ const authors = [
 type StyleModel = {
   id: string;
   name: string;
-  content: string;
+  content: string;          // philosophy（教育観）
+  evaluationFocus?: string; // 評価観点の重視点
+  languageFocus?: string;   // 言語活動の重視点
+  childFocus?: string;      // 育てたい子どもの姿
+  creatorName?: string;     // 作成者名（任意）
 };
 
 type ParsedResult = {
@@ -233,17 +237,24 @@ export default function ClientPlan() {
   // ★ 追加：学習用に保存するユーザープロンプト
   const [lastPrompt, setLastPrompt] = useState<string>("");
 
-  // 教育観モデルの取得
+  // 教育観モデルの取得（拡張フィールドも取得）
   useEffect(() => {
     async function fetchStyleModels() {
       try {
         const colRef = collection(db, "educationModels");
         const snapshot = await getDocs(colRef);
-        const models = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name || "無名のモデル",
-          content: doc.data().philosophy || "",
-        }));
+        const models = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data() as any;
+          return {
+            id: docSnap.id,
+            name: d.name || "無名のモデル",
+            content: d.philosophy || "",
+            evaluationFocus: d.evaluationFocus || "",
+            languageFocus: d.languageFocus || "",
+            childFocus: d.childFocus || "",
+            creatorName: d.creatorName || "",
+          } as StyleModel;
+        });
         setStyleModels(models);
       } catch (error) {
         console.error("教育観モデルの読み込みに失敗しました:", error);
@@ -290,7 +301,7 @@ export default function ClientPlan() {
         if (typeof window !== "undefined") localStorage.removeItem(EDIT_KEY);
       }
     }
-    const styleIdParam = searchParams?.get?.("styleId");
+    const styleIdParam = (searchParams as any)?.get?.("styleId");
     if (styleIdParam) {
       setSelectedStyleId(styleIdParam);
     }
@@ -394,7 +405,19 @@ export default function ClientPlan() {
 
     try {
       const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
-      const modelContent = selectedModel ? selectedModel.content : "";
+
+      // ——— フェーズ1：教育観の全フィールドをプロンプトに注入 ———
+      const modelExtras = selectedModel
+        ? [
+            `【モデル名】${selectedModel.name}`,
+            `【教育観】${selectedModel.content}`,
+            selectedModel.evaluationFocus ? `【評価観点の重視点】${selectedModel.evaluationFocus}` : "",
+            selectedModel.languageFocus ? `【言語活動の重視点】${selectedModel.languageFocus}` : "",
+            selectedModel.childFocus ? `【育てたい子どもの姿】${selectedModel.childFocus}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "";
 
       const flowLines = newList
         .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
@@ -402,7 +425,7 @@ export default function ClientPlan() {
 
       const prompt = `
 あなたは小学校の国語の授業プランナーです。
-${modelContent ? `以下の教育観を反映してください。\n${modelContent}\n` : ""}
+${modelExtras ? `— この授業で反映してほしいモデル情報 —\n${modelExtras}\n` : ""}
 
 【教科書名】${subject}
 【学年】${grade}
@@ -446,7 +469,6 @@ ${languageActivities}
   "授業の流れ": {
     "1時間目": string,
     "2時間目": string,
-    // … 
     "${count}時間目": string
   },
   "言語活動の工夫": string,
@@ -591,21 +613,21 @@ ${languageActivities}
           modelNameCanonical:
             (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
           modelSnapshot: selectedStyleId
-            ? styleModels.find((m) => m.id === selectedStyleId)
-              ? {
-                  kind: "user-model",
-                  id: selectedStyleId,
-                  name: styleModels.find((m) => m.id === selectedStyleId)!.name,
-                  at: new Date().toISOString(),
-                }
-              : authors.find((a) => a.id === selectedStyleId)
-              ? {
-                  kind: "builtin",
-                  id: selectedStyleId,
-                  name: authors.find((a) => a.id === selectedStyleId)!.label,
-                  at: new Date().toISOString(),
-                }
-              : null
+            ? (styleModels.find((m) => m.id === selectedStyleId)
+                ? {
+                    kind: "user-model",
+                    id: selectedStyleId,
+                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
+                    at: new Date().toISOString(),
+                  }
+                : authors.find((a) => a.id === selectedStyleId)
+                ? {
+                    kind: "builtin",
+                    id: selectedStyleId,
+                    name: authors.find((a) => a.id === selectedStyleId)!.label,
+                    at: new Date().toISOString(),
+                  }
+                : null)
             : null,
         },
         { merge: true }
@@ -983,9 +1005,9 @@ ${languageActivities}
                   key={author.id}
                   type="button"
                   onClick={() => {
-                    // ★ 最小変更：保存先カテゴリのみを設定。selectedStyleId は上書きしない！
+                    // ★ 保存先カテゴリのみ設定。selectedStyleId は上書きしない（教育観モデルと独立）
                     setSelectedAuthorId(author.id);
-                    setSelectedStyleName(author.label); // 表示名としては保持（usedStyleNameに利用）
+                    setSelectedStyleName(author.label); // 表示名（usedStyleName用）
                   }}
                   style={{
                     flex: 1,
