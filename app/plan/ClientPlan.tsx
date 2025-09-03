@@ -793,10 +793,13 @@ ${languageActivities}
           </p>
           <p style={{ margin: "6px 0 0" }}>
             みなさんの作成した授業案、後に作成する授業実践案を学習させることで、AIモードで
-            <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
+          <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができる。そんな未来が待っています。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
             まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
+
         </section>
 
         <form onSubmit={handleSubmit}>
