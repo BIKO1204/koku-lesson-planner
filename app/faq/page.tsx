@@ -1,6 +1,6 @@
 // pages/faq.tsx
 export default function FAQPage() {
-  const VERSION = "2025-09-02";
+  const VERSION = "2025-09-02.1";
   const UPDATED = "2025年9月2日";
   return (
     <main style={{ maxWidth: 800, margin: "auto", padding: "2rem" }}>
@@ -32,15 +32,14 @@ export default function FAQPage() {
             でアプリ品質向上のために解析・学習利用します（外部の会社へデータ提供はしません）。
           </li>
           <li>
-            <strong>
-              復元（リストア）は運営側で対応可能です（Point-in-Time Recovery＋定期バックアップの保持期間内）。
-            </strong>
-            ただし<strong>ユーザーの自己復元機能は未提供</strong>です。重要なデータは
-            <strong>PDF出力や端末内保存など各自でもバックアップ</strong>をお願いします。
-            なお、復元は<strong>ベストエフォート</strong>であり、
-            <strong>完全復旧の保証はできません（復元に関する最終的な結果について当方は責任を負いかねます）</strong>。
+            <strong>バックアップは障害・災害対策として最大30日保持</strong>
+            します。復旧は<strong>ベストエフォート</strong>で行い、
+            <strong>完全復元は保証できません</strong>。重要なデータはPDF出力等で<strong>自己バックアップ</strong>をお願いします。
           </li>
         </ul>
+        <p style={{ fontSize: 13, marginTop: 8 }}>
+          参考：<a href="/terms">利用規約</a>／<a href="/privacy">プライバシーポリシー</a>
+        </p>
       </section>
 
       {/* Q1 */}
@@ -123,8 +122,9 @@ export default function FAQPage() {
           <strong>Q7:</strong> プライバシーの考え方は？
         </h2>
         <p>
-          取得情報は本サービスの提供・改善の目的に限って利用します。<strong>第三者提供は行いません。</strong>
-          詳しくはプライバシーポリシーをご確認ください。
+          取得情報は本サービスの提供・改善の目的に限って利用します。
+          <strong>第三者提供は行いません。</strong>詳しくは
+          <a href="/privacy">プライバシーポリシー</a>をご確認ください。
         </p>
       </section>
 
@@ -133,7 +133,9 @@ export default function FAQPage() {
         <h2>
           <strong>Q8:</strong> アカウント乗っ取り対策は？
         </h2>
-        <p>Google のセキュリティ基盤を利用しています。将来的に多要素認証（MFA）導入を検討しています。</p>
+        <p>
+          Google のセキュリティ基盤を利用しています。将来的に多要素認証（MFA）導入を検討しています。
+        </p>
       </section>
 
       {/* Q9 問い合わせ */}
@@ -142,7 +144,8 @@ export default function FAQPage() {
           <strong>Q9:</strong> 問題が起きたらどこに連絡すればいい？
         </h2>
         <p>
-          アプリ内の「お問い合わせフォーム」からご連絡ください。<strong>発生時刻・操作手順・スクリーンショット・ブラウザ/端末情報</strong>
+          アプリ内の「お問い合わせフォーム」からご連絡ください。
+          <strong>発生時刻・操作手順・スクリーンショット・ブラウザ/端末情報</strong>
           があると調査が早く進みます。
         </p>
       </section>
@@ -179,61 +182,59 @@ export default function FAQPage() {
         <p>準備中です。開始時はアプリ内でお知らせします。</p>
       </section>
 
-      {/* Q14 復元（運営側対応可） */}
-      <section style={{ margin: "2rem 0", borderTop: "1px solid #eee", paddingTop: "1rem" }}>
+      {/* Q14 復旧（ベストエフォート／30日保持） */}
+      <section
+        style={{
+          margin: "2rem 0",
+          borderTop: "1px solid #eee",
+          paddingTop: "1rem",
+        }}
+      >
         <h2>
-          <strong>Q14:</strong> データのバックアップや<strong>復元（リストア）</strong>はどうなっていますか？
+          <strong>Q14:</strong> データのバックアップや<strong>復旧（リストア）</strong>はどうなっていますか？
         </h2>
-
         <p>
-          <strong>運営側での復元対応が可能になりました。</strong>
-          次の方法で、<strong>保持期間内</strong>のデータに限り復元を試みます。
+          障害・災害対策として、暗号化されたバックアップ（スナップショット／ポイントインタイム・リカバリ）を{" "}
+          <strong>最大30日</strong> 保持します。復旧は<strong>ベストエフォート</strong>で実施し、
+          <strong>完全復元は保証できません</strong>。復旧に伴い、<strong>一部データの巻き戻りや欠落</strong>
+          が生じる可能性があります。運営者は<strong>復元の全責任を負うことはできません</strong>。
         </p>
-        <ul>
-          <li>
-            <strong>Point-in-Time Recovery（PITR）:</strong>{" "}
-            直近の誤削除・誤上書きなどに対して、指定時刻の状態へ復元。
-          </li>
-          <li>
-            <strong>定期バックアップ（スナップショット）:</strong>{" "}
-            PITRより前の時点や、長期保管分を対象に復元。
-          </li>
-        </ul>
-
-        <p style={{ marginTop: 12 }}>
-          ただし、<strong>ユーザーが自分でボタンひとつで復元する機能は未提供</strong>です。
-          重要な授業案・実践記録は、引き続き次の方法で<strong>各自でもバックアップ</strong>してください。
+        <p>
+          そのため、重要な授業案・実践記録は、次の方法で<strong>自己バックアップ</strong>をお願いします：
         </p>
         <ul>
           <li>
             授業案画面の<strong>「PDFをダウンロード」</strong>で保存（クラウドドライブ等にも保管）
           </li>
           <li>板書画像は<strong>端末本体にも保存</strong>しておく</li>
-          <li>実践記録の本文はメモアプリ等に<strong>テキスト控え</strong>を取る</li>
+          <li>実践記録の本文はテキストでも控えを取る（メモアプリ等）</li>
         </ul>
-
         <details style={{ marginTop: 8 }}>
-          <summary>復元依頼の手順（できるだけ早くご連絡ください）</summary>
+          <summary>データを誤って削除した／表示されなくなったときの連絡手順</summary>
           <ol style={{ marginTop: 8 }}>
-            <li>アプリ内の「お問い合わせフォーム」から<strong>復元希望</strong>の旨を連絡</li>
+            <li>できるだけ早く「お問い合わせフォーム」から連絡</li>
             <li>
               次の情報を添付：<br />
-              ・発生日時／直前の操作内容<br />
-              ・対象（授業案 or 実践記録）と識別情報（単元名／学年／モデル種別：読解・話し合い・作文・言語活動）<br />
-              ・スクリーンショット（エラー表示があれば）<br />
+              ・発生日時／直前の操作内容
+              <br />
+              ・授業案（単元名／学年／モデル種別：読解・話し合い・作文・言語活動）
+              <br />
+              ・実践記録の作成日／作成者名（入力していれば）
+              <br />
+              ・スクリーンショット（エラーメッセージ等）
+              <br />
               ・ブラウザ名・バージョン／端末OS
             </li>
-            <li>可能であれば、<strong>PDFや画像など手元の控え</strong>も添付</li>
+            <li>
+              可能であれば、<strong>PDFや画像など手元の控え</strong>も添付
+            </li>
           </ol>
+          <p style={{ fontSize: 14, color: "#444" }}>
+            ※ 復旧の成否・範囲・時期は状況により異なります。詳細は{" "}
+            <a href="/terms">利用規約 第16条</a> と{" "}
+            <a href="/privacy">プライバシーポリシー 第9条</a> をご確認ください。
+          </p>
         </details>
-
-        <p style={{ fontSize: 14, color: "#444", marginTop: 12 }}>
-          【ご注意】保持期間外のデータは復元できません。復元は基本的に
-          <strong>ベストエフォート</strong>で行い、<strong>完全復旧・欠損ゼロは保証できません</strong>。
-          主に<strong>Firestoreデータ</strong>が対象で、認証情報（Auth）や画像ファイル（Storage）等は
-          別途の手順が必要な場合があります。復元作業に起因する結果・損害について、
-          <strong>当方は最終的な責任を負いかねます</strong>（利用規約をご確認ください）。
-        </p>
       </section>
 
       {/* Q15 障害・メンテ */}
@@ -268,9 +269,9 @@ export default function FAQPage() {
           <strong>Q17:</strong> 学習利用のために同意チェックは必要ですか？
         </h2>
         <p>
-          利用規約・プライバシーポリシーに<strong>学習利用（運営者の管理環境内での解析）</strong>
-          を明記しており、外部の会社へのデータ提供は行いません。通常は追加の同意チェックは不要です。
-          学校や自治体のルールで別途同意が必要な場合は、その指示に従ってください。
+          利用規約・プライバシーポリシーに
+          <strong>学習利用（運営者の管理環境内での解析）</strong>
+          を明記しており、外部の会社へのデータ提供は行いません。通常は追加の同意チェックは不要です。学校や自治体のルールで別途同意が必要な場合は、その指示に従ってください。
         </p>
       </section>
 
@@ -289,8 +290,8 @@ export default function FAQPage() {
         </h2>
         <p>
           <strong>載せないでください。</strong>
-          児童の顔写真・氏名・学籍番号・連絡先など個人情報が含まれる内容はアップロード禁止です。
-          やむを得ず写り込んだ場合は、<strong>投稿前に必ずマスキング・ぼかし</strong>をしてください。
+          児童の顔写真・氏名・学籍番号・連絡先など個人情報が含まれる内容はアップロード禁止です。やむを得ず写り込んだ場合は、
+          <strong>投稿前に必ずマスキング・ぼかし</strong>をしてください。
         </p>
       </section>
     </main>
