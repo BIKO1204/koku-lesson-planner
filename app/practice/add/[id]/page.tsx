@@ -583,7 +583,7 @@ export default function PracticeAddPage() {
     );
   }
 
-  /* ---- ローカル + Firestore 保存 ---- */
+  /* ---- 💾　授業実践案を保存する ---- */
   const handleSaveBoth = async () => {
     if (!record) {
       alert("プレビューを作成してください");

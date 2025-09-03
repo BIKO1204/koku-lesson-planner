@@ -743,7 +743,7 @@ export default function HistoryPage() {
                   >
                     <button
                       onClick={() => router.push(`/practice/add/${plan.id}`)}
-                      style={buttonStyle("#1269da9a")}
+                      style={buttonStyle("#2612da92")}
                     >
                       ✍️ 実践記録
                     </button>
