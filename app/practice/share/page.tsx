@@ -86,6 +86,14 @@ const asArray = (v: any): string[] => {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// 表示・フィルタ用のフォールバック取得
+const norm = (v: any) => (v == null ? "" : String(v).trim());
+const pickGrade = (r: PracticeRecord, plan?: LessonPlan) =>
+  norm(r.grade ?? plan?.result?.["学年"]);
+const pickGenre = (r: PracticeRecord, plan?: LessonPlan) =>
+  norm(r.genre ?? plan?.result?.["ジャンル"]);
+const CORE_GENRES = ["物語文", "説明文", "詩"] as const;
+
 export default function PracticeSharePage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
@@ -133,8 +141,8 @@ export default function PracticeSharePage() {
     let allRecords: PracticeRecord[] = [];
 
     modelCollections.forEach((colName) => {
-      const q = query(collection(db, colName), orderBy("practiceDate", "desc"));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const qy = query(collection(db, colName), orderBy("practiceDate", "desc"));
+      const unsubscribe = onSnapshot(qy, (snapshot) => {
         const recs: PracticeRecord[] = snapshot.docs
           .map((docSnap) => {
             const d = docSnap.data() as any;
@@ -174,8 +182,8 @@ export default function PracticeSharePage() {
     let allPlans: LessonPlan[] = [];
 
     lessonPlanCollections.forEach((colName) => {
-      const q = query(collection(db, colName));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const qy = query(collection(db, colName));
+      const unsubscribe = onSnapshot(qy, (snapshot) => {
         const plansData: LessonPlan[] = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           result: (docSnap.data() as any).result,
@@ -203,8 +211,20 @@ export default function PracticeSharePage() {
 
   const filteredRecords = records.filter((r) => {
     if (r.isShared === false) return false;
-    if (gradeFilter && r.grade !== gradeFilter) return false;
-    if (genreFilter && r.genre !== genreFilter) return false;
+    const plan = lessonPlans.find((p) => p.id === r.lessonId && p.modelType === r.modelType);
+    const g = pickGrade(r, plan);
+    const ge = pickGenre(r, plan);
+
+    if (gradeFilter && g !== gradeFilter) return false;
+
+    if (genreFilter) {
+      if (genreFilter === "その他") {
+        if ((CORE_GENRES as readonly string[]).includes(ge)) return false;
+      } else {
+        if (ge !== genreFilter) return false;
+      }
+    }
+
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
     if (authorFilter && !r.authorName?.includes(authorFilter)) return false;
     return true;
@@ -466,19 +486,10 @@ export default function PracticeSharePage() {
 
   // 共有解除（共有ページからだけ非表示・ドキュメントは残す）
   const handleUnshareRecord = async (lessonId: string) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
+    if (!session) return alert("ログインしてください");
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("対象の実践案が見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("共有解除は投稿者のみ可能です");
-      return;
-    }
+    if (!record || !record.modelType) return alert("対象の実践案が見つかりません");
+    if (record.author !== userId) return alert("共有解除は投稿者のみ可能です");
     if (!confirm("この実践記録を共有版から外します（個人の実践記録は残ります）。よろしいですか？")) return;
 
     try {
@@ -1078,6 +1089,9 @@ export default function PracticeSharePage() {
               );
               const isAuthor = !!(r.author && userId && r.author === userId);
 
+              const g = pickGrade(r, plan);
+              const ge = pickGenre(r, plan);
+
               return (
                 <article key={r.lessonId} style={cardStyle}>
                   <h2 style={{ marginBottom: 8 }}>
@@ -1086,6 +1100,11 @@ export default function PracticeSharePage() {
                       [{r.modelType || "不明なモデル"}]
                     </small>
                   </h2>
+
+                  {/* 学年・ジャンル表示（授業案からのフォールバック込み） */}
+                  <p style={{ fontSize: "0.95rem", color: "#555", margin: "4px 0 8px" }}>
+                    学年：{g || "－"}　ジャンル：{ge || "－"}
+                  </p>
 
                   <p style={practiceDateStyle}>
                     実践開始日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
@@ -1200,9 +1219,7 @@ export default function PracticeSharePage() {
                             <ul>
                               {plan.result["授業の流れ"].map((item: any, i: number) => (
                                 <li key={`flow-${r.lessonId}-${i}`}>
-                                  {typeof item === "string"
-                                    ? item
-                                    : JSON.stringify(item)}
+                                  {typeof item === "string" ? item : JSON.stringify(item)}
                                 </li>
                               ))}
                             </ul>
@@ -1213,21 +1230,12 @@ export default function PracticeSharePage() {
                               <ul>
                                 {Object.entries(plan.result["授業の流れ"])
                                   .sort((a, b) => {
-                                    const numA = parseInt(
-                                      a[0].match(/\d+/)?.[0] ?? "0",
-                                      10
-                                    );
-                                    const numB = parseInt(
-                                      b[0].match(/\d+/)?.[0] ?? "0",
-                                      10
-                                    );
+                                    const numA = parseInt(a[0].match(/\d+/)?.[0] ?? "0", 10);
+                                    const numB = parseInt(b[0].match(/\d+/)?.[0] ?? "0", 10);
                                     return numA - numB;
                                   })
                                   .map(([key, val]) => {
-                                    const content =
-                                      typeof val === "string"
-                                        ? val
-                                        : JSON.stringify(val);
+                                    const content = typeof val === "string" ? val : JSON.stringify(val);
                                     return (
                                       <li key={key}>
                                         <strong>{key}:</strong> {content}

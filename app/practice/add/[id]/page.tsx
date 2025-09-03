@@ -92,7 +92,7 @@ function pickMetaWithFallback(
   const r = (lessonPlan?.result as ParsedResult) || undefined;
   const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
   const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
-  const planUnit  = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+  const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
 
   return {
     grade: gradeState || planGrade || "",
@@ -257,13 +257,10 @@ const toPracticeFromLesson = (lessonModelType: string) =>
 const toLessonFromPractice = (practiceCollection: string) =>
   practiceCollection.replace("practiceRecords_", "lesson_plans_");
 
-function normalizeToPracticeCollection(
-  param?: string | null
-): string | undefined {
+function normalizeToPracticeCollection(param?: string | null): string | undefined {
   if (!param) return undefined;
   if (param.startsWith("practiceRecords_")) return param;
-  if (param.startsWith("lesson_plans_"))
-    return param.replace("lesson_plans_", "practiceRecords_");
+  if (param.startsWith("lesson_plans_")) return param.replace("lesson_plans_", "practiceRecords_");
   const short = param.replace(/^(\?|#).*/, "");
   if (["reading", "writing", "discussion", "language_activity"].includes(short)) {
     return `practiceRecords_${short}`;
@@ -451,7 +448,7 @@ export default function PracticeAddPage() {
     const r = (lessonPlan?.result as ParsedResult) || undefined;
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
-    const planUnit  = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+    const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
 
     if (planGrade || planGenre || planUnit) {
       if (!grade) setGrade(planGrade);
@@ -666,9 +663,7 @@ export default function PracticeAddPage() {
   }, [boardImages, compressedImages, previousSignature]);
 
   /* ---- Firestore保存（確定） ---- */
-  async function saveRecordToFirestore(
-    rec: PracticeRecord & { compressedImages: BoardImage[] }
-  ) {
+  async function saveRecordToFirestore(rec: PracticeRecord & { compressedImages: BoardImage[] }) {
     const u = auth.currentUser?.uid;
     const userEmail = session?.user?.email;
     if (!u || !userEmail) {
@@ -770,7 +765,7 @@ export default function PracticeAddPage() {
         compressedImages,
       });
 
-      // 確定保存後は下書きをクリア
+      // 確定保存後は下書きをクリア（UIの入力値はそのまま）
       try {
         localStorage.removeItem(draftKey(id));
       } catch {}
@@ -1019,6 +1014,7 @@ export default function PracticeAddPage() {
                 <option value="物語文">物語文</option>
                 <option value="説明文">説明文</option>
                 <option value="詩">詩</option>
+                <option value="その他">その他</option>
               </select>
             </label>
           </div>
@@ -1202,6 +1198,7 @@ export default function PracticeAddPage() {
                     );
                   } catch {}
                 }
+                // 下書きのクリアはストレージのみ（UIの入力値は保持）
                 alert("下書きをクリアしました（ローカル＋クラウド）");
               }}
               style={{ ...secondaryBtnStyle, backgroundColor: "#bc181885", color: "#fff" }}
@@ -1356,9 +1353,15 @@ export default function PracticeAddPage() {
               </p>
 
               {/* 学年・ジャンル・単元名（補完後） */}
-              <p><strong>学年：</strong> {record.grade || grade || "—"}</p>
-              <p><strong>ジャンル：</strong> {record.genre || genre || "—"}</p>
-              <p><strong>単元名：</strong> {record.unitName || unitName || "—"}</p>
+              <p>
+                <strong>学年：</strong> {record.grade || grade || "—"}
+              </p>
+              <p>
+                <strong>ジャンル：</strong> {record.genre || genre || "—"}
+              </p>
+              <p>
+                <strong>単元名：</strong> {record.unitName || unitName || "—"}
+              </p>
 
               <p>
                 <strong>振り返り：</strong>

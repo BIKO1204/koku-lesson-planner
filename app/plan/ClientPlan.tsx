@@ -1199,7 +1199,7 @@ ${languageActivities}
               }}
               style={{
                 ...inputStyle,
-                backgroundColor: "#13f46d3f",
+                backgroundColor: "#13b4f4ce",
                 color: "white",
                 marginBottom: 0,
               }}
