@@ -1,40 +1,45 @@
 // app/admin/layout.tsx
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import { getAdminDb } from "@/lib/firebaseAdmin";
-
-export const dynamic = "force-dynamic"; // SSR
+import Link from "next/link";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
+  // ← ここで emailLower を“必ず”定義する
   const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase();
+  const email = session?.user?.email || null;
+  const emailLower = email ? email.toLowerCase() : null;
 
-  // 未ログインはサインインへ
-  if (!email) {
+  // 未ログインならサインインへ
+  if (!emailLower) {
     redirect("/api/auth/signin?callbackUrl=/admin");
   }
 
-  // Firestore で roles/{email} をチェック
+  // Firestore の roles/{emailLower} を確認
   const db = getAdminDb();
-  const snap = await db.collection("roles").doc(email).get();
-  const role = snap.exists ? (snap.data()?.role as string | undefined) : undefined;
+  const snap = await db.collection("roles").doc(emailLower!).get();
+  const roleDoc = snap.exists ? (snap.data() as any) : undefined;
+  const isAdmin = !!roleDoc && (roleDoc.role === "admin" || roleDoc.isAdmin === true);
 
-  if (role !== "admin") {
+  if (!isAdmin) {
     redirect("/forbidden");
   }
 
-  // 認可OK
+  // 管理者OK
   return (
     <div style={{ padding: 20 }}>
       <nav style={{ marginBottom: 20 }}>
-        <a href="/admin/users" style={{ marginRight: 20, textDecoration: "underline" }}>
+        <Link href="/admin/users" style={{ marginRight: 20, textDecoration: "underline" }}>
           ユーザー管理
-        </a>
-        <a href="/admin/notifications" style={{ textDecoration: "underline" }}>
+        </Link>
+        <Link href="/admin/notifications" style={{ textDecoration: "underline" }}>
           通知管理
-        </a>
+        </Link>
       </nav>
       <hr />
       <main style={{ marginTop: 20 }}>{children}</main>
