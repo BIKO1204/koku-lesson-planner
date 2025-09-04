@@ -23,7 +23,7 @@ type PracticeRecord = {
   lessonTitle: string;
   grade?: string;
   genre?: string;
-  unitName?: string;
+  unitName?: string; // 表示名は「教材名」
   authorName?: string;
   modelType: string; // lesson_plans_*
   // ▼ 確認メタデータ（ローカル保持用）
@@ -40,7 +40,7 @@ type PracticeDraft = {
   lessonTitle: string;
   grade: string;
   genre: string;
-  unitName: string;
+  unitName: string; // 表示名は「教材名」
   authorName: string;
   modelType: string; // lesson_plans_*
   confirmedNoPersonalInfo: boolean;
@@ -59,7 +59,8 @@ type ParsedResult = {
   "教科書名"?: string;
   "学年"?: string;
   "ジャンル"?: string;
-  "単元名"?: string;
+  "教材名"?: string; // 新キー想定
+  "単元名"?: string; // 旧キー互換
   "授業時間数"?: number;
   "単元の目標"?: string;
   "育てたい子どもの姿"?: string;
@@ -82,7 +83,7 @@ const toStrArray = (v: unknown): string[] => {
   return [];
 };
 
-/** 授業案の値で欠けを自動補完するフォールバック */
+// 授業案の値で欠けを自動補完（教材名→単元名の順で後方互換）
 function pickMetaWithFallback(
   gradeState: string,
   genreState: string,
@@ -92,7 +93,12 @@ function pickMetaWithFallback(
   const r = (lessonPlan?.result as ParsedResult) || undefined;
   const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
   const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
-  const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+  const planUnit =
+    typeof r?.["教材名"] === "string"
+      ? r["教材名"]
+      : typeof r?.["単元名"] === "string"
+      ? r["単元名"]
+      : "";
 
   return {
     grade: gradeState || planGrade || "",
@@ -331,7 +337,7 @@ export default function PracticeAddPage() {
   const [authorName, setAuthorName] = useState("");
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
-  const [unitName, setUnitName] = useState("");
+  const [unitName, setUnitName] = useState(""); // 表示は「教材名」
   const [modelType, setModelType] = useState("lesson_plans_reading");
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
@@ -342,7 +348,7 @@ export default function PracticeAddPage() {
   // モデルタイプ固定フラグ
   const [modelLocked, setModelLocked] = useState<boolean>(false);
 
-  // 学年・ジャンル・単元名：固定 or 手動
+  // 学年・ジャンル・教材名：固定 or 手動
   const [lockMeta, setLockMeta] = useState<boolean>(true);
 
   // 確認関連
@@ -373,11 +379,17 @@ export default function PracticeAddPage() {
 
     if (plan?.result) {
       if (typeof plan.result === "string") {
-        const firstLine = plan.result.split("\n")[0].replace(/^【単元名】\s*/, "");
+        const firstLine = plan.result.split("\n")[0]
+          .replace(/^【教材名】\s*/, "")
+          .replace(/^【単元名】\s*/, "");
         setLessonTitle(firstLine);
       } else if (typeof plan.result === "object") {
-        const unit = (plan.result as ParsedResult)["単元名"];
-        setLessonTitle(typeof unit === "string" ? unit : "");
+        const r = plan.result as ParsedResult;
+        const unit =
+          (typeof r["教材名"] === "string" && r["教材名"]) ||
+          (typeof r["単元名"] === "string" && r["単元名"]) ||
+          "";
+        setLessonTitle(unit);
       }
     } else {
       setLessonTitle("");
@@ -454,8 +466,10 @@ export default function PracticeAddPage() {
           const data = snap.data() as any;
           const result = data?.result;
           setLessonPlan({ id, result });
-          if (result && typeof result === "object" && result["単元名"]) {
-            setLessonTitle(String(result["単元名"]));
+          if (result && typeof result === "object") {
+            const r = result as ParsedResult;
+            const unit = (r["教材名"] as string) ?? (r["単元名"] as string) ?? "";
+            if (unit) setLessonTitle(unit);
           }
           return;
         }
@@ -463,7 +477,7 @@ export default function PracticeAddPage() {
     })();
   }, [id, modelLocked, modelTypeParam]);
 
-  /* ---- 学年・ジャンル・単元名：固定 or 手動 ---- */
+  /* ---- 学年・ジャンル・教材名：固定 or 手動 ---- */
   useEffect(() => {
     const hasExisting = Boolean(grade || genre || unitName);
     if (hasExisting) {
@@ -473,7 +487,12 @@ export default function PracticeAddPage() {
     const r = (lessonPlan?.result as ParsedResult) || undefined;
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
-    const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+    const planUnit =
+      typeof r?.["教材名"] === "string"
+        ? r["教材名"]
+        : typeof r?.["単元名"] === "string"
+        ? r["単元名"]
+        : "";
 
     if (planGrade || planGenre || planUnit) {
       if (!grade) setGrade(planGrade);
@@ -595,7 +614,12 @@ export default function PracticeAddPage() {
     const r = (lessonPlan?.result as ParsedResult) || {};
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
-    const planUnit = typeof r?.["単元名"] === "string" ? r["単元名"] : "";
+    const planUnit =
+      typeof r?.["教材名"] === "string"
+        ? r["教材名"]
+        : typeof r?.["単元名"] === "string"
+        ? r["単元名"]
+        : "";
     setGrade(planGrade);
     setGenre(planGenre);
     setUnitName(planUnit);
@@ -777,7 +801,7 @@ export default function PracticeAddPage() {
         authorName: rec.authorName,
         grade: rec.grade || "",
         genre: rec.genre || "",
-        unitName: rec.unitName || "",
+        unitName: rec.unitName || "", // 表示は教材名
         modelType: rec.modelType,
         createdAt: serverTimestamp(),
 
@@ -811,7 +835,7 @@ export default function PracticeAddPage() {
       return;
     }
     if (!meta.grade || !meta.genre || !meta.unitName) {
-      alert("学年・ジャンル・単元名が未入力です（授業案が無い場合は手動入力が必要です）。");
+      alert("学年・ジャンル・教材名が未入力です（授業案が無い場合は手動入力が必要です）。");
       return;
     }
 
@@ -1053,18 +1077,18 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={boxStyle}>
-            <label>
-              作成者名：
-              <input
-                type="text"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                required
-                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
-              />
-            </label>
-          </div>
+            <div style={boxStyle}>
+              <label>
+                作成者名：
+                <input
+                  type="text"
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                  required
+                  style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+                />
+              </label>
+            </div>
 
           {/* 学年 */}
           <div style={boxStyle}>
@@ -1121,10 +1145,10 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 単元名 */}
+          {/* 教材名（旧：単元名） */}
           <div style={boxStyle}>
             <label>
-              単元名：
+              教材名：
               <input
                 type="text"
                 value={unitName}
@@ -1344,8 +1368,10 @@ export default function PracticeAddPage() {
                   {(lessonPlan.result as ParsedResult)["ジャンル"] || ""}
                 </p>
                 <p>
-                  <strong>単元名：</strong>
-                  {(lessonPlan.result as ParsedResult)["単元名"] || ""}
+                  <strong>教材名：</strong>
+                  {(lessonPlan.result as ParsedResult)["教材名"] ??
+                    (lessonPlan.result as ParsedResult)["単元名"] ??
+                    ""}
                 </p>
                 <p>
                   <strong>授業時間数：</strong>
@@ -1461,7 +1487,7 @@ export default function PracticeAddPage() {
                 <strong>作成者：</strong> {record.authorName || "不明"}
               </p>
 
-              {/* 学年・ジャンル・単元名（補完後） */}
+              {/* 学年・ジャンル・教材名（補完後） */}
               <p>
                 <strong>学年：</strong> {record.grade || grade || "—"}
               </p>
@@ -1469,7 +1495,7 @@ export default function PracticeAddPage() {
                 <strong>ジャンル：</strong> {record.genre || genre || "—"}
               </p>
               <p>
-                <strong>単元名：</strong> {record.unitName || unitName || "—"}
+                <strong>教材名：</strong> {record.unitName || unitName || "—"}
               </p>
 
               <p>
@@ -1532,7 +1558,7 @@ export default function PracticeAddPage() {
               ? "保存するには「個人情報が写っていない」チェックが必要です"
               : !modelLocked
               ? "授業案からの自動設定が必要です"
-              : "学年・ジャンル・単元名の入力が必要です"
+              : "学年・ジャンル・教材名の入力が必要です"
           }
         >
           {uploading ? "保存中..." : "💾 実践記録を保存・共有する"}

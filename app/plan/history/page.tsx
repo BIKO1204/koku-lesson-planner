@@ -72,10 +72,10 @@ type LessonPlan = {
   id: string;
   timestamp?: any;
   timestampMs: number;
-  subject: string;
+  subject: string; // 教科書名
   grade: string;
   genre: string;
-  unit: string;
+  unit: string; // 教材名（内部キーは従来通り unit）
   hours: number | string;
   languageActivities: string;
   usedStyleName?: string | null;
@@ -150,7 +150,7 @@ const H2PDF_PRINT_CSS = `
 `;
 
 /* ===========================================================
-   ★ 追加：/plan が期待する「ドラフト形」に整形するヘルパー
+   ★ /plan が期待する「ドラフト形」に整形するヘルパー
    =========================================================== */
 const toDraftFromPlan = (plan: any): any => {
   const r = plan?.result || {};
@@ -180,7 +180,7 @@ const toDraftFromPlan = (plan: any): any => {
     subject: String(plan?.subject ?? ""),
     grade: String(plan?.grade ?? ""),
     genre: String(plan?.genre ?? ""),
-    unit: String(plan?.unit ?? ""),
+    unit: String(plan?.unit ?? ""), // ← 教材名の実体
     hours: hoursNum,
     unitGoal: String(r["単元の目標"] ?? ""),
     evaluationPoints: {
@@ -205,9 +205,7 @@ export default function HistoryPage() {
   const userEmail = session?.user?.email || "";
 
   const [plans, setPlans] = useState<LessonPlan[]>([]);
-  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "subject">(
-    "timestamp"
-  );
+  const [sortKey, setSortKey] = useState<"timestamp" | "grade" | "unit">("timestamp"); // ← 教材名順に対応
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -232,7 +230,7 @@ export default function HistoryPage() {
           subject: data.subject || "",
           grade: data.grade || "",
           genre: data.genre || "",
-          unit: data.unit || "",
+          unit: data.unit || "", // 教材名
           hours: data.hours ?? "",
           languageActivities: data.languageActivities || "",
           usedStyleName: data.usedStyleName ?? null,
@@ -259,7 +257,7 @@ export default function HistoryPage() {
             subject: String(p.subject ?? ""),
             grade: String(p.grade ?? ""),
             genre: String(p.genre ?? ""),
-            unit: String(p.unit ?? ""),
+            unit: String(p.unit ?? ""), // 教材名
             hours: p.hours ?? "",
             languageActivities: String(p.languageActivities ?? ""),
             usedStyleName: p.usedStyleName ?? null,
@@ -286,8 +284,8 @@ export default function HistoryPage() {
         if (sortKey === "grade") {
           return String(a.grade).localeCompare(String(b.grade), "ja");
         }
-        if (sortKey === "subject") {
-          return String(a.subject).localeCompare(String(b.subject), "ja");
+        if (sortKey === "unit") {
+          return String(a.unit).localeCompare(String(b.unit), "ja");
         }
         return (b.timestampMs || 0) - (a.timestampMs || 0);
       });
@@ -449,7 +447,7 @@ export default function HistoryPage() {
     textAlign: "left",
   };
 
-  // ★ 追加：注釈ボックス
+  // ★ 注釈ボックス
   const infoNoteStyle: CSSProperties = {
     background: "#fffef7",
     border: "1px solid #ffecb3",
@@ -463,7 +461,7 @@ export default function HistoryPage() {
 
   return (
     <>
-      {/* ★ PDF分割回避用CSSを注入 */}
+      {/* PDF分割回避用CSSを注入 */}
       <style dangerouslySetInnerHTML={{ __html: H2PDF_PRINT_CSS }} />
 
       {/* ナビバー */}
@@ -540,7 +538,7 @@ export default function HistoryPage() {
           保存された授業案一覧
         </h2>
 
-        {/* ★ 追加：注釈ボックス */}
+        {/* 注釈ボックス */}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
             このページには<strong>保存された授業案</strong>が一覧表示されます。各カードの
@@ -565,7 +563,7 @@ export default function HistoryPage() {
           >
             <option value="timestamp">新着順</option>
             <option value="grade">学年順</option>
-            <option value="subject">教材名順</option>
+            <option value="unit">教材名順</option> {/* ← 実際に教材名でソート */}
           </select>
         </label>
 
@@ -644,7 +642,8 @@ export default function HistoryPage() {
                             <p>教科書名：{plan.result["教科書名"]}</p>
                             <p>学年：{plan.result["学年"]}</p>
                             <p>ジャンル：{plan.result["ジャンル"]}</p>
-                            <p>単元名：{plan.result["単元名"]}</p>
+                            {/* ▼ 後方互換：教材名 → 単元名フォールバック */}
+                            <p>教材名：{plan.result["教材名"] ?? plan.result["単元名"]}</p>
                             <p>授業時間数：{plan.result["授業時間数"]}時間</p>
                           </div>
 
@@ -668,7 +667,7 @@ export default function HistoryPage() {
                             className="h2pdf-avoid h2pdf-block"
                             style={{
                               backgroundColor: "#fafafa",
-                              border: "1px solid #ddd",
+                              border: "1px solid #ddd", // ← 修正済み
                               borderRadius: 8,
                               padding: 12,
                               marginTop: 12,
@@ -721,7 +720,7 @@ export default function HistoryPage() {
                             className="h2pdf-avoid h2pdf-block"
                             style={{
                               backgroundColor: "#fafafa",
-                              border: "1px solid #ddd",  // ← 修正済み
+                              border: "1px solid #ddd",
                               borderRadius: 8,
                               padding: 12,
                               marginTop: 12,
@@ -799,7 +798,7 @@ export default function HistoryPage() {
                       ✍️ 実践記録
                     </button>
 
-                    {/* ★ 修正：「/plan」が読むドラフト形で保存してから遷移 */}
+                    {/* /plan が読むドラフト形で保存してから遷移 */}
                     <button
                       onClick={() => {
                         const draft = toDraftFromPlan(plan);
@@ -820,12 +819,13 @@ export default function HistoryPage() {
                       🗑 削除
                     </button>
 
-                    {/* ★ PDF保存 */}
+                    {/* PDF保存 */}
                     <button
                       onClick={() => {
                         import("html2pdf.js").then(({ default: html2pdf }) => {
                           const el = document.getElementById(`plan-${plan.id}`);
                           if (!el) return alert("PDF化用の要素が見つかりませんでした。");
+                          const scaleVal = isSmallDevice() ? 2.2 : 2.6;
                           html2pdf()
                             .from(el)
                             .set({

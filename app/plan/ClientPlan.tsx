@@ -58,7 +58,7 @@ type LessonPlanStored = {
   subject: string;
   grade: string;
   genre: string;
-  unit: string;
+  unit: string; // 内部名は維持（教材名の実体）
   hours: string | number;
   unitGoal: string;
   evaluationPoints: EvaluationPoints;
@@ -77,7 +77,7 @@ type LessonPlanDraft = {
   subject: string;
   grade: string;
   genre: string;
-  unit: string;
+  unit: string; // 内部名は維持（教材名の実体）
   hours: string | number;
   unitGoal: string;
   evaluationPoints: EvaluationPoints;
@@ -131,7 +131,7 @@ function buildUserPromptFromInputs(args: {
   subject: string;
   grade: string;
   genre: string;
-  unit: string;
+  unit: string; // 教材名の実体
   hours: number;
   unitGoal: string;
   evaluationPoints: EvaluationPoints;
@@ -165,7 +165,7 @@ function buildUserPromptFromInputs(args: {
     `【教科書名】${subject}`,
     `【学年】${grade}`,
     `【ジャンル】${genre}`,
-    `【単元名】${unit}`,
+    `【教材名】${unit}`, // ← 表示を教材名に統一
     `【授業時間数】${hours}`,
     "",
     "■ 単元の目標:",
@@ -196,11 +196,9 @@ const toStrArray = (v: any): string[] =>
   Array.isArray(v) ? v.map((x) => String(x)) : v != null && String(v).trim() ? [String(v)] : [];
 
 const sortedFlowEntries = (flow: any): string[] => {
-  // flow が { "1時間目": "...", "2時間目": "..." } の場合を想定。配列/文字列にも一応対応
   if (!flow) return [];
   if (Array.isArray(flow)) return flow.map((x) => String(x));
   if (typeof flow === "string") {
-    // 1行1コマに分割
     return flow.split(/\r?\n/).map((s) => s.replace(/^\s*\d+\s*時間目[:：]?\s*/, "").trim());
   }
   if (typeof flow === "object") {
@@ -246,7 +244,8 @@ function applyParsedResultToInputs(
   const subject = String(data["教科書名"] ?? "").trim();
   const grade = String(data["学年"] ?? "").trim();
   const genre = String(data["ジャンル"] ?? "").trim();
-  const unit = String(data["単元名"] ?? "").trim();
+  // ★ 後方互換：教材名が無ければ単元名を使う
+  const unit = String(data["教材名"] ?? data["単元名"] ?? "").trim();
   const hours = Number(data["授業時間数"] ?? 0);
   const unitGoal = String(data["単元の目標"] ?? "").trim();
   const childVision = String(data["育てたい子どもの姿"] ?? "").trim();
@@ -302,7 +301,7 @@ export default function ClientPlan() {
   const [subject, setSubject] = useState("東京書籍");
   const [grade, setGrade] = useState("1年");
   const [genre, setGenre] = useState("物語文");
-  const [unit, setUnit] = useState("");
+  const [unit, setUnit] = useState(""); // 教材名の実体（内部名は unit）
   const [hours, setHours] = useState("");
   const [unitGoal, setUnitGoal] = useState("");
 
@@ -429,7 +428,6 @@ export default function ClientPlan() {
 
   /* ===== 学年×ジャンルの評価観点テンプレ（CSV） ===== */
   useEffect(() => {
-    // ▼ 追加：ジャンル「その他」はテンプレを使わず空で初期化
     if (genre === "その他") {
       setEvaluationPoints({ knowledge: [""], thinking: [""], attitude: [""] });
       return;
@@ -467,7 +465,7 @@ export default function ClientPlan() {
     subject,
     grade,
     genre,
-    unit,
+    unit, // 内部は unit のまま（教材名の実体）
     hours,
     unitGoal,
     evaluationPoints,
@@ -504,9 +502,8 @@ export default function ClientPlan() {
   };
 
   useEffect(() => {
-    if (restoringRef.current) return; // 復元完了前は上書きしない
+    if (restoringRef.current) return;
 
-    // ★ クリア直後の1回だけ、空状態を自動保存しない
     if (skipAutoSaveOnceRef.current) {
       skipAutoSaveOnceRef.current = false;
       return;
@@ -515,7 +512,7 @@ export default function ClientPlan() {
     const t = setTimeout(() => {
       const draft = buildDraft();
       saveDraftLocal(draft);
-      void saveDraftCloud(draft); // ログイン時のみ反映
+      void saveDraftCloud(draft);
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -576,338 +573,6 @@ export default function ClientPlan() {
 
     setParsedResult(null);
     setLastPrompt("");
-  };
-
-  /* ===== 生成・表示 ===== */
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-
-    if (!selectedAuthorId) {
-      alert("作成モデルを選択してください");
-      return;
-    }
-
-    setLoading(true);
-    setParsedResult(null);
-
-    const count = Number(hours) || 0;
-    const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
-    setLessonPlanList(newList);
-
-    const userPromptFromInputs = buildUserPromptFromInputs({
-      styleName: selectedStyleName,
-      subject,
-      grade,
-      genre,
-      unit,
-      hours: count,
-      unitGoal,
-      evaluationPoints,
-      childVision,
-      languageActivities,
-      lessonPlanList: newList,
-    });
-
-    if (mode === "manual") {
-      const manualFlow: Record<string, string> = {};
-      newList.forEach((step, idx) => {
-        manualFlow[`${idx + 1}時間目`] = step;
-      });
-
-      const manualResult: ParsedResult = {
-        教科書名: subject,
-        学年: grade,
-        ジャンル: genre,
-        単元名: unit,
-        授業時間数: count,
-        単元の目標: unitGoal,
-        評価の観点: {
-          "知識・技能": evaluationPoints.knowledge,
-          "思考・判断・表現": evaluationPoints.thinking,
-          "主体的に学習に取り組む態度": evaluationPoints.attitude,
-        },
-        育てたい子どもの姿: childVision,
-        授業の流れ: manualFlow,
-        言語活動の工夫: languageActivities,
-        結果: "",
-      };
-
-      setLastPrompt(userPromptFromInputs);
-      setParsedResult(manualResult);
-
-      // ★ ここで入力欄へも反映（保存時の空欄を防ぐ）
-      applyParsedResultToInputs(manualResult, {
-        setSubject,
-        setGrade,
-        setGenre,
-        setUnit,
-        setHours,
-        setUnitGoal,
-        setChildVision,
-        setLanguageActivities,
-        setEvaluationPoints,
-        setLessonPlanList,
-      });
-
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
-
-      const modelExtras = selectedModel
-        ? [
-            `【モデル名】${selectedModel.name}`,
-            `【教育観】${selectedModel.content}`,
-            selectedModel.evaluationFocus ? `【評価観点の重視点】${selectedModel.evaluationFocus}` : "",
-            selectedModel.languageFocus ? `【言語活動の重視点】${selectedModel.languageFocus}` : "",
-            selectedModel.childFocus ? `【育てたい子どもの姿】${selectedModel.childFocus}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : "";
-
-      const flowLines = newList
-        .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
-        .join("\n");
-
-      const prompt = `
-あなたは小学校の国語の授業プランナーです。
-${modelExtras ? `— この授業で反映してほしいモデル情報 —\n${modelExtras}\n` : ""}
-
-【教科書名】${subject}
-【学年】${grade}
-【ジャンル】${genre}
-【単元名】${unit}
-【授業時間数】${count}
-
-■ 単元の目標:
-${unitGoal}
-
-■ 評価の観点 (JSON 配列形式):
-知識・技能=${evaluationPoints.knowledge.join("、")};
-思考・判断・表現=${evaluationPoints.thinking.join("、")};
-主体的に学習に取り組む態度=${evaluationPoints.attitude.join("、")}
-
-■ 育てたい子どもの姿:
-${childVision}
-
-■ 授業の流れ:
-${flowLines}
-
-※上記で「n時間目: 」だけ書かれている箇所は、AI が自動生成してください。
-
-■ 言語活動の工夫:
-${languageActivities}
-
-—返却フォーマット—
-{
-  "教科書名": string,
-  "学年": string,
-  "ジャンル": string,
-  "単元名": string,
-  "授業時間数": number,
-  "単元の目標": string,
-  "評価の観点": {
-    "知識・技能": string[],
-    "思考・判断・表現": string[],
-    "主体的に学習に取り組む態度": string[]
-  },
-  "育てたい子どもの姿": string,
-  "授業の流れ": {
-    "1時間目": string,
-    "2時間目": string,
-    "${count}時間目": string
-  },
-  "言語活動の工夫": string,
-  "結果": string
-}
-      `.trim();
-
-      setLastPrompt(prompt);
-
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-
-      const text = await res.text();
-      if (!res.ok) throw new Error(text || res.statusText);
-
-      let data: ParsedResult;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error("サーバーから無効なJSONが返ってきました");
-      }
-      setParsedResult(data);
-
-      // ★ ここで入力欄を生成結果で更新（保存時の空欄を防ぐ）
-      applyParsedResultToInputs(data, {
-        setSubject,
-        setGrade,
-        setGenre,
-        setUnit,
-        setHours,
-        setUnitGoal,
-        setChildVision,
-        setLanguageActivities,
-        setEvaluationPoints,
-        setLessonPlanList,
-      });
-    } catch (e: any) {
-      alert(`生成に失敗しました：${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /* ===== 正式保存（履歴＋Firestore）。保存後、下書きをクリア ===== */
-  const handleSave = async () => {
-    if (!parsedResult) {
-      alert("まず授業案を生成してください");
-      return;
-    }
-    if (!selectedAuthorId) {
-      alert("作成モデルを選択してください");
-      return;
-    }
-
-    if (!uid) {
-      alert("ログイン状態を確認できません。再読み込み後にお試しください。");
-      return;
-    }
-
-    const isEdit = Boolean(editId);
-    const idToUse = isEdit ? (editId as string) : Date.now().toString();
-
-    const author = authors.find((a) => a.id === selectedAuthorId);
-    if (!author) {
-      alert("不正な作成モデルが選択されています");
-      return;
-    }
-    const collectionName = author.collection;
-
-    const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
-
-    // ローカル履歴へ（入力欄が既に同期されているため空欄にならない）
-    const existingArr: LessonPlanStored[] = JSON.parse(
-      typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
-    );
-    if (isEdit) {
-      const newArr = existingArr.map((p) =>
-        p.id === idToUse
-          ? {
-              id: idToUse,
-              subject,
-              grade,
-              genre,
-              unit,
-              hours,
-              unitGoal,
-              evaluationPoints,
-              childVision,
-              lessonPlanList,
-              languageActivities,
-              selectedStyleId,
-              result: parsedResult,
-              timestamp: new Date().toISOString(),
-              usedStyleName: selectedStyleName || author.label,
-            }
-          : p
-      );
-      localStorage.setItem("lessonPlans", JSON.stringify(newArr));
-    } else {
-      const newPlan: LessonPlanStored = {
-        id: idToUse,
-        subject,
-        grade,
-        genre,
-        unit,
-        hours,
-        unitGoal,
-        evaluationPoints,
-        childVision,
-        lessonPlanList,
-        languageActivities,
-        selectedStyleId,
-        result: parsedResult,
-        timestamp: new Date().toISOString(),
-        usedStyleName: selectedStyleName || author.label,
-      };
-      existingArr.push(newPlan);
-      localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
-    }
-
-    // Firestore へ正本保存
-    try {
-      await setDoc(
-        doc(db, collectionName, idToUse),
-        {
-          ownerUid: uid,
-          subject,
-          grade,
-          genre,
-          unit,
-          hours,
-          unitGoal,
-          evaluationPoints,
-          childVision,
-          lessonPlanList,
-          languageActivities,
-          selectedStyleId,
-          result: parsedResult,
-          assistantPlanMarkdown,
-          userPromptText: lastPrompt,
-          timestamp: serverTimestamp(),
-          usedStyleName: selectedStyleName || author.label,
-          author: session?.user?.email || "",
-          modelId: selectedStyleId || null,
-          modelName: selectedStyleName || null,
-          modelNameCanonical:
-            (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
-          modelSnapshot: selectedStyleId
-            ? (styleModels.find((m) => m.id === selectedStyleId)
-                ? {
-                    kind: "user-model" as const,
-                    id: selectedStyleId,
-                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
-                    at: new Date().toISOString(),
-                  }
-                : authors.find((a) => a.id === selectedStyleId)
-                ? {
-                    kind: "builtin" as const,
-                    id: selectedStyleId,
-                    name: authors.find((a) => a.id === selectedStyleId)!.label,
-                    at: new Date().toISOString(),
-                  }
-                : null)
-            : null,
-        },
-        { merge: true }
-      );
-    } catch (error) {
-      console.error("Firestoreへの保存エラー:", error);
-      alert("Firestoreへの保存中にエラーが発生しました");
-      return;
-    }
-
-    // 下書きクリア（ローカル＋クラウド）
-    try {
-      localStorage.removeItem(EDIT_KEY);
-      if (uid) {
-        await setDoc(
-          doc(db, "lesson_plan_drafts", uid),
-          { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
-      }
-    } catch {}
-
-    alert("一括保存しました（ローカル・Firestore）");
-    router.push("/plan/history");
   };
 
   /* ===================== スタイル ===================== */
@@ -1022,6 +687,340 @@ ${languageActivities}
     marginBottom: "12px",
     lineHeight: 1.6,
     fontSize: "0.95rem",
+  };
+
+  /* ===================== 生成・表示（送信） ===================== */
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedAuthorId) {
+      alert("作成モデルを選択してください");
+      return;
+    }
+
+    setLoading(true);
+    setParsedResult(null);
+
+    const count = Number(hours) || 0;
+    const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
+    setLessonPlanList(newList);
+
+    const userPromptFromInputs = buildUserPromptFromInputs({
+      styleName: selectedStyleName,
+      subject,
+      grade,
+      genre,
+      unit,
+      hours: count,
+      unitGoal,
+      evaluationPoints,
+      childVision,
+      languageActivities,
+      lessonPlanList: newList,
+    });
+
+    if (mode === "manual") {
+      const manualFlow: Record<string, string> = {};
+      newList.forEach((step, idx) => {
+        manualFlow[`${idx + 1}時間目`] = step;
+      });
+
+      const manualResult: ParsedResult = {
+        教科書名: subject,
+        学年: grade,
+        ジャンル: genre,
+        教材名: unit, // ← 教材名で返す
+        授業時間数: count,
+        単元の目標: unitGoal,
+        評価の観点: {
+          "知識・技能": evaluationPoints.knowledge,
+          "思考・判断・表現": evaluationPoints.thinking,
+          "主体的に学習に取り組む態度": evaluationPoints.attitude,
+        },
+        育てたい子どもの姿: childVision,
+        授業の流れ: manualFlow,
+        言語活動の工夫: languageActivities,
+        結果: "",
+      };
+
+      setLastPrompt(userPromptFromInputs);
+      setParsedResult(manualResult);
+
+      // 入力欄へも反映（保存時の空欄を防ぐ）
+      applyParsedResultToInputs(manualResult, {
+        setSubject,
+        setGrade,
+        setGenre,
+        setUnit,
+        setHours,
+        setUnitGoal,
+        setChildVision,
+        setLanguageActivities,
+        setEvaluationPoints,
+        setLessonPlanList,
+      });
+
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
+
+      const modelExtras = selectedModel
+        ? [
+            `【モデル名】${selectedModel.name}`,
+            `【教育観】${selectedModel.content}`,
+            selectedModel.evaluationFocus ? `【評価観点の重視点】${selectedModel.evaluationFocus}` : "",
+            selectedModel.languageFocus ? `【言語活動の重視点】${selectedModel.languageFocus}` : "",
+            selectedModel.childFocus ? `【育てたい子どもの姿】${selectedModel.childFocus}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "";
+
+      const flowLines = newList
+        .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
+        .join("\n");
+
+      const prompt = `
+あなたは小学校の国語の授業プランナーです。
+${modelExtras ? `— この授業で反映してほしいモデル情報 —\n${modelExtras}\n` : ""}
+
+【教科書名】${subject}
+【学年】${grade}
+【ジャンル】${genre}
+【教材名】${unit}
+【授業時間数】${count}
+
+■ 単元の目標:
+${unitGoal}
+
+■ 評価の観点 (JSON 配列形式):
+知識・技能=${evaluationPoints.knowledge.join("、")};
+思考・判断・表現=${evaluationPoints.thinking.join("、")};
+主体的に学習に取り組む態度=${evaluationPoints.attitude.join("、")}
+
+■ 育てたい子どもの姿:
+${childVision}
+
+■ 授業の流れ:
+${flowLines}
+
+※上記で「n時間目: 」だけ書かれている箇所は、AI が自動生成してください。
+
+■ 言語活動の工夫:
+${languageActivities}
+
+—返却フォーマット—
+{
+  "教科書名": string,
+  "学年": string,
+  "ジャンル": string,
+  "教材名": string,
+  "授業時間数": number,
+  "単元の目標": string,
+  "評価の観点": {
+    "知識・技能": string[],
+    "思考・判断・表現": string[],
+    "主体的に学習に取り組む態度": string[]
+  },
+  "育てたい子どもの姿": string,
+  "授業の流れ": {
+    "1時間目": string,
+    "2時間目": string,
+    "${count}時間目": string
+  },
+  "言語活動の工夫": string,
+  "結果": string
+}
+
+// 互換注意: 既存実装が「単元名」を期待している場合は、同じ値を重複で返してもOKです。
+      `.trim();
+
+      setLastPrompt(prompt);
+
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      const text = await res.text();
+      if (!res.ok) throw new Error(text || res.statusText);
+
+      let data: ParsedResult;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("サーバーから無効なJSONが返ってきました");
+      }
+      setParsedResult(data);
+
+      // 入力欄を生成結果で更新（保存時の空欄を防ぐ）
+      applyParsedResultToInputs(data, {
+        setSubject,
+        setGrade,
+        setGenre,
+        setUnit,
+        setHours,
+        setUnitGoal,
+        setChildVision,
+        setLanguageActivities,
+        setEvaluationPoints,
+        setLessonPlanList,
+      });
+    } catch (e: any) {
+      alert(`生成に失敗しました：${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ===== 正式保存（履歴＋Firestore）。保存後、下書きをクリア ===== */
+  const handleSave = async () => {
+    if (!parsedResult) {
+      alert("まず授業案を生成してください");
+      return;
+    }
+    if (!selectedAuthorId) {
+      alert("作成モデルを選択してください");
+      return;
+    }
+
+    if (!uid) {
+      alert("ログイン状態を確認できません。再読み込み後にお試しください。");
+      return;
+    }
+
+    const isEdit = Boolean(editId);
+    const idToUse = isEdit ? (editId as string) : Date.now().toString();
+
+    const author = authors.find((a) => a.id === selectedAuthorId);
+    if (!author) {
+      alert("不正な作成モデルが選択されています");
+      return;
+    }
+    const collectionName = author.collection;
+
+    const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
+
+    // ローカル履歴
+    const existingArr: LessonPlanStored[] = JSON.parse(
+      typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
+    );
+    if (isEdit) {
+      const newArr = existingArr.map((p) =>
+        p.id === idToUse
+          ? {
+              id: idToUse,
+              subject,
+              grade,
+              genre,
+              unit, // 内部は unit のまま
+              hours,
+              unitGoal,
+              evaluationPoints,
+              childVision,
+              lessonPlanList,
+              languageActivities,
+              selectedStyleId,
+              result: parsedResult,
+              timestamp: new Date().toISOString(),
+              usedStyleName: selectedStyleName || author.label,
+            }
+          : p
+      );
+      localStorage.setItem("lessonPlans", JSON.stringify(newArr));
+    } else {
+      const newPlan: LessonPlanStored = {
+        id: idToUse,
+        subject,
+        grade,
+        genre,
+        unit, // 内部は unit のまま
+        hours,
+        unitGoal,
+        evaluationPoints,
+        childVision,
+        lessonPlanList,
+        languageActivities,
+        selectedStyleId,
+        result: parsedResult,
+        timestamp: new Date().toISOString(),
+        usedStyleName: selectedStyleName || author.label,
+      };
+      existingArr.push(newPlan);
+      localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
+    }
+
+    // Firestore 保存
+    try {
+      await setDoc(
+        doc(db, collectionName, idToUse),
+        {
+          ownerUid: uid,
+          subject,
+          grade,
+          genre,
+          unit, // 内部は unit のまま
+          hours,
+          unitGoal,
+          evaluationPoints,
+          childVision,
+          lessonPlanList,
+          languageActivities,
+          selectedStyleId,
+          result: parsedResult,
+          assistantPlanMarkdown,
+          userPromptText: lastPrompt,
+          timestamp: serverTimestamp(),
+          usedStyleName: selectedStyleName || author.label,
+          author: session?.user?.email || "",
+          modelId: selectedStyleId || null,
+          modelName: selectedStyleName || null,
+          modelNameCanonical:
+            (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
+          modelSnapshot: selectedStyleId
+            ? (styleModels.find((m) => m.id === selectedStyleId)
+                ? {
+                    kind: "user-model" as const,
+                    id: selectedStyleId,
+                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
+                    at: new Date().toISOString(),
+                  }
+                : authors.find((a) => a.id === selectedStyleId)
+                ? {
+                    kind: "builtin" as const,
+                    id: selectedStyleId,
+                    name: authors.find((a) => a.id === selectedStyleId)!.label,
+                    at: new Date().toISOString(),
+                  }
+                : null)
+            : null,
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("Firestoreへの保存エラー:", error);
+      alert("Firestoreへの保存中にエラーが発生しました");
+      return;
+    }
+
+    // 下書きクリア
+    try {
+      localStorage.removeItem(EDIT_KEY);
+      if (uid) {
+        await setDoc(
+          doc(db, "lesson_plan_drafts", uid),
+          { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      }
+    } catch {}
+
+    alert("一括保存しました（ローカル・Firestore）");
+    router.push("/plan/history");
   };
 
   /* ===================== JSX ===================== */
@@ -1177,13 +1176,18 @@ ${languageActivities}
               <option>物語文</option>
               <option>説明文</option>
               <option>詩</option>
-              <option>その他</option> {/* 追加 */}
+              <option>その他</option>
             </select>
           </label>
 
           <label>
-            単元名：<br />
-            <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle} />
+            教材名：<br />
+            <input
+              type="text"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              style={inputStyle}
+            />
           </label>
 
           <label>
@@ -1335,7 +1339,7 @@ ${languageActivities}
                   } catch {}
                 }
 
-                // ★ 自動保存の“空書き戻し”を1回だけ抑止し、画面もリセット
+                // 自動保存の空書き戻し抑止＆リセット
                 skipAutoSaveOnceRef.current = true;
                 resetAll();
 
@@ -1382,7 +1386,7 @@ ${languageActivities}
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
               <p>ジャンル：{parsedResult["ジャンル"]}</p>
-              <p>単元名：{parsedResult["単元名"]}</p>
+              <p>教材名：{parsedResult["教材名"] ?? parsedResult["単元名"]}</p>
               <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
               <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
 

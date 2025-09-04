@@ -51,7 +51,7 @@ type PracticeRecord = {
   comments?: Comment[];
   grade?: string;
   genre?: string;
-  unitName?: string;
+  unitName?: string; // 表示は教材名
   author?: string; // 投稿者のID（メール）
   authorName?: string; // 投稿者の表示名（任意）
   pdfFiles?: PdfFile[];
@@ -112,12 +112,16 @@ const asArray = (v: any): string[] => {
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// 表示・フィルタ用のフォールバック取得
+// 表示・フィルタ用フォールバック
 const norm = (v: any) => (v == null ? "" : String(v).trim());
 const pickGrade = (r: PracticeRecord, plan?: LessonPlan) =>
   norm(r.grade ?? plan?.result?.["学年"]);
 const pickGenre = (r: PracticeRecord, plan?: LessonPlan) =>
   norm(r.genre ?? plan?.result?.["ジャンル"]);
+// ★ 教材名（unitName）の安全な取得：実践記録 → 授業案(教材名) → 授業案(単元名)
+const pickUnitName = (r: PracticeRecord, plan?: LessonPlan) =>
+  norm(r.unitName ?? plan?.result?.["教材名"] ?? plan?.result?.["単元名"]);
+
 const CORE_GENRES = ["物語文", "説明文", "詩"] as const;
 
 export default function PracticeSharePage() {
@@ -283,6 +287,7 @@ export default function PracticeSharePage() {
     const plan = lessonPlans.find((p) => p.id === r.lessonId && p.modelType === r.modelType);
     const g = pickGrade(r, plan);
     const ge = pickGenre(r, plan);
+    const unit = pickUnitName(r, plan);
 
     if (gradeFilter && g !== gradeFilter) return false;
 
@@ -294,7 +299,7 @@ export default function PracticeSharePage() {
       }
     }
 
-    if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
+    if (unitNameFilter && !unit.includes(unitNameFilter)) return false;
     if (authorFilter && !r.authorName?.includes(authorFilter)) return false;
 
     const created = tsToMillis(r.createdAt) || tsToMillis(r.practiceDate);
@@ -495,7 +500,7 @@ export default function PracticeSharePage() {
       return;
     }
 
-    // 匿名化チェック（念押し：UI側で未チェックは disable だがダブルチェック）
+    // 匿名化チェック（ダブルチェック）
     if (!pdfConfirm[lessonId]) {
       alert("アップロード前に、匿名化チェックに同意してください。");
       return;
@@ -574,9 +579,8 @@ export default function PracticeSharePage() {
   };
 
   /* =========================
-   * PDF生成（既存のまま）
+   * PDF生成
    * ======================= */
-  // 画像のロード（タイムアウト付き）
   const loadImage = (url: string, timeout = 12000): Promise<HTMLImageElement> =>
     new Promise((resolve, reject) => {
       const img = new Image();
@@ -692,17 +696,14 @@ export default function PracticeSharePage() {
       `;
       tempDiv.appendChild(style);
 
-      const safeUnitName = record.unitName
-        ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_")
-        : "無題単元";
-      const safeAuthor = record.authorName
-        ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_")
-        : "無名作成者";
-      const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
-
       const plan = lessonPlans.find(
         (p) => p.id === record.lessonId && p.modelType === record.modelType
       );
+
+      const unitForTitle = pickUnitName(record, plan) || "無題教材";
+      const safeUnitName = unitForTitle.replace(/[\\\/:*?"<>|]/g, "_");
+      const safeAuthor = (record.authorName || "匿名").replace(/[\\\/:*?"<>|]/g, "_");
+      const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
@@ -714,8 +715,8 @@ export default function PracticeSharePage() {
             <p style="margin:4px 0;"><strong>教科書名：</strong> ${escapeHtml(
               plan.result["教科書名"] || "－"
             )}</p>
-            <p style="margin:4px 0;"><strong>単元名：</strong> ${escapeHtml(
-              plan.result["単元名"] || "－"
+            <p style="margin:4px 0;"><strong>教材名：</strong> ${escapeHtml(
+              plan.result["教材名"] ?? plan.result["単元名"] ?? "－"
             )}</p>
             <p style="margin:4px 0;"><strong>授業時間数：</strong> ${escapeHtml(
               String(plan.result["授業時間数"] || "－")
@@ -852,7 +853,7 @@ export default function PracticeSharePage() {
 
       tempDiv.innerHTML = `
         <h1 class="h2pdf-title h2pdf-avoid">
-          ${escapeHtml(record.lessonTitle || safeUnitName)}
+          ${escapeHtml(record.lessonTitle || unitForTitle)}
         </h1>
         <div class="h2pdf-section h2pdf-avoid">
           <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(
@@ -1039,7 +1040,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ▼ 研究参加者向けの説明（スマホで最上部に来る位置） */}
+      {/* ▼ 研究参加者向けの説明 */}
       <section
         style={{
           margin: "12px auto 16px",
@@ -1056,7 +1057,7 @@ export default function PracticeSharePage() {
             <strong>共有範囲はログインユーザーのみ。</strong>一般公開はされません。
           </li>
           <li>
-            <strong>共有の教育的意義：</strong>相互に授業案を閲覧・学び合うことで、自身の国語の授業についてのヒントが得られます。
+            <strong>共有の教育的意義：</strong>相互に授業案を閲覧・学び合うことで、国語の授業についての新しい気付きが得られます。
           </li>
           <li>
             <strong>共有は任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。
@@ -1102,7 +1103,7 @@ export default function PracticeSharePage() {
         </div>
       )}
 
-      {/* レイアウト（スマホで縦・PC/タブレットで左右2カラム） */}
+      {/* レイアウト */}
       <div
         style={{
           ...wrapperResponsiveStyle,
@@ -1155,10 +1156,10 @@ export default function PracticeSharePage() {
           </div>
 
           <div>
-            <div style={filterSectionTitleStyle}>単元名</div>
+            <div style={filterSectionTitleStyle}>教材名</div>
             <input
               type="text"
-              placeholder="単元名を入力"
+              placeholder="教材名を入力"
               value={inputUnitName}
               onChange={(e) => setInputUnitName(e.target.value)}
               style={textInputStyle}
@@ -1224,7 +1225,7 @@ export default function PracticeSharePage() {
                   }}
                 >
                   <h2 style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>{r.lessonTitle} </span>
+                    <span>{r.lessonTitle}</span>
                     <small style={{ fontSize: "0.85rem", color: "#888" }}>
                       [{r.modelType || "不明なモデル"}]
                     </small>
@@ -1238,12 +1239,10 @@ export default function PracticeSharePage() {
                   <p style={practiceDateStyle}>
                     実践開始日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
-                  {/* ▼ 作成者の匿名デフォルト（メールfallback禁止） */}
                   <p style={authorNameStyle}>
                     作成者: {r.authorName?.trim() ? r.authorName : "匿名"}
                   </p>
 
-                  {/* 投稿者のみ編集ボタン（modelType クエリ付与） */}
                   {isAuthor && (
                     <button onClick={() => handleEdit(r.lessonId)} style={editBtnStyle} title="投稿者のみ編集できます">
                       編集
@@ -1284,7 +1283,8 @@ export default function PracticeSharePage() {
                         <strong>教科書名：</strong> {plan.result["教科書名"] || "－"}
                       </p>
                       <p>
-                        <strong>単元名：</strong> {plan.result["単元名"] || "－"}
+                        <strong>教材名：</strong>{" "}
+                        {plan.result["教材名"] ?? plan.result["単元名"] ?? "－"}
                       </p>
                       <p>
                         <strong>授業時間数：</strong> {plan.result["授業時間数"] || "－"}時間
@@ -1440,7 +1440,6 @@ export default function PracticeSharePage() {
                         >
                           📄 {pdf.name}
                         </a>
-                        {/* 投稿者のみ削除ボタン表示 */}
                         {isAuthor && (
                           <button
                             onClick={() => handleDeletePdf(r.lessonId, pdf.name)}
@@ -1459,7 +1458,6 @@ export default function PracticeSharePage() {
                       </div>
                     ))}
 
-                    {/* 投稿者のみアップロード */}
                     {isAuthor && (
                       <PdfFileInput
                         lessonId={r.lessonId}
@@ -1469,7 +1467,7 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 共有から外す（当ページのみ非表示） */}
+                  {/* 共有から外す */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button

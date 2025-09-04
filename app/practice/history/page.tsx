@@ -29,7 +29,7 @@ type PracticeRecord = {
   boardImages: BoardImage[];
   grade?: string;
   genre?: string;
-  unitName?: string;
+  unitName?: string; // 表示は「教材名」
   modelType?: string;   // normalized: reading / writing / discussion / language_activity
   author?: string;
   authorName?: string;
@@ -104,7 +104,7 @@ async function fetchRemotePracticeRecords(
         boardImages: Array.isArray(data.boardImages) ? data.boardImages : [],
         grade: data.grade || "",
         genre: data.genre || "",
-        unitName: data.unitName || "",
+        unitName: data.unitName || "", // 教材名
         modelType: normalizeModelType(data.modelType || coll), // => reading など
         author: data.author || "",
         authorName: data.authorName || "",
@@ -260,7 +260,7 @@ export default function PracticeHistoryPage() {
 
     if (
       !confirm(
-        `実践記録から授業案を復元します。\n\n作成先: ${coll}\n単元名: ${unit || "（未設定）"}\n学年: ${
+        `実践記録から授業案を復元します。\n\n作成先: ${coll}\n教材名: ${unit || "（未設定）"}\n学年: ${
           rec.grade || "（未設定）"
         }\nジャンル: ${rec.genre || "（未設定）"}\n\nよろしいですか？`
       )
@@ -275,7 +275,8 @@ export default function PracticeHistoryPage() {
         教科書名: "",
         学年: rec.grade || "",
         ジャンル: rec.genre || "",
-        単元名: unit,
+        教材名: unit, // 新キー
+        単元名: unit, // 互換キーも併記
         授業時間数: "",
         単元の目標: "",
         育てたい子どもの姿: "",
@@ -289,7 +290,7 @@ export default function PracticeHistoryPage() {
           author: authorEmail,
           grade: rec.grade || "",
           genre: rec.genre || "",
-          unit: unit,
+          unit: unit, // 見出し等に使用
           subject: "",
           hours: "",
           languageActivities: "",
@@ -403,18 +404,21 @@ export default function PracticeHistoryPage() {
     position: "relative",
     zIndex: 1000,
   };
-  const overlayStyle: CSSProperties = {
+
+  // ▼ 修正：関数型にして menuOpen を反映
+  const overlayStyle = (open: boolean): CSSProperties => ({
     position: "fixed",
     top: 56,
     left: 0,
     width: "100vw",
     height: "100vh",
     backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
+    opacity: open ? 1 : 0,
+    visibility: open ? "visible" : "hidden",
     transition: "opacity 0.3s ease",
     zIndex: 998,
-  };
+  });
+
   const navLinkStyle: CSSProperties = {
     display: "block",
     padding: "0.5rem 1rem",
@@ -510,7 +514,7 @@ export default function PracticeHistoryPage() {
       </nav>
 
       {/* メニューオーバーレイ */}
-      <div style={overlayStyle} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
+      <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
 
       {/* メニュー全体 */}
       <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
@@ -612,8 +616,10 @@ export default function PracticeHistoryPage() {
                             {planForDisplay.result["教科書名"] || "－"}
                           </p>
                           <p>
-                            <strong>単元名：</strong>
-                            {planForDisplay.result["単元名"] || "－"}
+                            <strong>教材名：</strong>
+                            {planForDisplay.result["教材名"] ??
+                              planForDisplay.result["単元名"] ??
+                              "－"}
                           </p>
                           <p>
                             <strong>授業時間数：</strong>
