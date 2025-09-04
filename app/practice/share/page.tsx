@@ -1,4 +1,4 @@
-// app/practice/share/page.tsx などに配置
+// app/practice/share/page.tsx
 "use client";
 
 import React, { useState, useEffect, CSSProperties } from "react";
@@ -52,8 +52,8 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string;
-  author?: string;      // 投稿者のID（メール）
-  authorName?: string;  // 投稿者の表示名（任意）
+  author?: string; // 投稿者のID（メール）
+  authorName?: string; // 投稿者の表示名（任意）
   pdfFiles?: PdfFile[];
   createdAt?: any;
   modelType?: string; // reading / writing / discussion / language_activity
@@ -75,7 +75,9 @@ const tsToMillis = (v: any): number => {
     return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
   }
   if (typeof v?.toDate === "function") {
-    try { return v.toDate().getTime(); } catch {}
+    try {
+      return v.toDate().getTime();
+    } catch {}
   }
   if (typeof v === "string") {
     const t = Date.parse(v);
@@ -147,15 +149,15 @@ export default function PracticeSharePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
-  // ▼ NEW: 表示時の板書見やすさ補正ON/OFF
+  // ▼ 表示時の板書見やすさ補正ON/OFF
   const [enhanceBoards, setEnhanceBoards] = useState<boolean>(true);
 
-  // ▼ NEW: 新着管理
+  // ▼ 新着管理
   const [lastVisit, setLastVisit] = useState<number>(0);
   const [newIds, setNewIds] = useState<string[]>([]);
   const [showNewOnly, setShowNewOnly] = useState<boolean>(false);
 
-  // ▼ NEW: PDF匿名化チェック状態（レッスンIDごと）
+  // ▼ PDF匿名化チェック状態（レッスンIDごと）
   const [pdfConfirm, setPdfConfirm] = useState<Record<string, boolean>>({});
 
   const storage = getStorage();
@@ -310,11 +312,20 @@ export default function PracticeSharePage() {
   };
 
   const handleLike = async (lessonId: string) => {
-    if (!session) { alert("ログインしてください"); return; }
-    if (!userId) { alert("ユーザー情報が取得できません"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    if (!userId) {
+      alert("ユーザー情報が取得できません");
+      return;
+    }
 
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) { alert("モデルタイプが特定できません"); return; }
+    if (!record || !record.modelType) {
+      alert("モデルタイプが特定できません");
+      return;
+    }
     const collectionName = `practiceRecords_${record.modelType}`;
     const docRef = doc(db, collectionName, lessonId);
 
@@ -351,14 +362,26 @@ export default function PracticeSharePage() {
   };
 
   const handleAddComment = async (lessonId: string) => {
-    if (!session) { alert("ログインしてください"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const comment = newComments[lessonId]?.trim();
     const commentAuthor = newCommentAuthors[lessonId]?.trim();
-    if (!comment) { alert("コメントを入力してください"); return; }
-    if (!commentAuthor) { alert("コメント者名を入力してください"); return; }
+    if (!comment) {
+      alert("コメントを入力してください");
+      return;
+    }
+    if (!commentAuthor) {
+      alert("コメント者名を入力してください");
+      return;
+    }
 
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) { alert("モデルタイプが特定できません"); return; }
+    if (!record || !record.modelType) {
+      alert("モデルタイプが特定できません");
+      return;
+    }
     const collectionName = `practiceRecords_${record.modelType}`;
     const docRef = doc(db, collectionName, lessonId);
 
@@ -394,8 +417,14 @@ export default function PracticeSharePage() {
   const handleUpdateComment = async () => {
     if (!editingCommentId) return;
     const { recordId, index } = editingCommentId;
-    if (!session) { alert("ログインしてください"); return; }
-    if (!editingCommentText.trim()) { alert("コメントを入力してください"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
+    if (!editingCommentText.trim()) {
+      alert("コメントを入力してください");
+      return;
+    }
 
     const record = records.find((r) => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
@@ -423,7 +452,10 @@ export default function PracticeSharePage() {
   };
 
   const handleDeleteComment = async (recordId: string, index: number) => {
-    if (!session) { alert("ログインしてください"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const record = records.find((r) => r.lessonId === recordId);
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
       alert("対象のコメントが見つかりません");
@@ -449,10 +481,19 @@ export default function PracticeSharePage() {
    * PDF アップロード/削除
    * ======================= */
   const handlePdfUpload = async (lessonId: string, file: File) => {
-    if (!session) { alert("ログインしてください"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) { alert("対象の実践案またはモデルタイプが見つかりません"); return; }
-    if (record.author !== userId) { alert("PDFのアップロードは投稿者のみ可能です"); return; }
+    if (!record || !record.modelType) {
+      alert("対象の実践案またはモデルタイプが見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("PDFのアップロードは投稿者のみ可能です");
+      return;
+    }
 
     // 匿名化チェック（念押し：UI側で未チェックは disable だがダブルチェック）
     if (!pdfConfirm[lessonId]) {
@@ -482,11 +523,23 @@ export default function PracticeSharePage() {
   };
 
   const handleDeletePdf = async (lessonId: string, pdfName: string) => {
-    if (!session) { alert("ログインしてください"); return; }
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) { alert("対象の実践案またはモデルタイプが見つかりません"); return; }
-    if (record.author !== userId) { alert("PDFの削除は投稿者のみ可能です"); return; }
-    if (!pdfName) { alert("PDFファイル名がありません"); return; }
+    if (!record || !record.modelType) {
+      alert("対象の実践案またはモデルタイプが見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("PDFの削除は投稿者のみ可能です");
+      return;
+    }
+    if (!pdfName) {
+      alert("PDFファイル名がありません");
+      return;
+    }
     if (!confirm("本当にPDFファイルを削除しますか？")) return;
 
     setUploadingPdfIds((prev) => [...prev, lessonId]);
@@ -521,7 +574,7 @@ export default function PracticeSharePage() {
   };
 
   /* =========================
-   * PDF生成（変更なし：省略可のため既存のまま）
+   * PDF生成（既存のまま）
    * ======================= */
   // 画像のロード（タイムアウト付き）
   const loadImage = (url: string, timeout = 12000): Promise<HTMLImageElement> =>
@@ -529,10 +582,18 @@ export default function PracticeSharePage() {
       const img = new Image();
       img.crossOrigin = "anonymous";
       let tid: any = null;
-      img.onload = () => { if (tid) clearTimeout(tid); resolve(img); };
-      img.onerror = () => { if (tid) clearTimeout(tid); reject(new Error("画像読み込み失敗")); };
+      img.onload = () => {
+        if (tid) clearTimeout(tid);
+        resolve(img);
+      };
+      img.onerror = () => {
+        if (tid) clearTimeout(tid);
+        reject(new Error("画像読み込み失敗"));
+      };
       tid = setTimeout(() => {
-        try { img.src = ""; } catch {}
+        try {
+          img.src = "";
+        } catch {}
         reject(new Error("画像読み込みタイムアウト"));
       }, timeout);
       img.src = url;
@@ -631,8 +692,12 @@ export default function PracticeSharePage() {
       `;
       tempDiv.appendChild(style);
 
-      const safeUnitName = record.unitName ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_") : "無題単元";
-      const safeAuthor = record.authorName ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_") : "無名作成者";
+      const safeUnitName = record.unitName
+        ? record.unitName.replace(/[\\\/:*?"<>|]/g, "_")
+        : "無題単元";
+      const safeAuthor = record.authorName
+        ? record.authorName.replace(/[\\\/:*?"<>|]/g, "_")
+        : "無名作成者";
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
       const plan = lessonPlans.find(
@@ -646,45 +711,65 @@ export default function PracticeSharePage() {
         lessonPlanHtml += `
           <h2 class="h2pdf-section h2pdf-avoid" style="color:#4CAF50; margin-top:8px; margin-bottom:8px;">授業案</h2>
           <div class="h2pdf-section h2pdf-avoid">
-            <p style="margin:4px 0;"><strong>教科書名：</strong> ${escapeHtml(plan.result["教科書名"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>単元名：</strong> ${escapeHtml(plan.result["単元名"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>授業時間数：</strong> ${escapeHtml(String(plan.result["授業時間数"] || "－"))}時間</p>
-            <p style="margin:4px 0;"><strong>単元の目標：</strong> ${escapeHtml(plan.result["単元の目標"] || "－")}</p>
+            <p style="margin:4px 0;"><strong>教科書名：</strong> ${escapeHtml(
+              plan.result["教科書名"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>単元名：</strong> ${escapeHtml(
+              plan.result["単元名"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>授業時間数：</strong> ${escapeHtml(
+              String(plan.result["授業時間数"] || "－")
+            )}時間</p>
+            <p style="margin:4px 0;"><strong>単元の目標：</strong> ${escapeHtml(
+              plan.result["単元の目標"] || "－"
+            )}</p>
         `;
         if (plan.result["評価の観点"]) {
           const knowledge = ar(plan.result["評価の観点"]?.["知識・技能"]);
           const thinking = ar(plan.result["評価の観点"]?.["思考・判断・表現"]);
           const attitude = ar(
             plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
-            plan.result["評価の観点"]?.["態度"]
+              plan.result["評価の観点"]?.["態度"]
           );
           lessonPlanHtml += `
             <div class="h2pdf-avoid" style="margin-top:8px;">
               <strong>評価の観点：</strong>
               <p style="margin:4px 0;"><strong>知識・技能</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${knowledge.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${knowledge
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
               <p style="margin:4px 0;"><strong>思考・判断・表現</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${thinking.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${thinking
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
               <p style="margin:4px 0;"><strong>主体的に学習に取り組む態度</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${attitude.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
+                ${attitude
+                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
+                  .join("")}
               </ul>
             </div>
           `;
         }
         lessonPlanHtml += `
-            <p style="margin:4px 0;"><strong>育てたい子どもの姿：</strong> ${escapeHtml(plan.result["育てたい子どもの姿"] || "－")}</p>
-            <p style="margin:4px 0;"><strong>言語活動の工夫：</strong> ${escapeHtml(plan.result["言語活動の工夫"] || "－")}</p>
+            <p style="margin:4px 0;"><strong>育てたい子どもの姿：</strong> ${escapeHtml(
+              plan.result["育てたい子どもの姿"] || "－"
+            )}</p>
+            <p style="margin:4px 0;"><strong>言語活動の工夫：</strong> ${escapeHtml(
+              plan.result["言語活動の工夫"] || "－"
+            )}</p>
         `;
         if (plan.result["授業の流れ"]) {
           const flow = plan.result["授業の流れ"];
           lessonPlanHtml += `<p style="margin:4px 0;"><strong>授業の流れ：</strong></p>`;
           if (typeof flow === "string") {
-            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(flow)}</p>`;
+            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(
+              flow
+            )}</p>`;
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul class="h2pdf-avoid" style="margin:0 0 4px; padding-left:16px;">
               ${flow
@@ -717,8 +802,22 @@ export default function PracticeSharePage() {
       }
 
       const imgOpts = isSmallDevice
-        ? { maxWidth: 1400, maxHeight: 1400, jpegQuality: 0.9, contrast: 1.11, brightness: 1.03, saturate: 1.05 }
-        : { maxWidth: 1800, maxHeight: 1800, jpegQuality: 0.93, contrast: 1.12, brightness: 1.03, saturate: 1.05 };
+        ? {
+            maxWidth: 1400,
+            maxHeight: 1400,
+            jpegQuality: 0.9,
+            contrast: 1.11,
+            brightness: 1.03,
+            saturate: 1.05,
+          }
+        : {
+            maxWidth: 1800,
+            maxHeight: 1800,
+            jpegQuality: 0.93,
+            contrast: 1.12,
+            brightness: 1.03,
+            saturate: 1.05,
+          };
 
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
@@ -756,12 +855,18 @@ export default function PracticeSharePage() {
           ${escapeHtml(record.lessonTitle || safeUnitName)}
         </h1>
         <div class="h2pdf-section h2pdf-avoid">
-          <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(record.practiceDate || "－")}</p>
-          <p style="margin:4px 0 12px;"><strong>作成者：</strong> ${escapeHtml(record.authorName || "匿名")}</p>
+          <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(
+            record.practiceDate || "－"
+          )}</p>
+          <p style="margin:4px 0 12px;"><strong>作成者：</strong> ${escapeHtml(
+            record.authorName || "匿名"
+          )}</p>
         </div>
         ${lessonPlanHtml}
         <h2 class="h2pdf-section h2pdf-avoid" style="color:#4CAF50; margin-top:16px; margin-bottom:8px;">振り返り</h2>
-        <p class="h2pdf-section h2pdf-avoid" style="white-space: pre-wrap; margin:4px 0 12px;">${escapeHtml(record.reflection || "－")}</p>
+        <p class="h2pdf-section h2pdf-avoid" style="white-space: pre-wrap; margin:4px 0 12px;">${escapeHtml(
+          record.reflection || "－"
+        )}</p>
         ${boardImagesHtml}
         ${commentsHtml}
       `;
@@ -934,25 +1039,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ▼ NEW: 新着バナー */}
-      {newIds.length > 0 && (
-        <div style={newBannerStyle}>
-          新着の実践記録が <b>{newIds.length}</b> 件あります
-          <div style={{ display: "inline-flex", gap: 8, marginLeft: 12 }}>
-            <button
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              style={bannerBtnStyle}
-            >
-              先頭へ
-            </button>
-            <button onClick={markAllAsRead} style={bannerBtnStyle}>
-              既読にする
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ▼ NEW: 研究参加者向けの説明（スマホで最上部に来る位置） */}
+      {/* ▼ 研究参加者向けの説明（スマホで最上部に来る位置） */}
       <section
         style={{
           margin: "12px auto 16px",
@@ -965,7 +1052,9 @@ export default function PracticeSharePage() {
       >
         <h2 style={{ margin: 0, fontSize: "1.1rem" }}>このページについて（研究参加者向け）</h2>
         <ul style={{ margin: "8px 0 0 1.2em" }}>
-          <li><strong>共有範囲は研究参加者（ログインユーザー）のみ。</strong>一般公開はされません。</li>
+          <li>
+            <strong>共有範囲は研究参加者（ログインユーザー）のみ。</strong>一般公開はされません。
+          </li>
           <li>
             <strong>共有の教育的意義：</strong>相互に授業案を閲覧・学び合うことで、研究協力の価値が高まります。
           </li>
@@ -990,9 +1079,28 @@ export default function PracticeSharePage() {
           </li>
         </ul>
         <p style={{ fontSize: 13, marginTop: 8 }}>
-          詳細：<a href="/terms">利用規約</a> ／ <a href="/privacy">プライバシーポリシー</a> ／ <a href="/faq">FAQ</a>
+          詳細：<a href="/terms">利用規約</a> ／ <a href="/privacy">プライバシーポリシー</a> ／{" "}
+          <a href="/faq">FAQ</a>
         </p>
       </section>
+
+      {/* ▼ 新着バナー */}
+      {newIds.length > 0 && (
+        <div style={newBannerStyle}>
+          新着の実践記録が <b>{newIds.length}</b> 件あります
+          <div style={{ display: "inline-flex", gap: 8, marginLeft: 12 }}>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              style={bannerBtnStyle}
+            >
+              先頭へ
+            </button>
+            <button onClick={markAllAsRead} style={bannerBtnStyle}>
+              既読にする
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* レイアウト（スマホで縦・PC/タブレットで左右2カラム） */}
       <div
@@ -1080,10 +1188,7 @@ export default function PracticeSharePage() {
             </label>
           </div>
 
-          <button
-            onClick={handleSearch}
-            style={applyBtnStyle}
-          >
+          <button onClick={handleSearch} style={applyBtnStyle}>
             表示
           </button>
         </aside>
@@ -1133,16 +1238,14 @@ export default function PracticeSharePage() {
                   <p style={practiceDateStyle}>
                     実践開始日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
-                  {/* ▼ NEW: 作成者の匿名デフォルト（メールfallback禁止） */}
-                  <p style={authorNameStyle}>作成者: {r.authorName?.trim() ? r.authorName : "匿名"}</p>
+                  {/* ▼ 作成者の匿名デフォルト（メールfallback禁止） */}
+                  <p style={authorNameStyle}>
+                    作成者: {r.authorName?.trim() ? r.authorName : "匿名"}
+                  </p>
 
                   {/* 投稿者のみ編集ボタン（modelType クエリ付与） */}
                   {isAuthor && (
-                    <button
-                      onClick={() => handleEdit(r.lessonId)}
-                      style={editBtnStyle}
-                      title="投稿者のみ編集できます"
-                    >
+                    <button onClick={() => handleEdit(r.lessonId)} style={editBtnStyle} title="投稿者のみ編集できます">
                       編集
                     </button>
                   )}
@@ -1320,7 +1423,15 @@ export default function PracticeSharePage() {
                   {/* PDF リスト & アップロード/削除 */}
                   <div style={{ marginTop: 12 }}>
                     {(r.pdfFiles || []).map((pdf, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                      <div
+                        key={idx}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          marginBottom: 8,
+                        }}
+                      >
                         <a
                           href={pdf.url}
                           target="_blank"
@@ -1379,7 +1490,9 @@ export default function PracticeSharePage() {
                           const collectionName = `practiceRecords_${record.modelType}`;
                           const docRef = doc(db, collectionName, r.lessonId);
                           updateDoc(docRef, { isShared: false })
-                            .then(() => alert("共有を解除しました（個人の実践記録は残っています）"))
+                            .then(() =>
+                              alert("共有を解除しました（個人の実践記録は残っています）")
+                            )
                             .catch((e) => {
                               console.error("共有解除失敗", e);
                               alert("共有解除に失敗しました");
