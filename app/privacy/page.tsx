@@ -1,6 +1,6 @@
 // pages/privacy.tsx
 export default function PrivacyPage() {
-  const VERSION = "2025-09-04.1";
+  const VERSION = "2025-09-04.2";
   const EFFECTIVE_DATE = "2025年9月4日";
   return (
     <main style={{ maxWidth: 800, margin: "auto", padding: "2rem" }}>
@@ -14,14 +14,14 @@ export default function PrivacyPage() {
       <section style={{ margin: "2rem 0" }}>
         <h2><strong>第1条（目的・管理者・適用範囲）</strong></h2>
         <p>本ポリシーは、本サービスを研究目的で利用する際の個人情報等の取扱いを定めます。管理者：運営者（連絡先：アプリ内「お問い合わせフォーム」）。</p>
-        <p><strong>共有の範囲は研究参加者（ログインユーザー）間に限定</strong>され、<strong>一般公開は行いません</strong>。</p>
+        <p><strong>共有の範囲は研究参加者（ログインユーザー）間に限定</strong>され、<strong>一般公開は行いません</strong>。<strong>画面表示の氏名はニックネームに統一</strong>します。</p>
       </section>
 
       <section style={{ margin: "2rem 0" }}>
         <h2><strong>第2条（取得する情報）</strong></h2>
         <ul>
-          <li>アカウント情報：氏名（任意化可）・メールアドレス等の認証識別子</li>
-          <li>コンテンツ情報：授業案・実践記録・画像・PDF・コメント・公開/共有設定・出典/ライセンス・利用メタデータ</li>
+          <li>アカウント情報：<strong>表示名（ニックネーム）</strong>、氏名（任意・表示には用いません）、メールアドレス等の認証識別子</li>
+          <li>コンテンツ情報：授業案・実践記録・画像・PDF・コメント（<strong>コメントはニックネームと本文が必須</strong>）・公開/共有設定・出典/ライセンス・利用メタデータ</li>
           <li>技術情報：アクセスログ、端末/ブラウザ情報、Cookie等の識別子</li>
           <li>研究関連：利用状況の統計、匿名化後の研究データ、アンケート（任意）等</li>
         </ul>
@@ -34,7 +34,7 @@ export default function PrivacyPage() {
         <h2><strong>第3条（利用目的）</strong></h2>
         <ul>
           <li>本人認証、アカウント管理、本サービスの提供・保守</li>
-          <li>授業データの保存・表示・検索・PDF生成・共有等の機能提供</li>
+          <li>授業データの保存・表示・検索・PDF生成・共有等の機能提供（<strong>画面表示はニックネームに統一</strong>）</li>
           <li>利便性向上、不正防止、問い合わせ対応、統計的分析</li>
           <li><strong>研究の分析・評価・学術的成果作成</strong>（運営者の管理環境内で匿名化・統計化等の加工を実施）</li>
           <li><strong>本サービスの品質改善</strong>（匿名化・統計化のうえでの評価・検証を含む）</li>
@@ -53,7 +53,7 @@ export default function PrivacyPage() {
 
       <section style={{ margin: "2rem 0" }}>
         <h2><strong>第6条（安全管理措置）</strong></h2>
-        <p>通信・保存の暗号化、アクセス権限の最小化、ログ監査、バックアップ等、合理的な安全管理措置を講じます。教員名は匿名運用が可能です。</p>
+        <p>通信・保存の暗号化、アクセス権限の最小化、ログ監査、バックアップ等、合理的な安全管理措置を講じます。<strong>画面表示名はニックネームに統一</strong>します。</p>
       </section>
 
       <section style={{ margin: "2rem 0" }}>

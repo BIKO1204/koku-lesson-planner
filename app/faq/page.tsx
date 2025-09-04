@@ -1,6 +1,6 @@
 // pages/faq.tsx
 export default function FAQPage() {
-  const VERSION = "2025-09-04.1";
+  const VERSION = "2025-09-04.2";
   const UPDATED = "2025年9月4日";
   return (
     <main style={{ maxWidth: 800, margin: "auto", padding: "2rem" }}>
@@ -25,6 +25,8 @@ export default function FAQPage() {
         <ul>
           <li><strong>共有の範囲は研究参加者（ログインユーザー）間のみ。</strong>一般公開はされません。</li>
           <li>共有は<strong>任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。</li>
+          <li><strong>表示名はニックネームに統一。</strong>実名や「匿名」表記は使用しません。</li>
+          <li>コメントは<strong>ニックネームと本文が必須</strong>です。</li>
           <li>児童個人情報や学校の内部情報は投稿しないでください。PDFや画像は<strong>匿名化</strong>（本文・目次・ヘッダー/フッター・ファイル名・プロパティ等）を徹底。</li>
           <li>保存データは、<strong>運営者の管理環境内</strong>で匿名化・統計化のうえ研究・品質改善に利用します。<strong>外部の会社への原データ提供は行いません。</strong></li>
           <li>暗号化バックアップを<strong>最大30日</strong>保持。復旧は<strong>ベストエフォート</strong>（完全復旧は保証されません）。重要な資料はPDF等で<strong>自己バックアップ</strong>してください。</li>
@@ -60,8 +62,8 @@ export default function FAQPage() {
 
       {/* Q5 */}
       <section style={{ margin: "2rem 0" }}>
-        <h2><strong>Q5:</strong> 自分の名前は表示されますか？</h2>
-        <p>教員名は匿名運用が可能です。必要に応じて伏字・ニックネームを使用してください。</p>
+        <h2><strong>Q5:</strong> 自分の名前はどう表示されますか？</h2>
+        <p><strong>画面上はすべてニックネーム表示に統一</strong>しています。実名は表示しません。例：「〇〇先生」「国語A」など。</p>
       </section>
 
       {/* Q6 */}
@@ -98,6 +100,12 @@ export default function FAQPage() {
       <section style={{ margin: "2rem 0" }}>
         <h2><strong>Q11:</strong> 問い合わせはどこから？</h2>
         <p>アプリ内の「お問い合わせフォーム」からご連絡ください。発生時刻・操作手順・スクリーンショット・ブラウザ/端末情報をご提供いただけると助かります。</p>
+      </section>
+
+      {/* Q12（追加） */}
+      <section style={{ margin: "2rem 0" }}>
+        <h2><strong>Q12:</strong> コメント投稿の必須項目は？</h2>
+        <p><strong>ニックネーム（コメント者名）とコメント本文の両方が必須</strong>です。実名や「匿名」表記は使用しません。</p>
       </section>
     </main>
   );

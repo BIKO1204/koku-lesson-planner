@@ -1,6 +1,6 @@
 // pages/terms.tsx
 export default function TermsPage() {
-  const VERSION = "2025-09-04.1";
+  const VERSION = "2025-09-04.2";
   const EFFECTIVE_DATE = "2025年9月4日";
   return (
     <main style={{ maxWidth: 800, margin: "auto", padding: "2rem" }}>
@@ -23,10 +23,12 @@ export default function TermsPage() {
       </section>
 
       <section style={{ margin: "2rem 0" }}>
-        <h2><strong>第3条（共有範囲と公開）</strong></h2>
+        <h2><strong>第3条（共有範囲と公開・表示名の取扱い）</strong></h2>
         <ul>
           <li><strong>共有範囲は研究参加者（ログインユーザー）間に限定</strong>されます。<strong>一般公開は行いません</strong>。</li>
           <li>共有は任意です。参加者は自身の投稿を後から「共有から外す」ことができます（機能の提供状況は画面表示に従います）。</li>
+          <li>本サービス上の表示名は<strong>ニックネームに統一</strong>します。<strong>実名表示や「匿名」表記は使用しません</strong>（「ニックネーム未設定」等のシステム表示を除く）。</li>
+          <li>コメント投稿時は、<strong>ニックネーム（コメント者名）とコメント本文が必須</strong>です。</li>
           <li>研究成果の公表に際しては、<strong>個別投稿が特定されない統計・匿名の事例・傾向</strong>のみを用います。</li>
         </ul>
       </section>
@@ -45,7 +47,7 @@ export default function TermsPage() {
         <h2><strong>第5条（個人情報・機微情報の扱い）</strong></h2>
         <ul>
           <li><strong>児童を特定できる情報（顔写真・氏名・学籍番号・連絡先等）や学校の内部情報（校章・押印・内部資料・人事情報等）を投稿しないでください。</strong>写り込みがある場合は、投稿前に参加者の責任で十分なマスキング・ぼかし等を行ってください。</li>
-          <li>教員個人名は表示しない運用が可能です。必要に応じて匿名記載・伏字をご利用ください。</li>
+          <li><strong>画面上の教員名・コメント者名はニックネーム表示に統一</strong>します（実名は表示しません）。</li>
           <li>PDF/補足資料は<strong>匿名版（本文・ヘッダー/フッター・目次・ファイル名・プロパティ）</strong>でアップロードしてください。</li>
         </ul>
       </section>
@@ -71,7 +73,11 @@ export default function TermsPage() {
 
       <section style={{ margin: "2rem 0" }}>
         <h2><strong>第9条（禁止事項）</strong></h2>
-        <p>法令・学校規程違反、第三者権利侵害、児童個人情報の無加工アップロード、過度な転載、ライセンス条件違反、虚偽表示、サービス妨害、不正アクセス、リバースエンジニアリング等を禁止します。</p>
+        <ul>
+          <li>法令・学校規程違反、第三者権利侵害、児童個人情報の無加工アップロード、過度な転載、ライセンス条件違反、虚偽表示</li>
+          <li>サービス妨害、不正アクセス、リバースエンジニアリング等</li>
+          <li><strong>実名の公開投稿や「匿名」など誤認を招く表記、なりすまし、虚偽のニックネーム運用</strong></li>
+        </ul>
       </section>
 
       <section style={{ margin: "2rem 0" }}>

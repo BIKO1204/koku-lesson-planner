@@ -32,7 +32,7 @@ import {
 type BoardImage = { name: string; src: string };
 type Comment = {
   userId: string;
-  displayName: string;
+  displayName: string; // ← ニックネーム
   comment: string;
   createdAt: string;
 };
@@ -53,7 +53,7 @@ type PracticeRecord = {
   genre?: string;
   unitName?: string; // 表示は教材名
   author?: string; // 投稿者のID（メール）
-  authorName?: string; // 投稿者の表示名（任意）
+  authorName?: string; // 投稿者のニックネーム
   pdfFiles?: PdfFile[];
   createdAt?: any;
   modelType?: string; // reading / writing / discussion / language_activity
@@ -73,7 +73,7 @@ const tsToMillis = (v: any): number => {
   if (!v) return 0;
   if (typeof v === "object" && v.seconds != null) {
     return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
+    }
   if (typeof v?.toDate === "function") {
     try {
       return v.toDate().getTime();
@@ -118,7 +118,7 @@ const pickGrade = (r: PracticeRecord, plan?: LessonPlan) =>
   norm(r.grade ?? plan?.result?.["学年"]);
 const pickGenre = (r: PracticeRecord, plan?: LessonPlan) =>
   norm(r.genre ?? plan?.result?.["ジャンル"]);
-// ★ 教材名（unitName）の安全な取得：実践記録 → 授業案(教材名) → 授業案(単元名)
+// 教材名の安全取得
 const pickUnitName = (r: PracticeRecord, plan?: LessonPlan) =>
   norm(r.unitName ?? plan?.result?.["教材名"] ?? plan?.result?.["単元名"]);
 
@@ -153,15 +153,15 @@ export default function PracticeSharePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
-  // ▼ 表示時の板書見やすさ補正ON/OFF
+  // 表示時の板書見やすさ補正ON/OFF
   const [enhanceBoards, setEnhanceBoards] = useState<boolean>(true);
 
-  // ▼ 新着管理
+  // 新着管理
   const [lastVisit, setLastVisit] = useState<number>(0);
   const [newIds, setNewIds] = useState<string[]>([]);
   const [showNewOnly, setShowNewOnly] = useState<boolean>(false);
 
-  // ▼ PDF匿名化チェック状態（レッスンIDごと）
+  // PDF匿名化チェック状態（レッスンIDごと）
   const [pdfConfirm, setPdfConfirm] = useState<Record<string, boolean>>({});
 
   const storage = getStorage();
@@ -373,12 +373,12 @@ export default function PracticeSharePage() {
     }
     const comment = newComments[lessonId]?.trim();
     const commentAuthor = newCommentAuthors[lessonId]?.trim();
-    if (!comment) {
-      alert("コメントを入力してください");
+    if (!commentAuthor) {
+      alert("ニックネーム（コメント者名）を入力してください");
       return;
     }
-    if (!commentAuthor) {
-      alert("コメント者名を入力してください");
+    if (!comment) {
+      alert("コメント内容を入力してください");
       return;
     }
 
@@ -394,7 +394,7 @@ export default function PracticeSharePage() {
       await updateDoc(docRef, {
         comments: arrayUnion({
           userId,
-          displayName: commentAuthor,
+          displayName: commentAuthor, // ← ニックネーム
           comment,
           createdAt: new Date().toISOString(),
         }),
@@ -427,7 +427,7 @@ export default function PracticeSharePage() {
       return;
     }
     if (!editingCommentText.trim()) {
-      alert("コメントを入力してください");
+      alert("コメント内容を入力してください");
       return;
     }
 
@@ -702,7 +702,7 @@ export default function PracticeSharePage() {
 
       const unitForTitle = pickUnitName(record, plan) || "無題教材";
       const safeUnitName = unitForTitle.replace(/[\\\/:*?"<>|]/g, "_");
-      const safeAuthor = (record.authorName || "匿名").replace(/[\\\/:*?"<>|]/g, "_");
+      const safeAuthor = (record.authorName?.trim() ? record.authorName.trim() : "ニックネーム未設定").replace(/[\\\/:*?"<>|]/g, "_");
       const filename = `${safeUnitName}_実践記録_${safeAuthor}.pdf`;
 
       let lessonPlanHtml = "";
@@ -843,7 +843,7 @@ export default function PracticeSharePage() {
         record.comments.forEach((c) => {
           const dateStr = c.createdAt ? new Date(c.createdAt).toLocaleString("ja-JP") : "";
           commentsHtml += `<li style="margin-bottom:6px;"><strong>${escapeHtml(
-            c.displayName || "匿名"
+            c.displayName || "（ニックネーム未設定）"
           )}</strong> <small style="color:#666;">${escapeHtml(dateStr)}</small><br/>${escapeHtml(
             c.comment || ""
           ).replace(/\n/g, "<br/>")}</li>`;
@@ -859,8 +859,8 @@ export default function PracticeSharePage() {
           <p style="margin:4px 0;"><strong>実践開始日：</strong> ${escapeHtml(
             record.practiceDate || "－"
           )}</p>
-          <p style="margin:4px 0 12px;"><strong>作成者：</strong> ${escapeHtml(
-            record.authorName || "匿名"
+          <p style="margin:4px 0 12px;"><strong>ニックネーム：</strong> ${escapeHtml(
+            record.authorName?.trim() ? record.authorName : "（ニックネーム未設定）"
           )}</p>
         </div>
         ${lessonPlanHtml}
@@ -1040,7 +1040,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ▼ 研究参加者向けの説明 */}
+      {/* ▼ 研究参加者向けの説明（匿名→ニックネーム運用に統一） */}
       <section
         style={{
           margin: "12px auto 16px",
@@ -1063,20 +1063,19 @@ export default function PracticeSharePage() {
             <strong>共有は任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。
           </li>
           <li>
-            <strong>匿名運用可：</strong>教員名は任意項目。未入力の場合は「匿名」と表示されます。
+            <strong>ニックネーム運用に統一：</strong>
+            投稿者名・コメント者名とも<strong>必ずニックネーム</strong>を入力してください。実名や匿名表記は使用しません。
           </li>
           <li>
             <strong>PDF/補足資料は必ず匿名化</strong>してください（本文・目次・ヘッダー/フッター・
-            <u>ファイル名とドキュメントのプロパティ</u>・画像内の校名/個人名を削除/マスキング）。
-            児童を特定できる情報や学校の内部資料はアップロード禁止です。
+            <u>ファイル名とドキュメントのプロパティ</u>・画像内の校名/個人名を削除/マスキング）。児童を特定できる情報や学校の内部資料はアップロード禁止です。
           </li>
           <li>
             保存データは<strong>運営者の管理環境内</strong>で匿名化・統計化のうえ研究・品質改善に利用されます。
             <strong>外部の会社に原データを渡して学習させることはありません。</strong>
           </li>
           <li>
-            障害対策の暗号化バックアップを<strong>最大30日</strong>保持（復旧はベストエフォート／完全復旧は保証されません）。
-            重要資料はPDF等で<strong>自己バックアップ</strong>してください。
+            障害対策の暗号化バックアップを<strong>最大30日</strong>保持（復旧はベストエフォート／完全復旧は保証されません）。重要資料はPDF等で<strong>自己バックアップ</strong>してください。
           </li>
         </ul>
         <p style={{ fontSize: 13, marginTop: 8 }}>
@@ -1167,10 +1166,10 @@ export default function PracticeSharePage() {
           </div>
 
           <div>
-            <div style={filterSectionTitleStyle}>作成者名</div>
+            <div style={filterSectionTitleStyle}>ニックネーム（作成者）</div>
             <input
               type="text"
-              placeholder="作成者名で検索"
+              placeholder="ニックネームで検索"
               value={inputAuthor}
               onChange={(e) => setInputAuthor(e.target.value)}
               style={textInputStyle}
@@ -1240,7 +1239,7 @@ export default function PracticeSharePage() {
                     実践開始日: {r.practiceDate ? r.practiceDate.substring(0, 10) : "－"}
                   </p>
                   <p style={authorNameStyle}>
-                    作成者: {r.authorName?.trim() ? r.authorName : "匿名"}
+                    ニックネーム: {r.authorName?.trim() ? r.authorName : "（ニックネーム未設定）"}
                   </p>
 
                   {isAuthor && (
@@ -1522,7 +1521,7 @@ export default function PracticeSharePage() {
                     <div style={commentListStyle}>
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
-                          <b>{c.displayName}</b>{" "}
+                          <b>{c.displayName || "（ニックネーム未設定）"}</b>{" "}
                           <small>
                             {c.createdAt
                               ? `(${new Date(c.createdAt).toLocaleDateString()})`
@@ -1590,7 +1589,7 @@ export default function PracticeSharePage() {
 
                     <input
                       type="text"
-                      placeholder="コメント者名（必須）"
+                      placeholder="ニックネーム（必須）"
                       value={newCommentAuthors[r.lessonId] || ""}
                       onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
                       style={commentAuthorInputStyle}
@@ -1600,7 +1599,7 @@ export default function PracticeSharePage() {
 
                     <textarea
                       rows={3}
-                      placeholder="コメントを入力"
+                      placeholder="コメント内容（必須）"
                       value={newComments[r.lessonId] || ""}
                       onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
                       style={commentInputStyle}
