@@ -71,7 +71,7 @@ export default function EducationModelsPage() {
   }, []);
 
   /* =========================
-   * 新着検知/通知関連（OFFトグル廃止）
+   * 新着検知/通知関連（UIからの許可ボタンは削除）
    * ======================= */
   const LAST_SEEN_KEY = "eduModels:lastSeen";
 
@@ -99,24 +99,7 @@ export default function EducationModelsPage() {
     setShowNewBanner(false);
   };
 
-  const requestNotificationPermission = async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      alert("このブラウザは通知に対応していません。");
-      return;
-    }
-    if (Notification.permission === "granted") {
-      alert("すでに通知が許可されています。");
-      return;
-    }
-    const p = await Notification.requestPermission();
-    if (p === "granted") {
-      try {
-        new Notification("通知を許可しました", { body: "新着があればお知らせします。" });
-      } catch {}
-    }
-  };
-
-  // 一覧取得（共有=true か、自分のモデルは常に表示）＋ 新着カウント／通知
+  // 一覧取得（共有=true か、自分のモデルは常に表示）＋ 新着カウント／通知（許可済みのみ）
   useEffect(() => {
     const colRef = collection(db, "educationModels");
     const qy = query(
@@ -139,7 +122,7 @@ export default function EducationModelsPage() {
       setNewCount(newly.length);
       setShowNewBanner(newly.length > 0);
 
-      // 通知（許可済みなら常に送る）
+      // 通知（ブラウザが既に許可している場合のみ）
       if (
         newly.length > 0 &&
         typeof window !== "undefined" &&
@@ -503,12 +486,12 @@ export default function EducationModelsPage() {
   };
 
   const selectStyle: React.CSSProperties = {
-    padding: "8px 10px",
-    borderRadius: 6,
-    border: "1px solid #c5d2f0",
-    outline: "none",
-    background: "white",
-  };
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid #c5d2f0",
+  outline: "none",
+  background: "white",
+} as React.CSSProperties;
 
   const cardStyle: React.CSSProperties = {
     border: "1px solid #e0e7ff",
@@ -554,25 +537,55 @@ export default function EducationModelsPage() {
     boxSizing: "border-box",
   };
 
-  const notifyBtnStyle: React.CSSProperties = {
-    border: "1px solid #ffc107",
-    background: "#fff8e1",
-    color: "#8d6e63",
+  /* ===== 新着UIスタイル ===== */
+  const newBannerStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 10px",
     borderRadius: 999,
+    background: "#E8F5E9",
+    border: "1px solid #A5D6A7",
+    color: "#1B5E20",
+    fontWeight: 700,
+  };
+  const bannerBtnStyle: React.CSSProperties = {
+    background: "#43A047",
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
     padding: "6px 10px",
     cursor: "pointer",
     fontWeight: 700,
+  };
+  const chipToggleStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: "1px solid #c5d2f0",
+    background: "#f5f8ff",
+    color: "#2a4aa0",
+    fontSize: 12,
+  };
+  const newChip: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    marginLeft: 8,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#ffebee",
+    border: "1px solid #ffcdd2",
+    color: "#c62828",
+    fontSize: 11,
+    fontWeight: 800,
   };
 
   /* =========================
    * UI
    * ======================= */
   const displayModels = onlyNew ? models.filter(isNewItem) : models;
-
-  const notificationsSupported =
-    typeof window !== "undefined" && "Notification" in window;
-  const notificationsGranted =
-    notificationsSupported && Notification.permission === "granted";
 
   return (
     <>
@@ -682,7 +695,7 @@ export default function EducationModelsPage() {
           </label>
         </div>
 
-        {/* 新着＆通知操作（通知OFFトグル削除） */}
+        {/* 新着操作（通知許可ボタンは無し） */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
           {showNewBanner && (
             <div style={newBannerStyle}>
@@ -700,12 +713,6 @@ export default function EducationModelsPage() {
             />
             新着のみ
           </label>
-
-          {notificationsSupported && !notificationsGranted && (
-            <button onClick={requestNotificationPermission} style={notifyBtnStyle}>
-              🔔 通知を許可
-            </button>
-          )}
         </div>
 
         {/* エラー */}
@@ -714,10 +721,10 @@ export default function EducationModelsPage() {
         )}
 
         {/* 一覧 */}
-        {displayModels.length === 0 ? (
+        {(onlyNew ? models.filter(isNewItem) : models).length === 0 ? (
           <p style={{ color: "#666" }}>{onlyNew ? "新着はありません。" : "表示できるモデルがありません。"}</p>
         ) : (
-          displayModels.map((m) => {
+          (onlyNew ? models.filter(isNewItem) : models).map((m) => {
             const shared = m.isShared !== false; // 未設定は共有中
             return (
               <div key={m.id} style={cardStyle}>
