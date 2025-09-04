@@ -1,36 +1,22 @@
-// app/admin/layout.tsx
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
+// app/admin/layout.tsx (Server Component)
 import { ReactNode } from "react";
-import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  // ← ここで emailLower を“必ず”定義する
   const session = await getServerSession(authOptions);
-  const email = session?.user?.email || null;
-  const emailLower = email ? email.toLowerCase() : null;
 
-  // 未ログインならサインインへ
-  if (!emailLower) {
-    redirect("/api/auth/signin?callbackUrl=/admin");
+  // 未ログイン → サインインへ（戻り先は /admin）
+  if (!session) {
+    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent("/admin")}`);
   }
 
-  // Firestore の roles/{emailLower} を確認
-  const db = getAdminDb();
-  const snap = await db.collection("roles").doc(emailLower!).get();
-  const roleDoc = snap.exists ? (snap.data() as any) : undefined;
-  const isAdmin = !!roleDoc && (roleDoc.role === "admin" || roleDoc.isAdmin === true);
+  // 管理者でなければトップへ
+  const isAdmin = (session.user as any)?.admin === true;
+  if (!isAdmin) redirect("/");
 
-  if (!isAdmin) {
-    redirect("/forbidden");
-  }
-
-  // 管理者OK
   return (
     <div style={{ padding: 20 }}>
       <nav style={{ marginBottom: 20 }}>
