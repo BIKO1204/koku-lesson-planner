@@ -3,15 +3,9 @@
 import React, { useState, useEffect, useRef, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { openDB } from "idb";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  serverTimestamp,
-  getDoc,
-  DocumentReference,
-} from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { db, auth, storage } from "../../../firebaseConfig";
 import { ref, uploadString, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -30,17 +24,11 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string; // 表示名は「教材名」
-  authorName?: string; // ニックネームのみ（公開表示）
+  authorName?: string;
   modelType: string; // lesson_plans_*
   // ▼ 確認メタデータ（ローカル保持用）
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
-
-  // ▼ 追加：匿名表示×確実な紐づけ
-  ownerUid?: string; // 投稿者UID（編集権限判定に使用）
-  planId?: string; // 授業案ID（= lessonId）
-  planModelType?: "reading" | "writing" | "discussion" | "language_activity"; // 短縮名
-  planRef?: DocumentReference; // 任意：授業案ドキュメント参照
 };
 
 type PracticeDraft = {
@@ -326,6 +314,7 @@ export default function PracticeAddPage() {
   const { id } = useParams() as { id: string };
   const searchParams = useSearchParams();
   const modelTypeParam = searchParams?.get("modelType") || "";
+  const { data: session } = useSession();
 
   // 認証UID（クラウド下書き保存用）
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
@@ -371,7 +360,7 @@ export default function PracticeAddPage() {
 
   // ▼ NEW: 見やすさ設定
   const [enhancePreview, setEnhancePreview] = useState<boolean>(true); // プレビューにフィルタ
-  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true); // 圧縮時に焼き込む
+  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);   // 圧縮時に焼き込む
   const [compressLongEdge, setCompressLongEdge] = useState<number>(1400); // 長辺ピクセル
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -390,8 +379,7 @@ export default function PracticeAddPage() {
 
     if (plan?.result) {
       if (typeof plan.result === "string") {
-        const firstLine = plan.result
-          .split("\n")[0]
+        const firstLine = plan.result.split("\n")[0]
           .replace(/^【教材名】\s*/, "")
           .replace(/^【単元名】\s*/, "");
         setLessonTitle(firstLine);
@@ -450,10 +438,6 @@ export default function PracticeAddPage() {
           modelType: lessonType,
           confirmedNoPersonalInfo: data.confirmedNoPersonalInfo ?? undefined,
           imagesSignature: data.imagesSignature ?? undefined,
-          ownerUid: data.ownerUid,
-          planId: data.planId,
-          planModelType: data.planModelType,
-          planRef: data.planRef,
         });
 
         if (data.imagesSignature) setPreviousSignature(String(data.imagesSignature));
@@ -772,7 +756,8 @@ export default function PracticeAddPage() {
   /* ---- Firestore保存（確定） ---- */
   async function saveRecordToFirestore(rec: PracticeRecord & { compressedImages: BoardImage[] }) {
     const u = auth.currentUser?.uid;
-    if (!u) {
+    const userEmail = session?.user?.email;
+    if (!u || !userEmail) {
       alert("ログインが必要です。");
       throw new Error("Not logged in");
     }
@@ -799,13 +784,7 @@ export default function PracticeAddPage() {
       })
     );
 
-    // modelType: 'lesson_plans_*' → 短縮名
-    const short = rec.modelType.replace("lesson_plans_", "") as
-      | "reading"
-      | "writing"
-      | "discussion"
-      | "language_activity";
-    const practiceRecordCollection = `practiceRecords_${short}`;
+    const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
     const finalSignature = rec.imagesSignature || calcImagesSignature(sourceImages);
@@ -813,27 +792,24 @@ export default function PracticeAddPage() {
     await setDoc(
       docRef,
       {
-        // ここから匿名運用向けの最小個人情報での保存
-        ownerUid: u, // 投稿者識別はUIDのみ
-        planId: rec.lessonId,
-        planModelType: short,
-        planRef: doc(db, `lesson_plans_${short}`, rec.lessonId), // 任意：参照
-
+        ownerUid: u,
         practiceDate: rec.practiceDate,
         reflection: rec.reflection,
         boardImages: uploadedUrls,
         lessonTitle: rec.lessonTitle,
-        authorName: rec.authorName, // 公開表示はニックネームのみ
+        author: userEmail,
+        authorName: rec.authorName,
         grade: rec.grade || "",
         genre: rec.genre || "",
-        unitName: rec.unitName || "",
-        modelType: rec.modelType, // 互換のため残す
+        unitName: rec.unitName || "", // 表示は教材名
+        modelType: rec.modelType,
         createdAt: serverTimestamp(),
 
         // 確認メタ
         confirmedNoPersonalInfo: true,
         confirmedAt: serverTimestamp(),
-        confirmedByUid: u, // confirmedByEmail は保存しない
+        confirmedByUid: u,
+        confirmedByEmail: userEmail,
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
       },
@@ -936,7 +912,11 @@ export default function PracticeAddPage() {
         </h1>
       </nav>
 
-      <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
+      <div
+        style={overlayStyle(menuOpen)}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
@@ -1097,20 +1077,18 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          <div style={boxStyle}>
-            <label>
-              作成者名（ニックネーム）：
-              <input
-                type="text"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                required
-                placeholder="例：〇〇先生（公開表示はこのニックネームのみ）"
-                title="公開表示されるのはニックネームだけです"
-                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
-              />
-            </label>
-          </div>
+            <div style={boxStyle}>
+              <label>
+                作成者名：
+                <input
+                  type="text"
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                  required
+                  style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+                />
+              </label>
+            </div>
 
           {/* 学年 */}
           <div style={boxStyle}>
@@ -1186,7 +1164,9 @@ export default function PracticeAddPage() {
               />
             </label>
             {!lockMeta && (
-              <small style={{ color: "#666" }}>授業案が無い場合は手動で入力してください。</small>
+              <small style={{ color: "#666" }}>
+                授業案が無い場合は手動で入力してください。
+              </small>
             )}
           </div>
 
@@ -1242,15 +1222,7 @@ export default function PracticeAddPage() {
           <div style={{ marginTop: 12 }}>
             {boardImages.map((img, i) => (
               <div key={img.name + i} style={{ width: "100%", marginBottom: 12, position: "relative" }}>
-                <div
-                  style={{
-                    marginBottom: 6,
-                    fontWeight: "bold",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
+                <div style={{ marginBottom: 6, fontWeight: "bold", display: "flex", alignItems: "center", gap: 8 }}>
                   <span>板書{i + 1}</span>
                   <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                     <button
@@ -1436,7 +1408,9 @@ export default function PracticeAddPage() {
                     <strong>主体的に学習に取り組む態度</strong>
                     <ul>
                       {toStrArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
+                          "主体的に学習に取り組む態度"
+                        ] ??
                           (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]
                       ).map((v, i) => (
                         <li key={`attitude-${i}`}>{v}</li>
@@ -1469,7 +1443,9 @@ export default function PracticeAddPage() {
                       return (
                         <ul>
                           {flow.map((v, i) => (
-                            <li key={`flowarr-${i}`}>{typeof v === "string" ? v : JSON.stringify(v)}</li>
+                            <li key={`flowarr-${i}`}>
+                              {typeof v === "string" ? v : JSON.stringify(v)}
+                            </li>
                           ))}
                         </ul>
                       );
@@ -1540,7 +1516,9 @@ export default function PracticeAddPage() {
                   >
                     {record.boardImages.map((img, i) => (
                       <div key={img.name + i} style={{ width: "100%" }}>
-                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
+                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>
+                          板書{i + 1}
+                        </div>
                         <img
                           src={img.src}
                           alt={img.name}
@@ -1551,7 +1529,9 @@ export default function PracticeAddPage() {
                             border: "1px solid #ccc",
                             display: "block",
                             maxWidth: "100%",
-                            filter: enhancePreview ? "contrast(1.12) brightness(1.03) saturate(1.05)" : "none",
+                            filter: enhancePreview
+                              ? "contrast(1.12) brightness(1.03) saturate(1.05)"
+                              : "none",
                           }}
                         />
                       </div>

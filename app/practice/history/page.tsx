@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openDB } from "idb";
 import { signOut, useSession } from "next-auth/react";
-import { db, auth } from "../../firebaseConfig";
+import { db } from "../../firebaseConfig";
 import {
   collection,
   getDocs,
@@ -17,7 +17,6 @@ import {
   getDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
 
 // ---------- 型 ----------
 type BoardImage = { name: string; src: string };
@@ -31,10 +30,10 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string; // 表示は「教材名」
-  modelType?: string; // normalized: reading / writing / discussion / language_activity
+  modelType?: string;   // normalized: reading / writing / discussion / language_activity
   author?: string;
   authorName?: string;
-  isShared?: boolean; // 共有状態
+  isShared?: boolean;   // ★ 追加：共有状態（shared / isShared どちらにも対応）
 };
 
 type LessonPlan = {
@@ -87,21 +86,13 @@ function normalizeModelType(name: string) {
   return name.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
 }
 
-async function fetchRemotePracticeRecords(params: {
-  uid?: string | null;
-  userEmail?: string;
-}): Promise<PracticeRecord[]> {
-  const { uid, userEmail } = params;
+async function fetchRemotePracticeRecords(
+  userEmail: string
+): Promise<PracticeRecord[]> {
+  if (!userEmail) return [];
   const all: PracticeRecord[] = [];
   for (const coll of PRACTICE_COLLECTIONS) {
-    let qy;
-    if (uid) {
-      qy = query(collection(db, coll), where("ownerUid", "==", uid));
-    } else if (userEmail) {
-      qy = query(collection(db, coll), where("author", "==", userEmail)); // 互換フォールバック
-    } else {
-      continue;
-    }
+    const qy = query(collection(db, coll), where("author", "==", userEmail));
     const snap = await getDocs(qy);
     snap.forEach((d) => {
       const data = d.data() as any;
@@ -113,11 +104,11 @@ async function fetchRemotePracticeRecords(params: {
         boardImages: Array.isArray(data.boardImages) ? data.boardImages : [],
         grade: data.grade || "",
         genre: data.genre || "",
-        unitName: data.unitName || "",
-        modelType: normalizeModelType(data.modelType || coll),
+        unitName: data.unitName || "", // 教材名
+        modelType: normalizeModelType(data.modelType || coll), // => reading など
         author: data.author || "",
         authorName: data.authorName || "",
-        isShared: Boolean((data as any).isShared ?? (data as any).shared ?? false),
+        isShared: Boolean((data as any).isShared ?? (data as any).shared ?? false), // ★ 共有状態
       });
     });
   }
@@ -169,19 +160,13 @@ export default function PracticeHistoryPage() {
   const { data: session } = useSession();
   const userEmail = session?.user?.email || "";
 
-  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
-    return () => unsub();
-  }, []);
-
   const [records, setRecords] = useState<PracticeRecord[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [sortKey, setSortKey] = useState<"practiceDate" | "lessonTitle" | "grade">("practiceDate");
   const [menuOpen, setMenuOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [sharingId, setSharingId] = useState<string | null>(null); // ★ 追加：再共有中のID
 
   const router = useRouter();
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -189,7 +174,7 @@ export default function PracticeHistoryPage() {
   useEffect(() => {
     (async () => {
       const local = await getAllLocalRecords();
-      const remote = await fetchRemotePracticeRecords({ uid, userEmail });
+      const remote = await fetchRemotePracticeRecords(userEmail);
 
       fetchAllLessonPlans()
         .then(setLessonPlans)
@@ -204,7 +189,7 @@ export default function PracticeHistoryPage() {
       setRecords(sortRecords(merged, sortKey));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userEmail, uid]);
+  }, [userEmail]);
 
   useEffect(() => {
     setRecords((prev) => sortRecords(prev, sortKey));
@@ -239,7 +224,7 @@ export default function PracticeHistoryPage() {
         try {
           await deleteDocFs(doc(db, coll, lessonId));
         } catch {
-          /* 無ければ無視 */
+          /* 無しは無視 */
         }
       }
       setRecords((prev) => prev.filter((r) => r.lessonId !== lessonId));
@@ -302,7 +287,6 @@ export default function PracticeHistoryPage() {
       await setDoc(
         doc(db, coll, rec.lessonId),
         {
-          ownerUid: auth.currentUser?.uid ?? null, // ★ UID も保持
           author: authorEmail,
           grade: rec.grade || "",
           genre: rec.genre || "",
@@ -329,7 +313,7 @@ export default function PracticeHistoryPage() {
     }
   }
 
-  // 再共有
+  // ★ 追加：再共有
   async function handleReshare(rec: PracticeRecord) {
     const short = normalizeModelType(rec.modelType || "reading");
     const coll = `practiceRecords_${short}`;
@@ -340,13 +324,14 @@ export default function PracticeHistoryPage() {
       await setDoc(
         doc(db, coll, rec.lessonId),
         {
-          isShared: true, // 新スキーマ
-          shared: true, // 互換フィールド
+          isShared: true, // 新スキーマ想定
+          shared: true,   // 互換フィールド
           sharedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
+      // 画面反映
       setRecords((prev) =>
         prev.map((r) => (r.lessonId === rec.lessonId ? { ...r, isShared: true } : r))
       );
@@ -386,7 +371,7 @@ export default function PracticeHistoryPage() {
     backgroundColor: "white",
     borderRadius: 2,
   };
-  const menuWrapperStyle = (open: boolean): CSSProperties => ({
+  const menuWrapperStyle: CSSProperties = {
     position: "fixed",
     top: 56,
     left: 0,
@@ -394,12 +379,12 @@ export default function PracticeHistoryPage() {
     height: "100vh",
     backgroundColor: "#f0f0f0",
     boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: open ? "translateX(0)" : "translateX(-100%)",
+    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
     transition: "transform 0.3s ease",
     zIndex: 999,
     display: "flex",
     flexDirection: "column",
-  });
+  };
   const menuScrollStyle: CSSProperties = {
     padding: "1rem",
     paddingBottom: 80,
@@ -420,6 +405,7 @@ export default function PracticeHistoryPage() {
     zIndex: 1000,
   };
 
+  // ▼ 修正：関数型にして menuOpen を反映
   const overlayStyle = (open: boolean): CSSProperties => ({
     position: "fixed",
     top: 56,
@@ -477,7 +463,7 @@ export default function PracticeHistoryPage() {
   const actionBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#4CAF50" };
   const deleteBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#f44336" };
   const restoreBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#673ab7" };
-  const shareBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#009688" };
+  const shareBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#009688" }; // ★ 追加：再共有
 
   const planBlockStyle: CSSProperties = {
     backgroundColor: "#fafafa",
@@ -531,7 +517,7 @@ export default function PracticeHistoryPage() {
       <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
 
       {/* メニュー全体 */}
-      <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
+      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
         <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
@@ -631,7 +617,9 @@ export default function PracticeHistoryPage() {
                           </p>
                           <p>
                             <strong>教材名：</strong>
-                            {planForDisplay.result["教材名"] ?? planForDisplay.result["単元名"] ?? "－"}
+                            {planForDisplay.result["教材名"] ??
+                              planForDisplay.result["単元名"] ??
+                              "－"}
                           </p>
                           <p>
                             <strong>授業時間数：</strong>
@@ -850,7 +838,7 @@ export default function PracticeHistoryPage() {
                       </button>
                     )}
 
-                    {/* 未共有のときだけ表示 */}
+                    {/* ★ 再共有ボタン（未共有のときだけ表示） */}
                     {r.isShared === false && (
                       <button
                         onClick={() => handleReshare(r)}
