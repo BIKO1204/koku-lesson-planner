@@ -61,6 +61,27 @@ type LessonPlan = {
   modelType?: string; // reading / writing / discussion / language_activity
 };
 
+// ========== NEW: 新着判定ユーティリティ ==========
+const LAST_VISIT_KEY = "share:lastVisit";
+const tsToMillis = (v: any): number => {
+  if (!v) return 0;
+  if (typeof v === "object" && v.seconds != null) {
+    // Firestore Timestamp-like
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  if (typeof v?.toDate === "function") {
+    try {
+      return v.toDate().getTime();
+    } catch {}
+  }
+  if (typeof v === "string") {
+    const t = Date.parse(v);
+    return isNaN(t) ? 0 : t;
+  }
+  if (typeof v === "number") return v;
+  return 0;
+};
+
 // スマホ判定用フック
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false);
@@ -125,6 +146,11 @@ export default function PracticeSharePage() {
 
   // ▼ NEW: 表示時の板書見やすさ補正ON/OFF
   const [enhanceBoards, setEnhanceBoards] = useState<boolean>(true);
+
+  // ▼ NEW: 新着管理
+  const [lastVisit, setLastVisit] = useState<number>(0);
+  const [newIds, setNewIds] = useState<string[]>([]);
+  const [showNewOnly, setShowNewOnly] = useState<boolean>(false);
 
   const storage = getStorage();
   const isMobile = useIsMobile();
@@ -205,6 +231,32 @@ export default function PracticeSharePage() {
     };
   }, []);
 
+  // ▼ NEW: 前回訪問時刻の初期化
+  useEffect(() => {
+    const v = Number(localStorage.getItem(LAST_VISIT_KEY) || "0");
+    setLastVisit(isNaN(v) ? 0 : v);
+  }, []);
+
+  // ▼ NEW: 新着IDを算出
+  useEffect(() => {
+    const ids = records
+      .filter((r) => {
+        const created = tsToMillis(r.createdAt) || tsToMillis(r.practiceDate);
+        return created > lastVisit;
+      })
+      .map((r) => r.lessonId);
+    setNewIds(ids);
+  }, [records, lastVisit]);
+
+  // ▼ NEW: 既読化
+  const markAllAsRead = () => {
+    const now = Date.now();
+    setLastVisit(now);
+    try {
+      localStorage.setItem(LAST_VISIT_KEY, String(now));
+    } catch {}
+  };
+
   const handleSearch = () => {
     setGradeFilter(inputGrade || null);
     setGenreFilter(inputGenre || null);
@@ -230,6 +282,11 @@ export default function PracticeSharePage() {
 
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
     if (authorFilter && !r.authorName?.includes(authorFilter)) return false;
+
+    // ▼ NEW: 新着のみ表示
+    const created = tsToMillis(r.createdAt) || tsToMillis(r.practiceDate);
+    if (showNewOnly && !(created > lastVisit)) return false;
+
     return true;
   });
 
@@ -487,25 +544,6 @@ export default function PracticeSharePage() {
     router.push(`/practice/add/${lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
   };
 
-  // 共有解除（共有ページからだけ非表示・ドキュメントは残す）
-  const handleUnshareRecord = async (lessonId: string) => {
-    if (!session) return alert("ログインしてください");
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) return alert("対象の実践案が見つかりません");
-    if (record.author !== userId) return alert("共有解除は投稿者のみ可能です");
-    if (!confirm("この実践記録を共有版から外します（個人の実践記録は残ります）。よろしいですか？")) return;
-
-    try {
-      const collectionName = `practiceRecords_${record.modelType}`;
-      const docRef = doc(db, collectionName, lessonId);
-      await updateDoc(docRef, { isShared: false });
-      alert("共有を解除しました（個人の実践記録は残っています）");
-    } catch (e) {
-      console.error("共有解除失敗", e);
-      alert("共有解除に失敗しました");
-    }
-  };
-
   /* ===========================
       画像を高品質でBase64化
      =========================== */
@@ -547,10 +585,10 @@ export default function PracticeSharePage() {
     const {
       maxWidth = 1800,
       maxHeight = 1800,
-      jpegQuality = 0.93,   // ← 少し上げる
-      contrast = 1.12,      // ← 強め
-      brightness = 1.03,    // ← わずかに上げる
-      saturate = 1.05,      // ← わずかに上げる
+      jpegQuality = 0.93, // 少し高め
+      contrast = 1.12,
+      brightness = 1.03,
+      saturate = 1.05,
     } = opts;
 
     const img = await loadImage(url);
@@ -780,7 +818,6 @@ export default function PracticeSharePage() {
         base64Images.forEach((base64, idx) => {
           const original = record.boardImages[idx];
           const src = base64 || original.src;
-          // ▼ NEW: PDF内の画像にも軽いフィルタを適用
           boardImagesHtml += `
             <div class="h2pdf-section h2pdf-avoid" style="margin-bottom:12px;">
               <p style="margin:4px 0 6px; font-weight:bold;">板書${idx + 1}</p>
@@ -958,6 +995,24 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
+      {/* ▼ NEW: 新着バナー */}
+      {newIds.length > 0 && (
+        <div style={newBannerStyle}>
+          新着の実践記録が <b>{newIds.length}</b> 件あります
+          <div style={{ display: "inline-flex", gap: 8, marginLeft: 12 }}>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              style={bannerBtnStyle}
+            >
+              先頭へ
+            </button>
+            <button onClick={markAllAsRead} style={bannerBtnStyle}>
+              既読にする
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* レイアウト（スマホで縦・PCで横） */}
       <div
         style={{
@@ -1059,6 +1114,18 @@ export default function PracticeSharePage() {
             />
           </div>
 
+          {/* ▼ NEW: 新着のみ表示 */}
+          <div style={{ marginTop: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={showNewOnly}
+                onChange={(e) => setShowNewOnly(e.target.checked)}
+              />
+              <span>新着のみ表示（前回訪問以降）</span>
+            </label>
+          </div>
+
           <button
             onClick={handleSearch}
             style={{
@@ -1095,14 +1162,23 @@ export default function PracticeSharePage() {
 
               const g = pickGrade(r, plan);
               const ge = pickGenre(r, plan);
+              const isNew = newIds.includes(r.lessonId);
 
               return (
-                <article key={r.lessonId} style={cardStyle}>
-                  <h2 style={{ marginBottom: 8 }}>
-                    {r.lessonTitle}{" "}
+                <article
+                  key={r.lessonId}
+                  style={{
+                    ...cardStyle,
+                    border: isNew ? "2px solid #ff7043" : "2px solid #ddd",
+                    boxShadow: isNew ? "0 0 0 3px rgba(255,112,67,0.15)" : undefined,
+                  }}
+                >
+                  <h2 style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>{r.lessonTitle} </span>
                     <small style={{ fontSize: "0.85rem", color: "#888" }}>
                       [{r.modelType || "不明なモデル"}]
                     </small>
+                    {isNew && <span style={newBadgeStyle}>NEW</span>}
                   </h2>
 
                   {/* 学年・ジャンル表示（授業案からのフォールバック込み） */}
@@ -1154,7 +1230,7 @@ export default function PracticeSharePage() {
                     {pdfGeneratingId === r.lessonId ? "PDF生成中..." : "PDF保存"}
                   </button>
 
-                  {/* ▼ NEW: 見やすさ補正ON/OFF切替 */}
+                  {/* 見やすさ補正ON/OFF切替 */}
                   <button
                     onClick={() => setEnhanceBoards((v) => !v)}
                     style={{
@@ -1260,7 +1336,8 @@ export default function PracticeSharePage() {
                                     return numA - numB;
                                   })
                                   .map(([key, val]) => {
-                                    const content = typeof val === "string" ? val : JSON.stringify(val);
+                                    const content =
+                                      typeof val === "string" ? val : JSON.stringify(val);
                                     return (
                                       <li key={key}>
                                         <strong>{key}:</strong> {content}
@@ -1339,11 +1416,33 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 共有版では完全削除はしない。共有から外すだけ */}
+                  {/* 共有から外す（データは残す） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
-                        onClick={() => handleUnshareRecord(r.lessonId)}
+                        onClick={() => {
+                          if (!session) return alert("ログインしてください");
+                          const record = records.find((x) => x.lessonId === r.lessonId);
+                          if (!record || !record.modelType)
+                            return alert("対象の実践案が見つかりません");
+                          if (record.author !== userId)
+                            return alert("共有解除は投稿者のみ可能です");
+                          if (
+                            !confirm(
+                              "この実践記録を共有版から外します（個人の実践記録は残ります）。よろしいですか？"
+                            )
+                          )
+                            return;
+
+                          const collectionName = `practiceRecords_${record.modelType}`;
+                          const docRef = doc(db, collectionName, r.lessonId);
+                          updateDoc(docRef, { isShared: false })
+                            .then(() => alert("共有を解除しました（個人の実践記録は残っています）"))
+                            .catch((e) => {
+                              console.error("共有解除失敗", e);
+                              alert("共有解除に失敗しました");
+                            });
+                        }}
                         style={{ ...commentBtnStyle, backgroundColor: "#888" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
                         title="共有ページからだけ非表示にします（個人の実践記録は残ります）"
@@ -1365,7 +1464,7 @@ export default function PracticeSharePage() {
 
                   <div style={{ marginTop: 12 }}>
                     <strong>コメント</strong>
-                    {/* 直接表示（スクロールボックスはやめるなら下の container を外してOK） */}
+                    {/* 直接表示 */}
                     <div style={commentListStyle}>
                       {(r.comments || []).map((c, i) => (
                         <div key={i} style={{ marginBottom: 12 }}>
@@ -1408,8 +1507,8 @@ export default function PracticeSharePage() {
                                     style={{
                                       ...commentBtnStyle,
                                       marginRight: 8,
-                                      padding: "8px 12px", // ← 少し大きく
-                                      fontSize: 14,       // ← 少し大きく
+                                      padding: "8px 12px",
+                                      fontSize: 14,
                                     }}
                                     onClick={() => startEditComment(r.lessonId, i, c.comment)}
                                   >
@@ -1419,8 +1518,8 @@ export default function PracticeSharePage() {
                                     style={{
                                       ...commentBtnStyle,
                                       backgroundColor: "#e53935",
-                                      padding: "8px 12px", // ← 少し大きく
-                                      fontSize: 14,       // ← 少し大きく
+                                      padding: "8px 12px",
+                                      fontSize: 14,
                                     }}
                                     onClick={() => handleDeleteComment(r.lessonId, i)}
                                   >
@@ -1584,9 +1683,7 @@ const likeBtnDisabledStyle: CSSProperties = {
   opacity: 0.6,
 };
 const commentListStyle: CSSProperties = {
-  // スクロールをやめる場合は height 指定を外す
-  // maxHeight: 150,
-  // overflowY: "auto",
+  // 直接表示（スクロールなし）
   marginTop: 8,
   border: "1px solid #ddd",
   padding: 8,
@@ -1602,13 +1699,13 @@ const commentInputStyle: CSSProperties = {
 };
 const commentBtnStyle: CSSProperties = {
   marginTop: 8,
-  padding: "8px 12px", // ← 大きめ
+  padding: "8px 12px",
   backgroundColor: "#4caf50",
   color: "white",
   border: "none",
-  borderRadius: 6,      // ← 角も少し大きめ
+  borderRadius: 6,
   cursor: "pointer",
-  fontSize: 14,         // ← 大きめ
+  fontSize: 14,
 };
 const commentAuthorInputStyle: CSSProperties = {
   width: "100%",
@@ -1673,3 +1770,39 @@ const getOverlayStyle = (open: boolean): CSSProperties => ({
   transition: "opacity 0.3s ease",
   zIndex: 998,
 });
+
+// ▼ NEW: 新着用のスタイル
+const newBadgeStyle: CSSProperties = {
+  backgroundColor: "#ff7043",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: "0.75rem",
+  padding: "2px 8px",
+  borderRadius: 999,
+  lineHeight: 1.6,
+};
+const newBannerStyle: CSSProperties = {
+  position: "sticky",
+  top: 56,
+  zIndex: 900,
+  background: "#fff3e0",
+  color: "#5d4037",
+  border: "1px solid #ffcc80",
+  borderLeft: "6px solid #ff7043",
+  padding: "8px 12px",
+  margin: "0 auto",
+  maxWidth: 1200,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+};
+const bannerBtnStyle: CSSProperties = {
+  backgroundColor: "#ff7043",
+  color: "#fff",
+  border: "none",
+  borderRadius: 6,
+  padding: "6px 10px",
+  cursor: "pointer",
+  fontSize: 13,
+};
