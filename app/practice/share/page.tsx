@@ -1063,7 +1063,7 @@ export default function PracticeSharePage() {
             <strong>共有は任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。
           </li>
           <li>
-            <strong>ニックネーム運用に統一：</strong>投稿者名・コメント者名とも<strong>必ずニックネーム</strong>を入力してください。実名や匿名表記は使用しません。
+            <strong>ニックネーム運用に統一：</strong>作成者名・コメント者名とも<strong>必ずニックネーム</strong>を入力してください。実名や匿名表記は使用しません。
           </li>
           <li>
             <strong>PDF/補足資料は必ず匿名化</strong>してください（本文・目次・ヘッダー/フッター・
@@ -1516,7 +1516,7 @@ export default function PracticeSharePage() {
                     </button>
                   </div>
 
-                  {/* コメント */}
+                  {/* コメント（フォームで必須検証を有効化） */}
                   <div style={{ marginTop: 12 }}>
                     <strong>コメント</strong>
                     <div style={commentListStyle}>
@@ -1588,33 +1588,65 @@ export default function PracticeSharePage() {
                       ))}
                     </div>
 
-                    <input
-                      type="text"
-                      placeholder="コメント者名（必須）"
-                      value={newCommentAuthors[r.lessonId] || ""}
-                      onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
-                      style={commentAuthorInputStyle}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
-                    />
-
-                    <textarea
-                      rows={3}
-                      placeholder="コメントを入力"
-                      value={newComments[r.lessonId] || ""}
-                      onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
-                      style={commentInputStyle}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
-                    />
-                    <button
-                      style={commentBtnStyle}
-                      onClick={() => handleAddComment(r.lessonId)}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
+                    {/* ▼ フォームで囲んでブラウザの必須検証を利用 */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleAddComment(r.lessonId);
+                      }}
                     >
-                      コメント投稿
-                    </button>
+                      <input
+                        type="text"
+                        placeholder="コメント者名（必須）"
+                        value={newCommentAuthors[r.lessonId] || ""}
+                        onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
+                        style={commentAuthorInputStyle}
+                        disabled={!session}
+                        required
+                        pattern="\S.+"
+                        onInvalid={(e) => {
+                          const el = e.currentTarget as HTMLInputElement;
+                          const isOk = /\S.+/.test(el.value);
+                          el.setCustomValidity(
+                            isOk ? "" : "コメント者名は必須です（空白のみは不可）"
+                          );
+                        }}
+                        onInput={(e) => {
+                          (e.currentTarget as HTMLInputElement).setCustomValidity("");
+                        }}
+                        title={session ? undefined : "ログインしてください"}
+                      />
+
+                      <textarea
+                        rows={3}
+                        placeholder="コメントを入力（必須）"
+                        value={newComments[r.lessonId] || ""}
+                        onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
+                        style={commentInputStyle}
+                        disabled={!session}
+                        required
+                        onInvalid={(e) => {
+                          const el = e.currentTarget as HTMLTextAreaElement;
+                          const ok = el.value.trim().length > 0;
+                          el.setCustomValidity(
+                            ok ? "" : "コメントは必須です（空白のみは不可）"
+                          );
+                        }}
+                        onInput={(e) => {
+                          (e.currentTarget as HTMLTextAreaElement).setCustomValidity("");
+                        }}
+                        title={session ? undefined : "ログインしてください"}
+                      />
+
+                      <button
+                        type="submit"
+                        style={commentBtnStyle}
+                        disabled={!session}
+                        title={session ? undefined : "ログインしてください"}
+                      >
+                        コメント投稿
+                      </button>
+                    </form>
                   </div>
                 </article>
               );
