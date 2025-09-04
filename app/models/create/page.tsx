@@ -595,7 +595,7 @@ export default function EducationModelsPage() {
           {/* 作成者名 */}
           <label style={labelStyle}>
             作成者名（必須）
-            <div style={helperStyle}>例）〇〇 〇〇</div>
+            <div style={helperStyle}>例）〇〇先生</div>
             <input
               type="text"
               value={form.creatorName}
