@@ -1079,7 +1079,7 @@ export default function PracticeAddPage() {
 
             <div style={boxStyle}>
               <label>
-                作成者名：
+                作成者名(ニックネーム)：
                 <input
                   type="text"
                   value={authorName}

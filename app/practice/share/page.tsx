@@ -1063,7 +1063,7 @@ export default function PracticeSharePage() {
             <strong>共有は任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。
           </li>
           <li>
-            <strong>匿名運用可：</strong>作成者名（コメント者名）はニックネームを使用してください。未入力の場合は「匿名」と表示されます。
+            <strong>ニックネーム運用に統一：</strong>投稿者名・コメント者名とも<strong>必ずニックネーム</strong>を入力してください。実名や匿名表記は使用しません。
           </li>
           <li>
             <strong>PDF/補足資料は必ず匿名化</strong>してください（本文・目次・ヘッダー/フッター・
