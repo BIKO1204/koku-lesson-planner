@@ -28,7 +28,7 @@ type EducationModel = {
   updatedAt: string;
   creatorId: string;
   creatorName: string;
-  // 追加：共有フラグ（未設定は共有中とみなす）
+  // 共有フラグ（未設定は共有中とみなす）
   isShared?: boolean;
 };
 
@@ -71,31 +71,18 @@ export default function EducationModelsPage() {
   }, []);
 
   /* =========================
-   * 新着検知/通知関連
+   * 新着検知/通知関連（OFFトグル廃止）
    * ======================= */
   const LAST_SEEN_KEY = "eduModels:lastSeen";
-  const NOTIFY_KEY = "eduModels:notify";
 
   const [lastSeen, setLastSeen] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
     const v = localStorage.getItem(LAST_SEEN_KEY);
     return v ? parseInt(v, 10) : 0;
-    // 0 の場合は初回は全件を既読扱いせず “NEW” 表示の対象
   });
   const [newCount, setNewCount] = useState(0);
   const [showNewBanner, setShowNewBanner] = useState(false);
   const [onlyNew, setOnlyNew] = useState(false);
-  const [desktopNotify, setDesktopNotify] = useState<"on" | "off">("off");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const v = localStorage.getItem(NOTIFY_KEY);
-    if (v === "on") setDesktopNotify("on");
-  }, []);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(NOTIFY_KEY, desktopNotify);
-  }, [desktopNotify]);
 
   const isNewItem = (m: EducationModel) => {
     const t = Date.parse(m.updatedAt || "");
@@ -112,20 +99,24 @@ export default function EducationModelsPage() {
     setShowNewBanner(false);
   };
 
-  const toggleDesktopNotify = async () => {
+  const requestNotificationPermission = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       alert("このブラウザは通知に対応していません。");
       return;
     }
     if (Notification.permission === "granted") {
-      setDesktopNotify((p) => (p === "on" ? "off" : "on"));
-    } else {
-      const p = await Notification.requestPermission();
-      if (p === "granted") setDesktopNotify("on");
+      alert("すでに通知が許可されています。");
+      return;
+    }
+    const p = await Notification.requestPermission();
+    if (p === "granted") {
+      try {
+        new Notification("通知を許可しました", { body: "新着があればお知らせします。" });
+      } catch {}
     }
   };
 
-  // 一覧取得（共有=true か、自分のモデルは常に表示）＋ 新着カウント/通知
+  // 一覧取得（共有=true か、自分のモデルは常に表示）＋ 新着カウント／通知
   useEffect(() => {
     const colRef = collection(db, "educationModels");
     const qy = query(
@@ -148,10 +139,9 @@ export default function EducationModelsPage() {
       setNewCount(newly.length);
       setShowNewBanner(newly.length > 0);
 
-      // デスクトップ通知（任意）
+      // 通知（許可済みなら常に送る）
       if (
         newly.length > 0 &&
-        desktopNotify === "on" &&
         typeof window !== "undefined" &&
         "Notification" in window &&
         Notification.permission === "granted"
@@ -165,7 +155,7 @@ export default function EducationModelsPage() {
     });
 
     return () => unsub();
-  }, [sortOrder, userId, lastSeen, desktopNotify]);
+  }, [sortOrder, userId, lastSeen]);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -265,7 +255,7 @@ export default function EducationModelsPage() {
           creatorName: form.creatorName.trim(),
           creatorId: userId,
           updatedAt: now,
-          isShared: target.isShared, // 共有状態は維持
+          isShared: target.isShared,
         };
       } else {
         const colRef = collection(db, "educationModels");
@@ -278,7 +268,7 @@ export default function EducationModelsPage() {
           creatorName: form.creatorName.trim(),
           creatorId: userId,
           updatedAt: now,
-          isShared: true, // 既定は共有ON
+          isShared: true,
         });
 
         await addDoc(collection(db, "educationModelsHistory"), {
@@ -564,10 +554,25 @@ export default function EducationModelsPage() {
     boxSizing: "border-box",
   };
 
+  const notifyBtnStyle: React.CSSProperties = {
+    border: "1px solid #ffc107",
+    background: "#fff8e1",
+    color: "#8d6e63",
+    borderRadius: 999,
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontWeight: 700,
+  };
+
   /* =========================
    * UI
    * ======================= */
   const displayModels = onlyNew ? models.filter(isNewItem) : models;
+
+  const notificationsSupported =
+    typeof window !== "undefined" && "Notification" in window;
+  const notificationsGranted =
+    notificationsSupported && Notification.permission === "granted";
 
   return (
     <>
@@ -677,7 +682,7 @@ export default function EducationModelsPage() {
           </label>
         </div>
 
-        {/* 新着バナー＆操作 */}
+        {/* 新着＆通知操作（通知OFFトグル削除） */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
           {showNewBanner && (
             <div style={newBannerStyle}>
@@ -696,9 +701,11 @@ export default function EducationModelsPage() {
             新着のみ
           </label>
 
-          <button onClick={toggleDesktopNotify} style={notifyBtnStyle}>
-            {desktopNotify === "on" ? "🔔 通知 ON" : "🔕 通知 OFF"}
-          </button>
+          {notificationsSupported && !notificationsGranted && (
+            <button onClick={requestNotificationPermission} style={notifyBtnStyle}>
+              🔔 通知を許可
+            </button>
+          )}
         </div>
 
         {/* エラー */}
@@ -960,15 +967,6 @@ const chipToggleStyle: React.CSSProperties = {
   background: "#f5f8ff",
   color: "#2a4aa0",
   fontSize: 12,
-};
-const notifyBtnStyle: React.CSSProperties = {
-  border: "1px solid #ffc107",
-  background: "#fff8e1",
-  color: "#8d6e63",
-  borderRadius: 999,
-  padding: "6px 10px",
-  cursor: "pointer",
-  fontWeight: 700,
 };
 const newChip: React.CSSProperties = {
   display: "inline-flex",
