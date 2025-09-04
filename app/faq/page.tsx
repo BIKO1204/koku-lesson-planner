@@ -1,7 +1,7 @@
 // pages/faq.tsx
 export default function FAQPage() {
-  const VERSION = "2025-09-02.1";
-  const UPDATED = "2025年9月2日";
+  const VERSION = "2025-09-04.1";
+  const UPDATED = "2025年9月4日";
   return (
     <main style={{ maxWidth: 800, margin: "auto", padding: "2rem" }}>
       <h1>
@@ -232,7 +232,7 @@ export default function FAQPage() {
           <p style={{ fontSize: 14, color: "#444" }}>
             ※ 復旧の成否・範囲・時期は状況により異なります。詳細は{" "}
             <a href="/terms">利用規約 第16条</a> と{" "}
-            <a href="/privacy">プライバシーポリシー 第9条</a> をご確認ください。
+            <a href="/privacy">プライバシーポリシー 第10条</a> をご確認ください。
           </p>
         </details>
       </section>
@@ -292,6 +292,97 @@ export default function FAQPage() {
           <strong>載せないでください。</strong>
           児童の顔写真・氏名・学籍番号・連絡先など個人情報が含まれる内容はアップロード禁止です。やむを得ず写り込んだ場合は、
           <strong>投稿前に必ずマスキング・ぼかし</strong>をしてください。
+        </p>
+      </section>
+
+      {/* 追記：アップロード前の確認・共有・削除等 */}
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q19:</strong> 「アップロード前の確認」とは何ですか？
+        </h2>
+        <p>
+          PDFや補足資料をアップロードする前に、<strong>個人情報（児童等）や学校の内部情報、第三者著作物</strong>
+          が含まれていないかをユーザー自身で点検し、同意チェックで意思表示していただくものです。自動検出や審査を保証する機能ではありません。
+          詳細は <a href="/terms">利用規約 第17条</a> をご確認ください。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q20:</strong> 「共有から外す」を押すとどうなりますか？
+        </h2>
+        <p>
+          共有ページで<strong>非表示</strong>になります。データ自体は残るため、投稿者は引き続き利用可能です。検索結果やキャッシュへの反映には時間がかかる場合があります（
+          <a href="/terms">利用規約 第6条・第18条</a>）。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q21:</strong> コンテンツを削除したら完全に消えますか？
+        </h2>
+        <p>
+          運用データからは削除されますが、<strong>災害対策のバックアップに最大30日残存</strong>する場合があります。復旧はベストエフォートです（
+          <a href="/privacy">プライバシーポリシー 第10条</a>／
+          <a href="/terms">利用規約 第16条</a>）。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q22:</strong> アップロードするPDFの推奨仕様は？
+        </h2>
+        <ul>
+          <li>パスワード保護なしの PDF（文字化け防止のため日本語フォント埋め込み推奨）</li>
+          <li>スキャンのときは機微情報の黒塗り・塗りつぶしを実施</li>
+          <li>サイズが大きいと失敗することがあります。必要に応じて解像度やページ数を調整してください。</li>
+        </ul>
+        <p style={{ fontSize: 13 }}>
+          ※ 上限は将来変更されることがあります。エラー時は分割してアップロードをお試しください。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q23:</strong> 学校の内部資料・配布物はアップロードできますか？
+        </h2>
+        <p>
+          内部情報や非公開資料のアップロードは<strong>避けてください</strong>。必要な場合は、公開可能な範囲に編集・匿名化し、所属組織の規程や著作権・個人情報保護のルールに従ってください（
+          <a href="/terms">利用規約 第7条</a>）。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q24:</strong> 著作権・引用の注意点は？
+        </h2>
+        <p>
+          教材・図表・本文は権利者がいます。引用は必要最小限・出典明記・本文と引用の明確な区別等の要件を守ってください。教科書や有償資料のスキャン全体のアップロードは避けてください（
+          <a href="/terms">利用規約 第4条・第7条</a>）。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q25:</strong> だれが私の資料を見られますか？
+        </h2>
+        <p>
+          共有しない限り、他ユーザーからは見えません。共有を有効にすると、共有ページから閲覧可能になります。障害対応や運用保守の必要最小限の範囲で、運営者がアクセスする場合があります（
+          <a href="/privacy">プライバシーポリシー</a>）。
+        </p>
+      </section>
+
+      <section style={{ margin: "2rem 0" }}>
+        <h2>
+          <strong>Q26:</strong> 自己バックアップのおすすめは？
+        </h2>
+        <ul>
+          <li>授業案・実践記録の<strong>PDF保存</strong>（クラウドドライブに保管）</li>
+          <li>板書画像を端末本体にも保存／整理</li>
+          <li>重要メモをテキストでも控える</li>
+        </ul>
+        <p style={{ fontSize: 13 }}>
+          参考：<a href="/terms">利用規約 第16条</a>／<a href="/privacy">プライバシーポリシー 第10条</a>
         </p>
       </section>
     </main>

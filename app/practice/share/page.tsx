@@ -144,10 +144,10 @@ export default function PracticeSharePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pdfGeneratingId, setPdfGeneratingId] = useState<string | null>(null);
 
-  // ▼ NEW: 表示時の板書見やすさ補正ON/OFF
+  // 表示時の板書見やすさ補正ON/OFF
   const [enhanceBoards, setEnhanceBoards] = useState<boolean>(true);
 
-  // ▼ NEW: 新着管理
+  // 新着管理
   const [lastVisit, setLastVisit] = useState<number>(0);
   const [newIds, setNewIds] = useState<string[]>([]);
   const [showNewOnly, setShowNewOnly] = useState<boolean>(false);
@@ -231,13 +231,13 @@ export default function PracticeSharePage() {
     };
   }, []);
 
-  // ▼ NEW: 前回訪問時刻の初期化
+  // 前回訪問時刻の初期化
   useEffect(() => {
     const v = Number(localStorage.getItem(LAST_VISIT_KEY) || "0");
     setLastVisit(isNaN(v) ? 0 : v);
   }, []);
 
-  // ▼ NEW: 新着IDを算出
+  // 新着IDを算出
   useEffect(() => {
     const ids = records
       .filter((r) => {
@@ -248,7 +248,7 @@ export default function PracticeSharePage() {
     setNewIds(ids);
   }, [records, lastVisit]);
 
-  // ▼ NEW: 既読化
+  // 既読化
   const markAllAsRead = () => {
     const now = Date.now();
     setLastVisit(now);
@@ -283,7 +283,7 @@ export default function PracticeSharePage() {
     if (unitNameFilter && !r.unitName?.includes(unitNameFilter)) return false;
     if (authorFilter && !r.authorName?.includes(authorFilter)) return false;
 
-    // ▼ NEW: 新着のみ表示
+    // 新着のみ表示
     const created = tsToMillis(r.createdAt) || tsToMillis(r.practiceDate);
     if (showNewOnly && !(created > lastVisit)) return false;
 
@@ -887,6 +887,26 @@ export default function PracticeSharePage() {
     }
   };
 
+  // ▼ NEW: ページ上部の説明＆注意
+  const PageTopNotice = () => (
+    <section style={infoBoxStyle} aria-label="このページの説明と注意事項">
+      <h2 style={{ margin: "0 0 6px", fontSize: "1.1rem" }}>このページについて</h2>
+      <p style={{ margin: "0 0 6px" }}>
+        ここは<strong>共有版の実践記録</strong>を閲覧・検索できるページです。授業案や振り返り、板書写真、補足資料（PDF）などを共有できます。
+      </p>
+      <ul style={noteListStyle}>
+        <li>児童・生徒を<strong>直接特定できる情報</strong>（氏名・顔写真・学籍番号・連絡先 等）は掲載・アップロードしないでください。</li>
+        <li>学校の<strong>内部情報・機微情報</strong>（内部連絡・成績・校務資料 等）はアップロードしないでください。</li>
+        <li>アップロードされた資料は本サービス上に<strong>保存</strong>され、関係者が閲覧できる場合があります。取り扱いにはご注意ください。</li>
+        <li>
+          詳細は <Link href="/terms" style={linkStyle}>利用規約</Link> と{" "}
+          <Link href="/privacy" style={linkStyle}>プライバシーポリシー</Link> をご確認ください。
+        </li>
+      </ul>
+    </section>
+  );
+
+  // ▼ アップロードUI（注意＋同意チェック付き）
   const PdfFileInput = ({
     lessonId,
     uploading,
@@ -896,37 +916,71 @@ export default function PracticeSharePage() {
     uploading: boolean;
     onUpload: (lessonId: string, file: File) => void;
   }) => {
+    const [confirmed, setConfirmed] = React.useState(false);
+
     return (
-      <label
-        htmlFor={`pdf-upload-${lessonId}`}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          cursor: uploading ? "not-allowed" : "pointer",
-          color: "#1976d2",
-          fontWeight: "bold",
-          border: "1px solid #1976d2",
-          padding: "6px 12px",
-          borderRadius: 6,
-          userSelect: "none",
-        }}
-      >
-        📄 PDFファイル（指導案などを追加）を選択
-        <input
-          id={`pdf-upload-${lessonId}`}
-          type="file"
-          accept="application/pdf"
-          disabled={uploading}
-          style={{ display: "none" }}
-          onChange={(e) => {
-            if (e.target.files && e.target.files[0]) {
-              onUpload(lessonId, e.target.files[0]);
-              (e.target as HTMLInputElement).value = "";
-            }
+      <div style={{ marginTop: 8 }}>
+        <div style={warnBoxStyle} role="region" aria-label="アップロード前の注意事項">
+          <strong style={{ display: "block", marginBottom: 6 }}>アップロード前の確認</strong>
+          <ul style={warnUlStyle}>
+            <li>児童・生徒が特定される個人情報（氏名、顔写真、学籍番号、連絡先 等）が含まれていないこと</li>
+            <li>学校内の非公開情報・機微情報（内部連絡、成績情報、校務資料 等）が含まれていないこと</li>
+            <li>第三者の著作物・図表等がある場合、権利処理（許諾・引用要件）を完了していること</li>
+            <li>この資料はサービス上に<strong>保存</strong>されるため、取り扱いには十分ご注意ください</li>
+          </ul>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+            />
+            <span>
+              上記を確認し、<Link href="/terms" style={linkStyle}>利用規約</Link>と
+              <Link href="/privacy" style={linkStyle}>プライバシーポリシー</Link>に同意します
+            </span>
+          </label>
+        </div>
+
+        <label
+          htmlFor={`pdf-upload-${lessonId}`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            cursor: uploading || !confirmed ? "not-allowed" : "pointer",
+            color: confirmed ? "#1976d2" : "#9e9e9e",
+            fontWeight: "bold",
+            border: `1px solid ${confirmed ? "#1976d2" : "#ccc"}`,
+            padding: "6px 12px",
+            borderRadius: 6,
+            userSelect: "none",
+            opacity: uploading || !confirmed ? 0.6 : 1,
+            marginTop: 8,
           }}
-        />
-      </label>
+          title={confirmed ? "PDFを選択" : "注意事項に同意してください"}
+        >
+          📄 指導案や補足資料を追加（PDF）
+          <input
+            id={`pdf-upload-${lessonId}`}
+            type="file"
+            accept="application/pdf"
+            disabled={uploading || !confirmed}
+            style={{ display: "none" }}
+            onChange={(e) => {
+              if (!confirmed) return;
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.size > 50 * 1024 * 1024) {
+                alert("ファイルサイズが大きすぎます（上限 50MB 目安）");
+                (e.target as HTMLInputElement).value = "";
+                return;
+              }
+              onUpload(lessonId, f);
+              (e.target as HTMLInputElement).value = "";
+            }}
+          />
+        </label>
+      </div>
     );
   };
 
@@ -995,7 +1049,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ▼ NEW: 新着バナー */}
+      {/* 新着バナー */}
       {newIds.length > 0 && (
         <div style={newBannerStyle}>
           新着の実践記録が <b>{newIds.length}</b> 件あります
@@ -1114,7 +1168,7 @@ export default function PracticeSharePage() {
             />
           </div>
 
-          {/* ▼ NEW: 新着のみ表示 */}
+          {/* 新着のみ表示 */}
           <div style={{ marginTop: 8 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
@@ -1151,6 +1205,9 @@ export default function PracticeSharePage() {
             marginTop: isMobile ? 0 : undefined,
           }}
         >
+          {/* ▼ NEW: ページ上部の簡単な説明と注意 */}
+          <PageTopNotice />
+
           {filteredRecords.length === 0 ? (
             <p>条件に合う実践記録がありません。</p>
           ) : (
@@ -1383,7 +1440,7 @@ export default function PracticeSharePage() {
                               objectFit: "contain",
                               imageRendering: "auto",
                               display: "block",
-                              // ▼ NEW: 表示時フィルタ（ON/OFF可）
+                              // 表示時フィルタ（ON/OFF可）
                               filter: enhanceBoards
                                 ? "contrast(1.12) brightness(1.03) saturate(1.05)"
                                 : "none",
@@ -1683,7 +1740,6 @@ const likeBtnDisabledStyle: CSSProperties = {
   opacity: 0.6,
 };
 const commentListStyle: CSSProperties = {
-  // 直接表示（スクロールなし）
   marginTop: 8,
   border: "1px solid #ddd",
   padding: 8,
@@ -1771,7 +1827,7 @@ const getOverlayStyle = (open: boolean): CSSProperties => ({
   zIndex: 998,
 });
 
-// ▼ NEW: 新着用のスタイル
+// 新着用のスタイル
 const newBadgeStyle: CSSProperties = {
   backgroundColor: "#ff7043",
   color: "#fff",
@@ -1805,4 +1861,43 @@ const bannerBtnStyle: CSSProperties = {
   padding: "6px 10px",
   cursor: "pointer",
   fontSize: 13,
+};
+
+// ▼ NEW: 注意ボックスとリンクのスタイル
+const warnBoxStyle: CSSProperties = {
+  background: "#fff8e1",
+  border: "1px solid #ffe082",
+  borderLeft: "6px solid #ffa000",
+  color: "#5d4037",
+  padding: "10px 12px",
+  borderRadius: 8,
+  fontSize: 14,
+};
+const warnUlStyle: CSSProperties = {
+  margin: "6px 0 0 1.2em",
+  padding: 0,
+  lineHeight: 1.6,
+};
+const linkStyle: CSSProperties = {
+  color: "#1976d2",
+  textDecoration: "underline",
+  margin: "0 2px",
+};
+
+// ▼ NEW: ページ上部の説明ボックス
+const infoBoxStyle: CSSProperties = {
+  background: "#eef7ff",
+  border: "1px solid #cfe3ff",
+  borderLeft: "6px solid #1976d2",
+  color: "#184a7a",
+  padding: "12px 14px",
+  borderRadius: 10,
+  marginBottom: 16,
+  lineHeight: 1.6,
+  fontSize: 14,
+};
+const noteListStyle: CSSProperties = {
+  margin: "6px 0 0 1.2em",
+  padding: 0,
+  lineHeight: 1.6,
 };
