@@ -485,18 +485,28 @@ export default function PracticeSharePage() {
   };
 
   // 共有解除（共有ページからだけ非表示・ドキュメントは残す）
+  // ※コメントやいいね等のデータは削除しません（そのまま残ります）
   const handleUnshareRecord = async (lessonId: string) => {
-    if (!session) return alert("ログインしてください");
+    if (!session) {
+      alert("ログインしてください");
+      return;
+    }
     const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) return alert("対象の実践案が見つかりません");
-    if (record.author !== userId) return alert("共有解除は投稿者のみ可能です");
+    if (!record || !record.modelType) {
+      alert("対象の実践案が見つかりません");
+      return;
+    }
+    if (record.author !== userId) {
+      alert("共有解除は投稿者のみ可能です");
+      return;
+    }
     if (!confirm("この実践記録を共有版から外します（個人の実践記録は残ります）。よろしいですか？")) return;
 
     try {
       const collectionName = `practiceRecords_${record.modelType}`;
       const docRef = doc(db, collectionName, lessonId);
       await updateDoc(docRef, { isShared: false });
-      alert("共有を解除しました（個人の実践記録は残っています）");
+      alert("共有を解除しました（個人の実践記録・コメントは残っています）");
     } catch (e) {
       console.error("共有解除失敗", e);
       alert("共有解除に失敗しました");
@@ -531,12 +541,12 @@ export default function PracticeSharePage() {
     });
 
   type EnhanceOpts = {
-    maxWidth?: number; // 例: 1800px
-    maxHeight?: number; // 例: 1800px
-    jpegQuality?: number; // 0.0 - 1.0
-    contrast?: number; // 例: 1.08（8%アップ）
-    brightness?: number; // 例: 1.02（2%アップ）
-    saturate?: number; // 例: 1.05（5%アップ）
+    maxWidth?: number;
+    maxHeight?: number;
+    jpegQuality?: number;
+    contrast?: number;
+    brightness?: number;
+    saturate?: number;
   };
 
   // 画像をキャンバスに高品質描画 + 軽い補正をかけて DataURL へ
@@ -552,7 +562,6 @@ export default function PracticeSharePage() {
 
     const img = await loadImage(url);
 
-    // アスペクト比を保ったまま、最大辺を制限
     let tw = img.naturalWidth;
     let th = img.naturalHeight;
     const wScale = maxWidth ? maxWidth / tw : 1;
@@ -567,10 +576,8 @@ export default function PracticeSharePage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasコンテキスト取得失敗");
 
-    // 高品質リサンプル
     ctx.imageSmoothingEnabled = true;
     (ctx as any).imageSmoothingQuality = "high";
-    // 軽い見やすさ補正
     ctx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
 
     ctx.drawImage(img, 0, 0, tw, th);
@@ -578,7 +585,7 @@ export default function PracticeSharePage() {
     return canvas.toDataURL("image/jpeg", jpegQuality);
   };
 
-  // すべての板書画像を順次（上限なしで）Base64化。失敗時は空文字を返す
+  // すべての板書画像を順次Base64化。失敗時は空文字を返す
   const convertImagesToBase64 = async (
     images: BoardImage[],
     opts?: EnhanceOpts,
@@ -587,7 +594,6 @@ export default function PracticeSharePage() {
     const target = typeof maxCount === "number" ? images.slice(0, maxCount) : images;
     const result: string[] = [];
     for (let i = 0; i < target.length; i++) {
-      // 少し間を置いてメモリスパイク回避
       await new Promise((r) => setTimeout(r, 50));
       try {
         const base64 = await toBase64Enhanced(target[i].src, opts);
@@ -607,7 +613,6 @@ export default function PracticeSharePage() {
       return;
     }
 
-    // 端末判定（モバイル／タブレット）
     const isSmallDevice =
       typeof window !== "undefined" &&
       (window.innerWidth <= 820 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
@@ -625,32 +630,12 @@ export default function PracticeSharePage() {
       tempDiv.style.lineHeight = "1.35";
       tempDiv.style.fontSize = "12px";
 
-      // 分割回避CSSを注入（iOS含む）
       const style = document.createElement("style");
       style.textContent = `
-        .h2pdf-avoid{
-          page-break-inside: avoid;
-          break-inside: avoid;
-          -webkit-page-break-inside: avoid;
-          -webkit-column-break-inside: avoid;
-          -webkit-region-break-inside: avoid;
-        }
-        .h2pdf-img{
-          display:block;
-          width:100%;
-          max-width:600px;
-          height:auto;
-          border:1px solid #ccc;
-          border-radius:8px;
-          margin:0 auto;
-        }
+        .h2pdf-avoid{ page-break-inside:avoid; break-inside:avoid; -webkit-page-break-inside:avoid; -webkit-column-break-inside:avoid; -webkit-region-break-inside:avoid; }
+        .h2pdf-img{ display:block; width:100%; max-width:600px; height:auto; border:1px solid #ccc; border-radius:8px; margin:0 auto; }
         .h2pdf-section{ margin-bottom:12px; }
-        .h2pdf-title{
-          border-bottom:2px solid #4CAF50;
-          padding-bottom:8px;
-          margin:0 0 12px;
-          font-size:20px;
-        }
+        .h2pdf-title{ border-bottom:2px solid #4CAF50; padding-bottom:8px; margin:0 0 12px; font-size:20px; }
       `;
       tempDiv.appendChild(style);
 
@@ -666,7 +651,6 @@ export default function PracticeSharePage() {
         (p) => p.id === record.lessonId && p.modelType === record.modelType
       );
 
-      // 授業案HTML
       let lessonPlanHtml = "";
       if (plan && typeof plan.result === "object") {
         const ar = (v: any) =>
@@ -699,21 +683,15 @@ export default function PracticeSharePage() {
               <strong>評価の観点：</strong>
               <p style="margin:4px 0;"><strong>知識・技能</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${knowledge
-                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
-                  .join("")}
+                ${knowledge.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
               </ul>
               <p style="margin:4px 0;"><strong>思考・判断・表現</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${thinking
-                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
-                  .join("")}
+                ${thinking.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
               </ul>
               <p style="margin:4px 0;"><strong>主体的に学習に取り組む態度</strong></p>
               <ul style="margin:0 0 4px; padding-left:16px;">
-                ${attitude
-                  .map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`)
-                  .join("")}
+                ${attitude.map((v: string) => `<li style="margin-bottom:2px;">${escapeHtml(v)}</li>`).join("")}
               </ul>
             </div>
           `;
@@ -730,17 +708,13 @@ export default function PracticeSharePage() {
           const flow = plan.result["授業の流れ"];
           lessonPlanHtml += `<p style="margin:4px 0;"><strong>授業の流れ：</strong></p>`;
           if (typeof flow === "string") {
-            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(
-              flow
-            )}</p>`;
+            lessonPlanHtml += `<p class="h2pdf-avoid" style="white-space:pre-wrap;">${escapeHtml(flow)}</p>`;
           } else if (Array.isArray(flow)) {
             lessonPlanHtml += `<ul class="h2pdf-avoid" style="margin:0 0 4px; padding-left:16px;">
               ${flow
-                .map((it: any) =>
-                  `<li style="margin-bottom:2px;">${
-                    typeof it === "string" ? escapeHtml(it) : escapeHtml(JSON.stringify(it))
-                  }</li>`
-                )
+                .map((it: any) => `<li style="margin-bottom:2px;">${
+                  typeof it === "string" ? escapeHtml(it) : escapeHtml(JSON.stringify(it))
+                }</li>`)
                 .join("")}
             </ul>`;
           } else if (typeof flow === "object") {
@@ -764,12 +738,10 @@ export default function PracticeSharePage() {
         lessonPlanHtml += `</div>`;
       }
 
-      // 画像のエンコード設定（モバイルは軽め）
       const imgOpts = isSmallDevice
         ? { maxWidth: 1400, maxHeight: 1400, jpegQuality: 0.88, contrast: 1.07, brightness: 1.02, saturate: 1.03 }
         : { maxWidth: 1800, maxHeight: 1800, jpegQuality: 0.92, contrast: 1.08, brightness: 1.02, saturate: 1.04 };
 
-      // 板書
       let boardImagesHtml = "";
       if (record.boardImages.length > 0) {
         const base64Images = await convertImagesToBase64(record.boardImages, imgOpts);
@@ -786,7 +758,6 @@ export default function PracticeSharePage() {
         });
       }
 
-      // コメント
       let commentsHtml = "";
       if (Array.isArray(record.comments) && record.comments.length > 0) {
         commentsHtml += `<h2 class="h2pdf-section h2pdf-avoid" style="color:#4CAF50; margin-top:16px; margin-bottom:8px;">コメント</h2>`;
@@ -1119,10 +1090,11 @@ export default function PracticeSharePage() {
                         backgroundColor: "#1976d2",
                         color: "white",
                         border: "none",
-                        borderRadius: 6,
-                        padding: "6px 12px",
+                        borderRadius: 8,
+                        padding: "10px 14px",
                         cursor: "pointer",
                         marginBottom: 8,
+                        fontSize: "0.95rem",
                       }}
                       title="投稿者のみ編集できます"
                     >
@@ -1136,12 +1108,13 @@ export default function PracticeSharePage() {
                       backgroundColor: "#FF9800",
                       color: "white",
                       border: "none",
-                      borderRadius: 6,
-                      padding: "6px 12px",
+                      borderRadius: 8,
+                      padding: "10px 14px",
                       cursor: pdfGeneratingId === r.lessonId ? "not-allowed" : "pointer",
                       marginBottom: 12,
                       marginLeft: isAuthor ? 8 : 0,
                       opacity: pdfGeneratingId === r.lessonId ? 0.6 : 1,
+                      fontSize: "0.95rem",
                     }}
                     disabled={pdfGeneratingId === r.lessonId}
                   >
@@ -1208,7 +1181,6 @@ export default function PracticeSharePage() {
                       {plan.result["授業の流れ"] && (
                         <div>
                           <strong>授業の流れ：</strong>
-                          {/* 文字列 / 配列 / 連想オブジェクト すべて対応 */}
                           {typeof plan.result["授業の流れ"] === "string" && (
                             <p style={{ whiteSpace: "pre-wrap" }}>
                               {plan.result["授業の流れ"]}
@@ -1235,7 +1207,8 @@ export default function PracticeSharePage() {
                                     return numA - numB;
                                   })
                                   .map(([key, val]) => {
-                                    const content = typeof val === "string" ? val : JSON.stringify(val);
+                                    const content =
+                                      typeof val === "string" ? val : JSON.stringify(val);
                                     return (
                                       <li key={key}>
                                         <strong>{key}:</strong> {content}
@@ -1310,128 +1283,117 @@ export default function PracticeSharePage() {
                     )}
                   </div>
 
-                  {/* 共有版では完全削除はしない。共有から外すだけ */}
+                  {/* 共有版では完全削除はしない。共有から外すだけ（コメント等は残る） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
                         onClick={() => handleUnshareRecord(r.lessonId)}
-                        style={{ ...commentBtnStyle, backgroundColor: "#888" }}
+                        style={{ ...commentActionBtnStyle, backgroundColor: "#888" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
-                        title="共有ページからだけ非表示にします（個人の実践記録は残ります）"
+                        title="共有ページからだけ非表示にします（個人の実践記録・コメントは残ります）"
                       >
                         共有から外す
                       </button>
                     </div>
                   )}
 
-                  <div style={{ marginTop: 12 }}>
-                    <button
-                      style={isLikedByUser(r) ? likeBtnDisabledStyle : likeBtnStyle}
-                      onClick={() => handleLike(r.lessonId)}
-                      title={!session ? "ログインしてください" : undefined}
-                    >
-                      👍 いいね {r.likes || 0}
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: 12 }}>
+                  {/* ===== コメント（スクロール廃止して全件表示）===== */}
+                  <div style={{ marginTop: 16 }}>
                     <strong>コメント</strong>
-                    <div style={commentListStyle}>
-                      {(r.comments || []).map((c, i) => (
-                        <div key={i} style={{ marginBottom: 12 }}>
-                          <b>{c.displayName}</b>{" "}
-                          <small>
-                            {c.createdAt
-                              ? `(${new Date(c.createdAt).toLocaleDateString()})`
-                              : ""}
-                          </small>
-                          <br />
+
+                    {(r.comments || []).length === 0 ? (
+                      <p style={{ marginTop: 8, color: "#666" }}>まだコメントはありません。</p>
+                    ) : (
+                      (r.comments || []).map((c, i) => (
+                        <div key={i} style={commentRowStyle}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <b>{c.displayName}</b>
+                            <small style={{ color: "#666" }}>
+                              {c.createdAt
+                                ? `(${new Date(c.createdAt).toLocaleDateString()})`
+                                : ""}
+                            </small>
+                          </div>
+
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&
                           editingCommentId.index === i ? (
                             <>
                               <textarea
-                                rows={3}
+                                rows={4}
                                 value={editingCommentText}
                                 onChange={onEditCommentTextChange}
                                 style={commentInputStyle}
                               />
-                              <button
-                                style={{ ...commentBtnStyle, marginRight: 8 }}
-                                onClick={handleUpdateComment}
-                              >
-                                更新
-                              </button>
-                              <button
-                                style={{ ...commentBtnStyle, backgroundColor: "#e53935" }}
-                                onClick={cancelEditComment}
-                              >
-                                キャンセル
-                              </button>
+                              <div style={commentActionsStyle}>
+                                <button
+                                  style={commentActionBtnStyle}
+                                  onClick={handleUpdateComment}
+                                >
+                                  更新
+                                </button>
+                                <button
+                                  style={commentDangerBtnStyle}
+                                  onClick={cancelEditComment}
+                                >
+                                  キャンセル
+                                </button>
+                              </div>
                             </>
                           ) : (
                             <>
-                              <p style={{ whiteSpace: "pre-wrap" }}>{c.comment}</p>
+                              <p style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{c.comment}</p>
                               {session && c.userId === userId && (
-                                <>
+                                <div style={commentActionsStyle}>
                                   <button
-                                    style={{
-                                      ...commentBtnStyle,
-                                      marginRight: 8,
-                                      padding: "4px 8px",
-                                      fontSize: 12,
-                                    }}
+                                    style={commentActionBtnStyle}
                                     onClick={() => startEditComment(r.lessonId, i, c.comment)}
                                   >
                                     編集
                                   </button>
                                   <button
-                                    style={{
-                                      ...commentBtnStyle,
-                                      backgroundColor: "#e53935",
-                                      padding: "4px 8px",
-                                      fontSize: 12,
-                                    }}
+                                    style={commentDangerBtnStyle}
                                     onClick={() => handleDeleteComment(r.lessonId, i)}
                                   >
                                     削除
                                   </button>
-                                </>
+                                </div>
                               )}
                             </>
                           )}
-                          <hr />
                         </div>
-                      ))}
+                      ))
+                    )}
+
+                    {/* 投稿欄 */}
+                    <div style={{ marginTop: 12 }}>
+                      <input
+                        type="text"
+                        placeholder="コメント者名（必須）"
+                        value={newCommentAuthors[r.lessonId] || ""}
+                        onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
+                        style={commentAuthorInputStyle}
+                        disabled={!session}
+                        title={session ? undefined : "ログインしてください"}
+                      />
+                      <textarea
+                        rows={4}
+                        placeholder="コメントを入力"
+                        value={newComments[r.lessonId] || ""}
+                        onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
+                        style={commentInputStyle}
+                        disabled={!session}
+                        title={session ? undefined : "ログインしてください"}
+                      />
+                      <button
+                        style={commentActionBtnStyle}
+                        onClick={() => handleAddComment(r.lessonId)}
+                        disabled={!session}
+                        title={session ? undefined : "ログインしてください"}
+                      >
+                        コメント投稿
+                      </button>
                     </div>
-
-                    <input
-                      type="text"
-                      placeholder="コメント者名（必須）"
-                      value={newCommentAuthors[r.lessonId] || ""}
-                      onChange={(e) => handleCommentAuthorChange(r.lessonId, e.target.value)}
-                      style={commentAuthorInputStyle}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
-                    />
-
-                    <textarea
-                      rows={3}
-                      placeholder="コメントを入力"
-                      value={newComments[r.lessonId] || ""}
-                      onChange={(e) => handleCommentChange(r.lessonId, e.target.value)}
-                      style={commentInputStyle}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
-                    />
-                    <button
-                      style={commentBtnStyle}
-                      onClick={() => handleAddComment(r.lessonId)}
-                      disabled={!session}
-                      title={session ? undefined : "ログインしてください"}
-                    >
-                      コメント投稿
-                    </button>
                   </div>
                 </article>
               );
@@ -1553,37 +1515,49 @@ const likeBtnDisabledStyle: CSSProperties = {
   cursor: "pointer",
   opacity: 0.6,
 };
-const commentListStyle: CSSProperties = {
-  maxHeight: 150,
-  overflowY: "auto",
-  marginTop: 8,
-  border: "1px solid #ddd",
-  padding: 8,
-  borderRadius: 6,
+
+// コメントUI（スクロール廃止・ボタン大きめ）
+const commentRowStyle: CSSProperties = {
+  marginTop: 10,
+  padding: 10,
+  border: "1px solid #eee",
+  borderRadius: 8,
   backgroundColor: "#fff",
+};
+const commentActionsStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  marginTop: 8,
+  flexWrap: "wrap",
 };
 const commentInputStyle: CSSProperties = {
   width: "100%",
-  padding: 8,
+  padding: 10,
   marginTop: 8,
-  borderRadius: 4,
+  borderRadius: 6,
   border: "1px solid #ccc",
+  fontSize: "0.95rem",
 };
-const commentBtnStyle: CSSProperties = {
-  marginTop: 8,
-  padding: "6px 12px",
+const commentActionBtnStyle: CSSProperties = {
+  padding: "8px 14px",
   backgroundColor: "#4caf50",
   color: "white",
   border: "none",
-  borderRadius: 4,
+  borderRadius: 8,
   cursor: "pointer",
+  fontSize: "0.95rem",
+};
+const commentDangerBtnStyle: CSSProperties = {
+  ...commentActionBtnStyle,
+  backgroundColor: "#e53935",
 };
 const commentAuthorInputStyle: CSSProperties = {
   width: "100%",
-  padding: 6,
+  padding: 10,
   marginTop: 8,
-  borderRadius: 4,
+  borderRadius: 6,
   border: "1px solid #aaa",
+  fontSize: "0.95rem",
 };
 const filterSectionTitleStyle: CSSProperties = {
   fontWeight: "bold",

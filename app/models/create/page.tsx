@@ -779,7 +779,7 @@ export default function EducationModelsPage() {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
                     <div>
                       <div style={{ fontWeight: 700 }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>更新：{m.updatedAt}</div>
+                      <div style={{ fontSize: 12, color: "#1976d2", marginTop: 2 }}>更新：{m.updatedAt}</div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => startEdit(m)} style={buttonGhost}>
