@@ -156,6 +156,13 @@ async function saveRecordToIndexedDB(rec: PracticeRecord) {
 }
 
 /* ======================= 画像ユーティリティ ======================= */
+type EnhanceOpts = {
+  enhance?: boolean;
+  contrast?: number;
+  brightness?: number;
+  saturate?: number;
+};
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -164,12 +171,16 @@ function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
 function resizeAndCompressFile(
   file: File,
   maxWidth: number,
   maxHeight: number,
-  quality = 0.7
+  quality = 0.9,
+  opts: EnhanceOpts = {}
 ): Promise<string> {
+  const { enhance = false, contrast = 1.12, brightness = 1.03, saturate = 1.05 } = opts;
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
@@ -182,14 +193,12 @@ function resizeAndCompressFile(
     img.onload = () => {
       let { width, height } = img;
 
-      if (width > maxWidth) {
-        height = (maxWidth / width) * height;
-        width = maxWidth;
-      }
-      if (height > maxHeight) {
-        width = (maxHeight / height) * width;
-        height = maxHeight;
-      }
+      // アスペクト比維持で縮小
+      const wScale = maxWidth / width;
+      const hScale = maxHeight / height;
+      const scale = Math.min(1, wScale, hScale);
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
 
       const canvas = document.createElement("canvas");
       canvas.width = width;
@@ -199,8 +208,18 @@ function resizeAndCompressFile(
         reject(new Error("Canvas is not supported"));
         return;
       }
+      // 高品質リサンプリング
+      ctx.imageSmoothingEnabled = true;
+      (ctx as any).imageSmoothingQuality = "high";
+
+      // 見やすさ補正（任意）
+      if (enhance) {
+        ctx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
+      }
+
       ctx.clearRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
+
       const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
       resolve(compressedBase64);
     };
@@ -332,6 +351,11 @@ export default function PracticeAddPage() {
   const [previousSignature, setPreviousSignature] = useState<string>("");
   const [needsReconfirm, setNeedsReconfirm] = useState<boolean>(true);
   const POLICY_VERSION = "2025-09-02"; // 任意の版番号/日付
+
+  // ▼ NEW: 見やすさ設定
+  const [enhancePreview, setEnhancePreview] = useState<boolean>(true); // プレビューにフィルタ
+  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);   // 圧縮時に焼き込む
+  const [compressLongEdge, setCompressLongEdge] = useState<number>(1400); // 長辺ピクセル
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
@@ -620,7 +644,13 @@ export default function PracticeAddPage() {
     for (const file of files) {
       try {
         const fullBase64 = await fileToBase64(file);
-        const compressedBase64 = await resizeAndCompressFile(file, 800, 600, 0.7);
+        const compressedBase64 = await resizeAndCompressFile(
+          file,
+          compressLongEdge,
+          compressLongEdge,
+          0.9,
+          { enhance: enhanceUpload, contrast: 1.12, brightness: 1.03, saturate: 1.05 }
+        );
         newFullImages.push({ name: file.name, src: fullBase64 });
         newCompressedImages.push({ name: file.name, src: compressedBase64 });
       } catch (error) {
@@ -974,6 +1004,41 @@ export default function PracticeAddPage() {
           </p>
         </div>
 
+        {/* ▼ NEW: 板書画像の見やすさ設定 */}
+        <div style={boxStyle}>
+          <strong>板書画像の見やすさ設定</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={enhancePreview}
+                onChange={(e) => setEnhancePreview(e.target.checked)}
+              />
+              プレビューに見やすさ補正を適用（コントラスト等）
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={enhanceUpload}
+                onChange={(e) => setEnhanceUpload(e.target.checked)}
+              />
+              アップロード用の圧縮画像にも補正を焼き込む
+            </label>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            圧縮サイズ（長辺ピクセル）：
+            <select
+              value={compressLongEdge}
+              onChange={(e) => setCompressLongEdge(parseInt(e.target.value, 10))}
+              style={{ marginLeft: 8, padding: 4 }}
+            >
+              <option value={1000}>1000（軽量）</option>
+              <option value={1400}>1400（標準）</option>
+              <option value={1800}>1800（高画質）</option>
+            </select>
+          </div>
+        </div>
+
         <form onSubmit={handlePreview}>
           <div style={boxStyle}>
             <label>
@@ -1178,6 +1243,8 @@ export default function PracticeAddPage() {
                     border: "1px solid #ccc",
                     display: "block",
                     maxWidth: "100%",
+                    // ▼ NEW: プレビューの見やすさ補正（ON/OFF）
+                    filter: enhancePreview ? "contrast(1.12) brightness(1.03) saturate(1.05)" : "none",
                   }}
                 />
               </div>
@@ -1436,6 +1503,9 @@ export default function PracticeAddPage() {
                             border: "1px solid #ccc",
                             display: "block",
                             maxWidth: "100%",
+                            filter: enhancePreview
+                              ? "contrast(1.12) brightness(1.03) saturate(1.05)"
+                              : "none",
                           }}
                         />
                       </div>
