@@ -7,7 +7,7 @@ import {
   collection,
   query,
   orderBy,
-  getDocs,
+  onSnapshot,
   addDoc,
   updateDoc,
   doc,
@@ -70,36 +70,102 @@ export default function EducationModelsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // 一覧取得（共有=true か、自分のモデルは常に表示）
+  /* =========================
+   * 新着検知/通知関連
+   * ======================= */
+  const LAST_SEEN_KEY = "eduModels:lastSeen";
+  const NOTIFY_KEY = "eduModels:notify";
+
+  const [lastSeen, setLastSeen] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const v = localStorage.getItem(LAST_SEEN_KEY);
+    return v ? parseInt(v, 10) : 0;
+    // 0 の場合は初回は全件を既読扱いせず “NEW” 表示の対象
+  });
+  const [newCount, setNewCount] = useState(0);
+  const [showNewBanner, setShowNewBanner] = useState(false);
+  const [onlyNew, setOnlyNew] = useState(false);
+  const [desktopNotify, setDesktopNotify] = useState<"on" | "off">("off");
+
   useEffect(() => {
-    async function fetchModels() {
-      try {
-        const colRef = collection(db, "educationModels");
-        const qy = query(
-          colRef,
-          orderBy(
-            sortOrder === "newest" ? "updatedAt" : "name",
-            sortOrder === "newest" ? "desc" : "asc"
-          )
-        );
-        const snapshot = await getDocs(qy);
-        const raw = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<EducationModel, "id">),
-        })) as EducationModel[];
+    if (typeof window === "undefined") return;
+    const v = localStorage.getItem(NOTIFY_KEY);
+    if (v === "on") setDesktopNotify("on");
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(NOTIFY_KEY, desktopNotify);
+  }, [desktopNotify]);
 
-        // 未設定(isShared===undefined)は共有中として扱う
-        const list = raw.filter(
-          (m) => m.isShared !== false || m.creatorId === userId
-        );
+  const isNewItem = (m: EducationModel) => {
+    const t = Date.parse(m.updatedAt || "");
+    return !Number.isNaN(t) && t > lastSeen;
+  };
 
-        setModels(list);
-      } catch (e) {
-        console.error("Firestoreからの読み込みエラー:", e);
-      }
+  const markAllRead = () => {
+    const now = Date.now();
+    setLastSeen(now);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LAST_SEEN_KEY, String(now));
     }
-    fetchModels();
-  }, [sortOrder, userId]);
+    setNewCount(0);
+    setShowNewBanner(false);
+  };
+
+  const toggleDesktopNotify = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      alert("このブラウザは通知に対応していません。");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      setDesktopNotify((p) => (p === "on" ? "off" : "on"));
+    } else {
+      const p = await Notification.requestPermission();
+      if (p === "granted") setDesktopNotify("on");
+    }
+  };
+
+  // 一覧取得（共有=true か、自分のモデルは常に表示）＋ 新着カウント/通知
+  useEffect(() => {
+    const colRef = collection(db, "educationModels");
+    const qy = query(
+      colRef,
+      orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+    );
+
+    const unsub = onSnapshot(qy, (snapshot) => {
+      const raw = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<EducationModel, "id">),
+      })) as EducationModel[];
+
+      // 未設定(isShared===undefined)は共有中として扱う
+      const list = raw.filter((m) => m.isShared !== false || m.creatorId === userId);
+      setModels(list);
+
+      // 新着件数（最終既読以降）
+      const newly = list.filter(isNewItem);
+      setNewCount(newly.length);
+      setShowNewBanner(newly.length > 0);
+
+      // デスクトップ通知（任意）
+      if (
+        newly.length > 0 &&
+        desktopNotify === "on" &&
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          const title = `教育観モデルに新着 ${newly.length}件`;
+          const body = newly[0]?.name ? `${newly[0].name} ほか` : "";
+          new Notification(title, { body });
+        } catch {}
+      }
+    });
+
+    return () => unsub();
+  }, [sortOrder, userId, lastSeen, desktopNotify]);
 
   const handleChange = (field: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -501,6 +567,8 @@ export default function EducationModelsPage() {
   /* =========================
    * UI
    * ======================= */
+  const displayModels = onlyNew ? models.filter(isNewItem) : models;
+
   return (
     <>
       {/* ナビバー */}
@@ -609,16 +677,40 @@ export default function EducationModelsPage() {
           </label>
         </div>
 
+        {/* 新着バナー＆操作 */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          {showNewBanner && (
+            <div style={newBannerStyle}>
+              <span>🆕 新着 {newCount} 件</span>
+              <button onClick={markAllRead} style={bannerBtnStyle}>すべて既読にする</button>
+            </div>
+          )}
+
+          <label style={chipToggleStyle}>
+            <input
+              type="checkbox"
+              checked={onlyNew}
+              onChange={(e) => setOnlyNew(e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            新着のみ
+          </label>
+
+          <button onClick={toggleDesktopNotify} style={notifyBtnStyle}>
+            {desktopNotify === "on" ? "🔔 通知 ON" : "🔕 通知 OFF"}
+          </button>
+        </div>
+
         {/* エラー */}
         {error && (
           <p style={{ color: "#d32f2f", marginBottom: 12, fontWeight: 700 }}>{error}</p>
         )}
 
         {/* 一覧 */}
-        {models.length === 0 ? (
-          <p style={{ color: "#666" }}>表示できるモデルがありません。</p>
+        {displayModels.length === 0 ? (
+          <p style={{ color: "#666" }}>{onlyNew ? "新着はありません。" : "表示できるモデルがありません。"}</p>
         ) : (
-          models.map((m) => {
+          displayModels.map((m) => {
             const shared = m.isShared !== false; // 未設定は共有中
             return (
               <div key={m.id} style={cardStyle}>
@@ -627,6 +719,7 @@ export default function EducationModelsPage() {
                   <span style={statusChip} title={shared ? "共有中" : "非公開"}>
                     {shared ? "公開中" : "非公開"}
                   </span>
+                  {isNewItem(m) && <span style={newChip}>NEW</span>}
                 </h3>
 
                 <p><strong>作成者：</strong> {m.creatorName}</p>
@@ -834,4 +927,58 @@ const labelEdit: React.CSSProperties = {
   margin: "8px 0 4px",
   fontWeight: 600,
   color: "#455a64",
+};
+
+/* ===== 新着UIスタイル ===== */
+const newBannerStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#E8F5E9",
+  border: "1px solid #A5D6A7",
+  color: "#1B5E20",
+  fontWeight: 700,
+};
+const bannerBtnStyle: React.CSSProperties = {
+  background: "#43A047",
+  color: "#fff",
+  border: "none",
+  borderRadius: 6,
+  padding: "6px 10px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+const chipToggleStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "4px 8px",
+  borderRadius: 999,
+  border: "1px solid #c5d2f0",
+  background: "#f5f8ff",
+  color: "#2a4aa0",
+  fontSize: 12,
+};
+const notifyBtnStyle: React.CSSProperties = {
+  border: "1px solid #ffc107",
+  background: "#fff8e1",
+  color: "#8d6e63",
+  borderRadius: 999,
+  padding: "6px 10px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+const newChip: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  marginLeft: 8,
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: "#ffebee",
+  border: "1px solid #ffcdd2",
+  color: "#c62828",
+  fontSize: 11,
+  fontWeight: 800,
 };
