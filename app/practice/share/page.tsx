@@ -32,7 +32,7 @@ import {
 type BoardImage = { name: string; src: string };
 type Comment = {
   userId: string;
-  displayName: string; // ← ニックネーム
+  displayName: string; // ニックネーム
   comment: string;
   createdAt: string;
 };
@@ -52,18 +52,31 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string; // 表示は教材名
-  author?: string; // 投稿者のID（メール）
+  author?: string; // 投稿者のID（メール/UIDなど）
   authorName?: string; // 投稿者のニックネーム
   pdfFiles?: PdfFile[];
   createdAt?: any;
   modelType?: string; // reading / writing / discussion / language_activity
-  isShared?: boolean; // 共有ページに出すかどうか（未定義 or true=共有中、false=非共有）
+  isShared?: boolean; // 共有ページ表示フラグ（未定義 or true=共有中、false=非共有）
 };
 type LessonPlan = {
   id: string;
   result: any;
   modelType?: string; // reading / writing / discussion / language_activity
 };
+
+/* =========================
+ * ユーザー照合（作者判定を堅牢に）
+ * ======================= */
+const getMyIdentityKeys = (session: any): string[] => {
+  const u = session?.user || {};
+  // プロバイダにより user.id / user.sub / user.uid などが入りうる
+  return [u.email, u.id, (u as any).sub, (u as any).uid]
+    .filter(Boolean)
+    .map((s: any) => String(s));
+};
+const isRecordMine = (recordAuthor?: string, session?: any) =>
+  !!recordAuthor && getMyIdentityKeys(session).includes(String(recordAuthor));
 
 /* =========================
  * 新着ユーティリティ
@@ -73,7 +86,7 @@ const tsToMillis = (v: any): number => {
   if (!v) return 0;
   if (typeof v === "object" && v.seconds != null) {
     return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-    }
+  }
   if (typeof v?.toDate === "function") {
     try {
       return v.toDate().getTime();
@@ -126,7 +139,7 @@ const CORE_GENRES = ["物語文", "説明文", "詩"] as const;
 
 export default function PracticeSharePage() {
   const { data: session } = useSession();
-  const userId = session?.user?.email || "";
+  const userId = session?.user?.email || ""; // いいねの既存仕様を維持
   const router = useRouter();
 
   const [inputGrade, setInputGrade] = useState<string>("");
@@ -146,7 +159,7 @@ export default function PracticeSharePage() {
   const [newCommentAuthors, setNewCommentAuthors] = useState<Record<string, string>>({});
 
   const [editingCommentId, setEditingCommentId] =
-    useState<{ recordId: string; index: number } | null>(null);
+    useState<{ recordId: string; modelType?: string; index: number } | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>("");
 
   const [uploadingPdfIds, setUploadingPdfIds] = useState<string[]>([]);
@@ -195,7 +208,8 @@ export default function PracticeSharePage() {
               lessonId: docSnap.id,
               modelType: colName.replace("practiceRecords_", ""),
               likedUsers: d.likedUsers || [],
-              author: d.author || "",
+              // ★ author を堅牢にフォールバック
+              author: d.author || d.authorEmail || d.uid || d.userId || "",
               authorName: d.authorName || "",
               pdfFiles: d.pdfFiles || [],
               createdAt: d.createdAt || "",
@@ -309,30 +323,20 @@ export default function PracticeSharePage() {
   });
 
   /* =========================
-   * いいね・コメント
+   * いいね・コメント（record直参照版）
    * ======================= */
   const isLikedByUser = (record: PracticeRecord) => {
     if (!userId) return false;
     return record.likedUsers?.includes(userId) ?? false;
   };
 
-  const handleLike = async (lessonId: string) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
-    if (!userId) {
-      alert("ユーザー情報が取得できません");
-      return;
-    }
+  const handleLikeFor = async (record: PracticeRecord) => {
+    if (!session) return alert("ログインしてください");
+    if (!userId) return alert("ユーザー情報が取得できません");
+    if (!record.lessonId || !record.modelType) return alert("対象が特定できません");
 
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("モデルタイプが特定できません");
-      return;
-    }
     const collectionName = `practiceRecords_${record.modelType}`;
-    const docRef = doc(db, collectionName, lessonId);
+    const docRef = doc(db, collectionName, record.lessonId);
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -366,35 +370,24 @@ export default function PracticeSharePage() {
     setNewCommentAuthors((prev) => ({ ...prev, [lessonId]: value }));
   };
 
-  const handleAddComment = async (lessonId: string) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
+  const handleAddCommentFor = async (record: PracticeRecord) => {
+    if (!session) return alert("ログインしてください");
+
+    const lessonId = record.lessonId;
     const comment = newComments[lessonId]?.trim();
     const commentAuthor = newCommentAuthors[lessonId]?.trim();
-    if (!commentAuthor) {
-      alert("ニックネーム（コメント者名）を入力してください");
-      return;
-    }
-    if (!comment) {
-      alert("コメント内容を入力してください");
-      return;
-    }
+    if (!commentAuthor) return alert("ニックネーム（コメント者名）を入力してください");
+    if (!comment) return alert("コメント内容を入力してください");
+    if (!record.modelType) return alert("モデルタイプが特定できません");
 
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("モデルタイプが特定できません");
-      return;
-    }
     const collectionName = `practiceRecords_${record.modelType}`;
     const docRef = doc(db, collectionName, lessonId);
 
     try {
       await updateDoc(docRef, {
         comments: arrayUnion({
-          userId,
-          displayName: commentAuthor, // ← ニックネーム
+          userId: session?.user?.email || "", // 既存仕様に合わせる
+          displayName: commentAuthor,
           comment,
           createdAt: new Date().toISOString(),
         }),
@@ -407,8 +400,8 @@ export default function PracticeSharePage() {
     }
   };
 
-  const startEditComment = (recordId: string, index: number, currentText: string) => {
-    setEditingCommentId({ recordId, index });
+  const startEditComment = (record: PracticeRecord, index: number, currentText: string) => {
+    setEditingCommentId({ recordId: record.lessonId, modelType: record.modelType, index });
     setEditingCommentText(currentText);
   };
   const cancelEditComment = () => {
@@ -421,24 +414,18 @@ export default function PracticeSharePage() {
 
   const handleUpdateComment = async () => {
     if (!editingCommentId) return;
-    const { recordId, index } = editingCommentId;
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
-    if (!editingCommentText.trim()) {
-      alert("コメント内容を入力してください");
-      return;
-    }
+    const { recordId, modelType, index } = editingCommentId;
+    if (!session) return alert("ログインしてください");
+    if (!editingCommentText.trim()) return alert("コメント内容を入力してください");
 
-    const record = records.find((r) => r.lessonId === recordId);
+    const record = records.find(
+      (r) => r.lessonId === recordId && r.modelType === modelType
+    );
     if (!record || !record.comments || !record.comments[index] || !record.modelType) {
-      alert("対象のコメントが見つかりません");
-      return;
+      return alert("対象のコメントが見つかりません");
     }
-    if (record.comments[index].userId !== userId) {
-      alert("自分のコメントのみ編集できます");
-      return;
+    if (record.comments[index].userId !== (session?.user?.email || "")) {
+      return alert("自分のコメントのみ編集できます");
     }
     const updatedComments = [...record.comments];
     updatedComments[index] = {
@@ -456,24 +443,18 @@ export default function PracticeSharePage() {
     }
   };
 
-  const handleDeleteComment = async (recordId: string, index: number) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
+  const handleDeleteComment = async (record: PracticeRecord, index: number) => {
+    if (!session) return alert("ログインしてください");
+    if (!record.comments || !record.comments[index] || !record.modelType) {
+      return alert("対象のコメントが見つかりません");
     }
-    const record = records.find((r) => r.lessonId === recordId);
-    if (!record || !record.comments || !record.comments[index] || !record.modelType) {
-      alert("対象のコメントが見つかりません");
-      return;
-    }
-    if (record.comments[index].userId !== userId) {
-      alert("自分のコメントのみ削除できます");
-      return;
+    if (record.comments[index].userId !== (session?.user?.email || "")) {
+      return alert("自分のコメントのみ削除できます");
     }
     const updatedComments = [...record.comments];
     updatedComments.splice(index, 1);
     const collectionName = `practiceRecords_${record.modelType}`;
-    const docRef = doc(db, collectionName, recordId);
+    const docRef = doc(db, collectionName, record.lessonId);
     try {
       await updateDoc(docRef, { comments: updatedComments });
     } catch (e) {
@@ -483,36 +464,26 @@ export default function PracticeSharePage() {
   };
 
   /* =========================
-   * PDF アップロード/削除
+   * PDF アップロード/削除（record直参照版）
    * ======================= */
-  const handlePdfUpload = async (lessonId: string, file: File) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("対象の実践案またはモデルタイプが見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("PDFのアップロードは投稿者のみ可能です");
-      return;
-    }
+  const handlePdfUploadFor = async (record: PracticeRecord, file: File) => {
+    if (!session) return alert("ログインしてください");
+    if (!record || !record.modelType) return alert("対象の実践案またはモデルタイプが見つかりません");
+    if (!isRecordMine(record.author, session)) return alert("PDFのアップロードは投稿者のみ可能です");
 
     // 匿名化チェック（ダブルチェック）
-    if (!pdfConfirm[lessonId]) {
+    if (!pdfConfirm[record.lessonId]) {
       alert("アップロード前に、匿名化チェックに同意してください。");
       return;
     }
 
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds((prev) => [...prev, record.lessonId]);
     try {
-      const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${file.name}`);
+      const pdfRef = storageRef(storage, `practiceRecords/${record.lessonId}/${file.name}`);
       await uploadBytes(pdfRef, file);
       const url = await getDownloadURL(pdfRef);
       const collectionName = `practiceRecords_${record.modelType}`;
-      const docRef = doc(db, collectionName, lessonId);
+      const docRef = doc(db, collectionName, record.lessonId);
 
       const newPdfFiles = record.pdfFiles ? [...record.pdfFiles] : [];
       newPdfFiles.push({ url, name: file.name });
@@ -523,37 +494,24 @@ export default function PracticeSharePage() {
       console.error("PDFアップロード失敗", error);
       alert("PDFアップロードに失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== record.lessonId));
     }
   };
 
-  const handleDeletePdf = async (lessonId: string, pdfName: string) => {
-    if (!session) {
-      alert("ログインしてください");
-      return;
-    }
-    const record = records.find((r) => r.lessonId === lessonId);
-    if (!record || !record.modelType) {
-      alert("対象の実践案またはモデルタイプが見つかりません");
-      return;
-    }
-    if (record.author !== userId) {
-      alert("PDFの削除は投稿者のみ可能です");
-      return;
-    }
-    if (!pdfName) {
-      alert("PDFファイル名がありません");
-      return;
-    }
+  const handleDeletePdfFor = async (record: PracticeRecord, pdfName: string) => {
+    if (!session) return alert("ログインしてください");
+    if (!record || !record.modelType) return alert("対象の実践案またはモデルタイプが見つかりません");
+    if (!isRecordMine(record.author, session)) return alert("PDFの削除は投稿者のみ可能です");
+    if (!pdfName) return alert("PDFファイル名がありません");
     if (!confirm("本当にPDFファイルを削除しますか？")) return;
 
-    setUploadingPdfIds((prev) => [...prev, lessonId]);
+    setUploadingPdfIds((prev) => [...prev, record.lessonId]);
     try {
-      const pdfRef = storageRef(storage, `practiceRecords/${lessonId}/${pdfName}`);
+      const pdfRef = storageRef(storage, `practiceRecords/${record.lessonId}/${pdfName}`);
       await deleteObject(pdfRef);
 
       const collectionName = `practiceRecords_${record.modelType}`;
-      const docRef = doc(db, collectionName, lessonId);
+      const docRef = doc(db, collectionName, record.lessonId);
       const newPdfFiles = (record.pdfFiles || []).filter((p) => p.name !== pdfName);
 
       await updateDoc(docRef, { pdfFiles: newPdfFiles });
@@ -562,24 +520,22 @@ export default function PracticeSharePage() {
       console.error("PDF削除失敗", error);
       alert("PDF削除に失敗しました");
     } finally {
-      setUploadingPdfIds((prev) => prev.filter((id) => id !== lessonId));
+      setUploadingPdfIds((prev) => prev.filter((id) => id !== record.lessonId));
     }
   };
 
-  // 投稿者のみ編集可能。modelType をクエリで渡す
-  const handleEdit = (lessonId: string) => {
-    const record = records.find((r) => r.lessonId === lessonId);
-    const isAuthor = !!(record && record.author && userId && record.author === userId);
-    if (!isAuthor) {
+  // 投稿者のみ編集可能。record 直参照
+  const handleEdit = (record: PracticeRecord) => {
+    if (!isRecordMine(record.author, session)) {
       alert("この実践記録の編集は投稿者のみ可能です。");
       return;
     }
     const mt = record?.modelType ? `lesson_plans_${record.modelType}` : "";
-    router.push(`/practice/add/${lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
+    router.push(`/practice/add/${record.lessonId}${mt ? `?modelType=${encodeURIComponent(mt)}` : ""}`);
   };
 
   /* =========================
-   * PDF生成
+   * PDF生成（既存）
    * ======================= */
   const loadImage = (url: string, timeout = 12000): Promise<HTMLImageElement> =>
     new Promise((resolve, reject) => {
@@ -1040,7 +996,7 @@ export default function PracticeSharePage() {
         </div>
       </div>
 
-      {/* ▼ 研究参加者向けの説明（匿名→ニックネーム運用に統一） */}
+      {/* ▼ 研究参加者向けの説明 */}
       <section
         style={{
           margin: "12px auto 16px",
@@ -1208,7 +1164,7 @@ export default function PracticeSharePage() {
               const plan = lessonPlans.find(
                 (p) => p.id === r.lessonId && p.modelType === r.modelType
               );
-              const isAuthor = !!(r.author && userId && r.author === userId);
+              const isAuthor = isRecordMine(r.author, session);
 
               const g = pickGrade(r, plan);
               const ge = pickGenre(r, plan);
@@ -1216,7 +1172,7 @@ export default function PracticeSharePage() {
 
               return (
                 <article
-                  key={r.lessonId}
+                  key={r.lessonId + ":" + r.modelType}
                   style={{
                     ...cardStyle,
                     border: isNew ? "2px solid #ff7043" : "2px solid #ddd",
@@ -1243,7 +1199,11 @@ export default function PracticeSharePage() {
                   </p>
 
                   {isAuthor && (
-                    <button onClick={() => handleEdit(r.lessonId)} style={editBtnStyle} title="投稿者のみ編集できます">
+                    <button
+                      onClick={() => handleEdit(r)}
+                      style={editBtnStyle}
+                      title="投稿者のみ編集できます"
+                    >
                       編集
                     </button>
                   )}
@@ -1314,13 +1274,13 @@ export default function PracticeSharePage() {
 
                           <strong>主体的に学習に取り組む態度</strong>
                           <ul style={{ marginTop: 4, paddingLeft: 16 }}>
-                            {asArray(
-                              plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
-                                plan.result["評価の観点"]?.["態度"]
-                            ).map((v, i) => (
-                              <li key={`主体的-${i}`}>{v}</li>
-                            ))}
-                          </ul>
+                          {asArray(
+                           plan.result["評価の観点"]?.["主体的に学習に取り組む態度"] ??
+                           plan.result["評価の観点"]?.["態度"]
+                           ).map((v: string, i: number) => (
+                         <li key={`主体的-${i}`}>{v}</li>
+                             ))}
+                           </ul>
                         </div>
                       )}
 
@@ -1441,7 +1401,7 @@ export default function PracticeSharePage() {
                         </a>
                         {isAuthor && (
                           <button
-                            onClick={() => handleDeletePdf(r.lessonId, pdf.name)}
+                            onClick={() => handleDeletePdfFor(r, pdf.name)}
                             style={{
                               ...commentBtnStyle,
                               backgroundColor: "#e53935",
@@ -1461,21 +1421,20 @@ export default function PracticeSharePage() {
                       <PdfFileInput
                         lessonId={r.lessonId}
                         uploading={uploadingPdfIds.includes(r.lessonId)}
-                        onUpload={handlePdfUpload}
+                        onUpload={(_, file) => handlePdfUploadFor(r, file)}
                       />
                     )}
                   </div>
 
-                  {/* 共有から外す */}
+                  {/* 共有から外す（record直参照 & 作者厳密判定） */}
                   {isAuthor && (
                     <div style={{ marginTop: 12 }}>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (!session) return alert("ログインしてください");
-                          const record = records.find((x) => x.lessonId === r.lessonId);
-                          if (!record || !record.modelType)
+                          if (!r.modelType)
                             return alert("対象の実践案が見つかりません");
-                          if (record.author !== userId)
+                          if (!isRecordMine(r.author, session))
                             return alert("共有解除は投稿者のみ可能です");
                           if (
                             !confirm(
@@ -1484,16 +1443,15 @@ export default function PracticeSharePage() {
                           )
                             return;
 
-                          const collectionName = `practiceRecords_${record.modelType}`;
-                          const docRef = doc(db, collectionName, r.lessonId);
-                          updateDoc(docRef, { isShared: false })
-                            .then(() =>
-                              alert("共有を解除しました（個人の実践記録は残っています）")
-                            )
-                            .catch((e) => {
-                              console.error("共有解除失敗", e);
-                              alert("共有解除に失敗しました");
-                            });
+                          try {
+                            const collectionName = `practiceRecords_${r.modelType}`;
+                            const ref = doc(db, collectionName, r.lessonId);
+                            await updateDoc(ref, { isShared: false });
+                            alert("共有を解除しました（個人の実践記録は残っています）");
+                          } catch (e) {
+                            console.error("共有解除失敗", e);
+                            alert("共有解除に失敗しました");
+                          }
                         }}
                         style={{ ...commentBtnStyle, backgroundColor: "#888" }}
                         disabled={uploadingPdfIds.includes(r.lessonId)}
@@ -1508,7 +1466,7 @@ export default function PracticeSharePage() {
                   <div style={{ marginTop: 12 }}>
                     <button
                       style={isLikedByUser(r) ? likeBtnDisabledStyle : likeBtnStyle}
-                      onClick={() => handleLike(r.lessonId)}
+                      onClick={() => handleLikeFor(r)}
                       title={!session ? "ログインしてください" : undefined}
                     >
                       👍 いいね {r.likes || 0}
@@ -1530,6 +1488,7 @@ export default function PracticeSharePage() {
                           <br />
                           {editingCommentId &&
                           editingCommentId.recordId === r.lessonId &&
+                          editingCommentId.modelType === r.modelType &&
                           editingCommentId.index === i ? (
                             <>
                               <textarea
@@ -1554,7 +1513,7 @@ export default function PracticeSharePage() {
                           ) : (
                             <>
                               <p style={{ whiteSpace: "pre-wrap" }}>{c.comment}</p>
-                              {session && c.userId === userId && (
+                              {session && c.userId === (session?.user?.email || "") && (
                                 <>
                                   <button
                                     style={{
@@ -1563,7 +1522,7 @@ export default function PracticeSharePage() {
                                       padding: "8px 12px",
                                       fontSize: 14,
                                     }}
-                                    onClick={() => startEditComment(r.lessonId, i, c.comment)}
+                                    onClick={() => startEditComment(r, i, c.comment)}
                                   >
                                     編集
                                   </button>
@@ -1574,7 +1533,7 @@ export default function PracticeSharePage() {
                                       padding: "8px 12px",
                                       fontSize: 14,
                                     }}
-                                    onClick={() => handleDeleteComment(r.lessonId, i)}
+                                    onClick={() => handleDeleteComment(r, i)}
                                   >
                                     削除
                                   </button>
@@ -1608,7 +1567,7 @@ export default function PracticeSharePage() {
                     />
                     <button
                       style={commentBtnStyle}
-                      onClick={() => handleAddComment(r.lessonId)}
+                      onClick={() => handleAddCommentFor(r)}
                       disabled={!session}
                       title={session ? undefined : "ログインしてください"}
                     >
@@ -1682,6 +1641,33 @@ const navLinkStyle: CSSProperties = {
   textDecoration: "none",
   marginBottom: "0.5rem",
 };
+const getOverlayStyle = (open: boolean): CSSProperties => ({
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "100vh",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: open ? 1 : 0,
+  visibility: open ? "visible" : "hidden",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+});
+const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: 260,
+  height: "calc(100vh - 56px)",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transform: open ? "translateX(0)" : "translateX(-100%)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+});
+
 const wrapperResponsiveStyle: CSSProperties = {
   display: "flex",
   maxWidth: 1200,
@@ -1774,6 +1760,31 @@ const filterSectionTitleStyle: CSSProperties = {
   marginBottom: 8,
   fontSize: "1.1rem",
 };
+const selectInputStyle: CSSProperties = {
+  width: "100%",
+  padding: 8,
+  borderRadius: 6,
+  border: "1px solid #ccc",
+  background: "white",
+};
+const textInputStyle: CSSProperties = {
+  width: "100%",
+  padding: 8,
+  borderRadius: 6,
+  border: "1px solid #ccc",
+};
+const applyBtnStyle: CSSProperties = {
+  display: "block",
+  width: "100%",
+  marginTop: 12,
+  padding: "10px 12px",
+  backgroundColor: "#1976d2",
+  color: "white",
+  border: "none",
+  borderRadius: 8,
+  cursor: "pointer",
+  fontWeight: "bold",
+};
 const lessonPlanSectionStyle: CSSProperties = {
   backgroundColor: "#fafafa",
   padding: 12,
@@ -1812,99 +1823,35 @@ const actionBtnStyle: CSSProperties = {
   borderRadius: 8,
   padding: "10px 14px",
   cursor: "pointer",
-  marginBottom: 12,
+  marginBottom: 8,
   fontSize: "0.95rem",
 };
-
-/* サイドメニュー */
-const getMenuWrapperStyle = (open: boolean): CSSProperties => ({
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: 250,
-  height: "100vh",
-  backgroundColor: "#f0f0f0",
-  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-  transform: open ? "translateX(0)" : "translateX(-100%)",
-  transition: "transform 0.3s ease",
-  zIndex: 999,
-  display: "flex",
-  flexDirection: "column",
-});
-const getOverlayStyle = (open: boolean): CSSProperties => ({
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: "100vw",
-  height: "100vh",
-  backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: open ? 1 : 0,
-  visibility: open ? "visible" : "hidden",
-  transition: "opacity 0.3s ease",
-  zIndex: 998,
-});
-
-/* 新着バッジ/バナー */
-const newBadgeStyle: CSSProperties = {
-  backgroundColor: "#ff7043",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: "0.75rem",
-  padding: "2px 8px",
-  borderRadius: 999,
-  lineHeight: 1.6,
-};
 const newBannerStyle: CSSProperties = {
-  position: "sticky",
-  top: 56,
-  zIndex: 900,
-  background: "#fff3e0",
-  color: "#5d4037",
-  border: "1px solid #ffcc80",
-  borderLeft: "6px solid #ff7043",
-  padding: "8px 12px",
-  margin: "0 auto",
   maxWidth: 1200,
+  margin: "0 auto 8px",
+  background: "#fff3e0",
+  border: "1px solid #ffcc80",
+  color: "#6d4c41",
+  borderRadius: 8,
+  padding: "8px 12px",
   display: "flex",
   alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
+  justifyContent: "space-between",
 };
 const bannerBtnStyle: CSSProperties = {
-  backgroundColor: "#ff7043",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
   padding: "6px 10px",
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-/* 入力UI */
-const selectInputStyle: CSSProperties = {
-  width: "100%",
-  padding: "6px 8px",
-  borderRadius: 4,
-  border: "1px solid #ccc",
-  marginBottom: 12,
-  boxSizing: "border-box",
-};
-const textInputStyle: CSSProperties = {
-  width: "100%",
-  padding: "6px 8px",
-  borderRadius: 4,
-  border: "1px solid #ccc",
-  marginBottom: 12,
-  boxSizing: "border-box",
-};
-const applyBtnStyle: CSSProperties = {
-  marginTop: 12,
-  width: "100%",
-  padding: "8px 0",
-  backgroundColor: "#1976d2",
+  borderRadius: 6,
+  background: "#ffa726",
   color: "white",
   border: "none",
-  borderRadius: 6,
   cursor: "pointer",
-  fontWeight: "bold",
+  fontSize: 14,
+};
+const newBadgeStyle: CSSProperties = {
+  background: "#ff7043",
+  color: "white",
+  padding: "2px 6px",
+  borderRadius: 6,
+  fontSize: 12,
+  lineHeight: 1,
 };
