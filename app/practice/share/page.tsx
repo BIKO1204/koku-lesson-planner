@@ -1050,13 +1050,13 @@ export default function PracticeSharePage() {
           borderRadius: 8,
         }}
       >
-        <h2 style={{ margin: 0, fontSize: "1.1rem" }}>このページについて（研究参加者向け）</h2>
+        <h2 style={{ margin: 0, fontSize: "1.1rem" }}>このページについて</h2>
         <ul style={{ margin: "8px 0 0 1.2em" }}>
           <li>
-            <strong>共有範囲は研究参加者（ログインユーザー）のみ。</strong>一般公開はされません。
+            <strong>共有範囲はログインユーザーのみ。</strong>一般公開はされません。
           </li>
           <li>
-            <strong>共有の教育的意義：</strong>相互に授業案を閲覧・学び合うことで、研究協力の価値が高まります。
+            <strong>共有の教育的意義：</strong>相互に授業案を閲覧・学び合うことで、自身の国語の授業についてのヒントが得られます。
           </li>
           <li>
             <strong>共有は任意</strong>です。公開したくない場合は「共有から外す」で当ページから非表示にできます。
