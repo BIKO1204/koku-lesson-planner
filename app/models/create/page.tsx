@@ -594,7 +594,7 @@ export default function EducationModelsPage() {
         <section style={formCardStyle}>
           {/* 作成者名 */}
           <label style={labelStyle}>
-            作成者名（必須）
+            作成者名(ニックネーム)（必須）
             <div style={helperStyle}>例）〇〇先生</div>
             <input
               type="text"
