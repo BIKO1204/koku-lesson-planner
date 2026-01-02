@@ -31,12 +31,12 @@ type PracticeRecord = {
   imagesSignature?: string;
 };
 
-type PracticeDraft = {
+/** ローカル下書き：圧縮画像(base64)を持ってOK */
+type PracticeDraftLocal = {
   lessonId: string;
   practiceDate: string;
   reflection: string;
-  // 下書きはサイズ抑制のため「圧縮画像のみ」を持つ
-  compressedImages: BoardImage[];
+  compressedImages: BoardImage[]; // base64 OK
   lessonTitle: string;
   grade: string;
   genre: string;
@@ -47,6 +47,26 @@ type PracticeDraft = {
   imagesSignature?: string;
   timestamp: string;
   isDraft: true;
+  draftMode: "local";
+};
+
+/** クラウド下書き：画像はURLだけ（Firestore容量対策） */
+type PracticeDraftCloud = {
+  lessonId: string;
+  practiceDate: string;
+  reflection: string;
+  draftImages: BoardImage[]; // ★URLのみ
+  lessonTitle: string;
+  grade: string;
+  genre: string;
+  unitName: string;
+  authorName: string;
+  modelType: string;
+  confirmedNoPersonalInfo: boolean;
+  imagesSignature?: string;
+  timestamp: string;
+  isDraft: true;
+  draftMode: "cloud";
 };
 
 type LessonPlan = {
@@ -242,13 +262,42 @@ const isHttpUrl = (s: string) => typeof s === "string" && /^https?:\/\//.test(s)
 const isFirebaseStorageUrl = (s: string) =>
   isHttpUrl(s) && /firebasestorage\.googleapis\.com/.test(s);
 
-/* ---- 任意形式のsrcをStorageへ ---- */
+/* ---- 任意形式のsrcをStorageへ（確定保存用） ---- */
 async function uploadImageToStorageFromAny(
   src: string,
   fileName: string,
   uid: string
 ): Promise<string> {
   const path = `practiceImages/${uid}/${fileName}`;
+  const imgRef = ref(storage, path);
+
+  if (isFirebaseStorageUrl(src)) return src;
+
+  if (isDataUrl(src)) {
+    await uploadString(imgRef, src, "data_url");
+    return getDownloadURL(imgRef);
+  }
+
+  if (isBlobUrl(src) || isHttpUrl(src)) {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    await uploadBytes(imgRef, blob);
+    return getDownloadURL(imgRef);
+  }
+
+  const maybeDataUrl = `data:image/jpeg;base64,${src}`;
+  await uploadString(imgRef, maybeDataUrl, "data_url");
+  return getDownloadURL(imgRef);
+}
+
+/* ---- 任意形式のsrcをStorageへ（下書き用：URLだけをFirestoreに保存） ---- */
+async function uploadDraftImageToStorageFromAny(
+  src: string,
+  fileName: string,
+  uid: string,
+  lessonId: string
+): Promise<string> {
+  const path = `practiceDraftImages/${uid}/${lessonId}/${fileName}`;
   const imgRef = ref(storage, path);
 
   if (isFirebaseStorageUrl(src)) return src;
@@ -298,7 +347,11 @@ const DRAFT_COLLECTION = "practice_record_drafts";
 const DRAFT_KEY_BASE = "editPracticeRecord";
 const draftKey = (lessonId: string) => `${DRAFT_KEY_BASE}:${lessonId}`;
 
-function pickLatestDraft<T extends { timestamp?: string }>(a: T | null, b: T | null) {
+/** timestampの新しいほうを採用（ローカル/クラウドどちらも対応） */
+function pickLatestDraft(
+  a: PracticeDraftLocal | PracticeDraftCloud | null,
+  b: PracticeDraftLocal | PracticeDraftCloud | null
+) {
   const ta = a?.timestamp ? Date.parse(a.timestamp) : -1;
   const tb = b?.timestamp ? Date.parse(b.timestamp) : -1;
   if (ta < 0 && tb < 0) return null;
@@ -343,6 +396,7 @@ export default function PracticeAddPage() {
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // モデルタイプ固定フラグ
@@ -360,7 +414,7 @@ export default function PracticeAddPage() {
 
   // ▼ NEW: 見やすさ設定
   const [enhancePreview, setEnhancePreview] = useState<boolean>(true); // プレビューにフィルタ
-  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);   // 圧縮時に焼き込む
+  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true); // 圧縮時に焼き込む
   const [compressLongEdge, setCompressLongEdge] = useState<number>(1400); // 長辺ピクセル
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -379,7 +433,8 @@ export default function PracticeAddPage() {
 
     if (plan?.result) {
       if (typeof plan.result === "string") {
-        const firstLine = plan.result.split("\n")[0]
+        const firstLine = plan.result
+          .split("\n")[0]
           .replace(/^【教材名】\s*/, "")
           .replace(/^【単元名】\s*/, "");
         setLessonTitle(firstLine);
@@ -507,29 +562,40 @@ export default function PracticeAddPage() {
   /* ===================== 下書き：復元（ローカル＋クラウドの新しい方） ===================== */
   useEffect(() => {
     (async () => {
-      let localDraft: PracticeDraft | null = null;
+      let localDraft: PracticeDraftLocal | null = null;
       try {
         const raw = localStorage.getItem(draftKey(id));
-        if (raw) localDraft = JSON.parse(raw) as PracticeDraft;
+        if (raw) {
+          const parsed = JSON.parse(raw) as any;
+          if (parsed?.isDraft && parsed?.draftMode === "local") {
+            localDraft = parsed as PracticeDraftLocal;
+          }
+        }
       } catch {}
 
-      let cloudDraft: PracticeDraft | null = null;
+      let cloudDraft: PracticeDraftCloud | null = null;
       const u = uid || auth.currentUser?.uid || null;
       if (u) {
         try {
           const snap = await getDoc(doc(db, DRAFT_COLLECTION, `${u}_${id}`));
           if (snap.exists()) {
             const payload = (snap.data() as any)?.payload;
-            if (payload?.isDraft) cloudDraft = payload as PracticeDraft;
+            if (payload?.isDraft && payload?.draftMode === "cloud") {
+              cloudDraft = payload as PracticeDraftCloud;
+            }
           }
         } catch {}
       }
 
       const chosen = pickLatestDraft(localDraft, cloudDraft);
       if (chosen) {
-        // 圧縮画像をプレビューにも適用
-        setCompressedImages(chosen.compressedImages || []);
-        setBoardImages(chosen.compressedImages || []);
+        const imgs =
+          (chosen as any).compressedImages?.length
+            ? (chosen as PracticeDraftLocal).compressedImages
+            : (chosen as PracticeDraftCloud).draftImages || [];
+
+        setCompressedImages(imgs);
+        setBoardImages(imgs);
         setPracticeDate(chosen.practiceDate || "");
         setReflection(chosen.reflection || "");
         setLessonTitle(chosen.lessonTitle || "");
@@ -547,14 +613,13 @@ export default function PracticeAddPage() {
   }, [id, uid]);
 
   /* ===================== 下書き：ビルド＆保存ヘルパ ===================== */
-  const buildDraft = (): PracticeDraft => {
+  const buildLocalDraft = (): PracticeDraftLocal => {
     const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
     return {
       lessonId: id,
       practiceDate,
       reflection,
-      // 下書きは圧縮画像のみ保持（容量対策）
-      compressedImages,
+      compressedImages, // base64 OK（ローカル用）
       lessonTitle,
       authorName,
       grade: meta.grade,
@@ -565,10 +630,32 @@ export default function PracticeAddPage() {
       imagesSignature: currentSignature,
       timestamp: new Date().toISOString(),
       isDraft: true,
+      draftMode: "local",
     };
   };
 
-  const saveDraftLocal = (draft: PracticeDraft) => {
+  const buildCloudDraft = (draftImages: BoardImage[]): PracticeDraftCloud => {
+    const meta = pickMetaWithFallback(grade, genre, unitName, lessonPlan);
+    return {
+      lessonId: id,
+      practiceDate,
+      reflection,
+      draftImages, // ★URLのみ
+      lessonTitle,
+      authorName,
+      grade: meta.grade,
+      genre: meta.genre,
+      unitName: meta.unitName,
+      modelType,
+      confirmedNoPersonalInfo: confirmNoPersonalInfo,
+      imagesSignature: currentSignature,
+      timestamp: new Date().toISOString(),
+      isDraft: true,
+      draftMode: "cloud",
+    };
+  };
+
+  const saveDraftLocal = (draft: PracticeDraftLocal) => {
     try {
       localStorage.setItem(draftKey(id), JSON.stringify(draft));
     } catch (e) {
@@ -576,7 +663,7 @@ export default function PracticeAddPage() {
     }
   };
 
-  const saveDraftCloud = async (draft: PracticeDraft) => {
+  const saveDraftCloud = async (draft: PracticeDraftCloud) => {
     const u = uid || auth.currentUser?.uid || null;
     if (!u) return;
     try {
@@ -588,6 +675,28 @@ export default function PracticeAddPage() {
     } catch (e) {
       console.warn("クラウド下書き保存失敗:", e);
     }
+  };
+
+  /** ★下書き画像をStorageへ → URL配列を返す */
+  const uploadDraftImagesAndGetUrls = async (): Promise<BoardImage[]> => {
+    const u = uid || auth.currentUser?.uid || null;
+    if (!u) throw new Error("Not logged in");
+
+    const srcImages = (compressedImages?.length ? compressedImages : boardImages) || [];
+    if (!srcImages.length) return [];
+
+    const uploadedUrls: BoardImage[] = await Promise.all(
+      srcImages.map(async (img, idx) => {
+        if (img?.src && isFirebaseStorageUrl(img.src)) {
+          return { name: img.name, src: img.src };
+        }
+        const safeName = `${id}_${idx}_${(img.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const url = await uploadDraftImageToStorageFromAny(img.src, safeName, u, id);
+        return { name: img.name, src: url };
+      })
+    );
+
+    return uploadedUrls;
   };
 
   /* ===== 画面入力をすべてリセット ===== */
@@ -626,18 +735,19 @@ export default function PracticeAddPage() {
     setLessonTitle(planUnit || "");
   };
 
-  /* ===================== 下書き：自動保存（デバウンス） ===================== */
+  /* ===================== 下書き：自動保存（デバウンス）
+   * ★おすすめ：自動保存はローカルのみ（クラウドは手動ボタンで）
+   * ======================================================= */
   useEffect(() => {
     if (restoringRef.current) return;
-    // ★ 下書きクリア直後は一度だけ自動保存をスキップ
     if (skipAutoSaveOnceRef.current) {
       skipAutoSaveOnceRef.current = false;
       return;
     }
     const t = setTimeout(() => {
-      const draft = buildDraft();
+      const draft = buildLocalDraft();
       saveDraftLocal(draft);
-      void saveDraftCloud(draft);
+      // ★クラウド自動保存はしない（Firestore負荷/詰まり防止）
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -653,7 +763,6 @@ export default function PracticeAddPage() {
     modelType,
     confirmNoPersonalInfo,
     currentSignature,
-    // 画像の変更（追加・削除・並び替え・圧縮再生成）
     compressedImages,
   ]);
 
@@ -767,8 +876,7 @@ export default function PracticeAddPage() {
       throw new Error("Model type not locked");
     }
 
-    const sourceImages =
-      (rec.compressedImages?.length ? rec.compressedImages : rec.boardImages) || [];
+    const sourceImages = (rec.compressedImages?.length ? rec.compressedImages : rec.boardImages) || [];
 
     const uploadedUrls: BoardImage[] = await Promise.all(
       sourceImages.map(async (img, idx) => {
@@ -912,11 +1020,7 @@ export default function PracticeAddPage() {
         </h1>
       </nav>
 
-      <div
-        style={overlayStyle(menuOpen)}
-        onClick={() => setMenuOpen(false)}
-        aria-hidden={!menuOpen}
-      />
+      <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
@@ -1018,13 +1122,21 @@ export default function PracticeAddPage() {
               </strong>
             </li>
             <li>
-              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、手書きの名前等）が写っていないこと。
+              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、
+              アカウント名、手書きの名前等）が写っていないこと。
             </li>
             <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
-            <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
+            <li>
+              写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。
+            </li>
           </ul>
+
           <p style={{ marginTop: 8 }}>
-            <strong>※下書きを保存する際は、必ず📝 下書きを保存ボタンを押してください。別の端末では、板書画像は下書きに反映されません。</strong>
+            <strong>
+              ※下書き保存：
+            </strong>{" "}
+            自動保存はローカルのみ。<strong>別端末でも画像付きで下書きを復元したい場合は「📝 下書きを保存」</strong>
+            を押してください（画像はStorageに保存され、FirestoreにはURLだけ保存されます）。
           </p>
         </div>
 
@@ -1077,18 +1189,18 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-            <div style={boxStyle}>
-              <label>
-                作成者名(ニックネーム)：
-                <input
-                  type="text"
-                  value={authorName}
-                  onChange={(e) => setAuthorName(e.target.value)}
-                  required
-                  style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
-                />
-              </label>
-            </div>
+          <div style={boxStyle}>
+            <label>
+              作成者名(ニックネーム)：
+              <input
+                type="text"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                required
+                style={{ marginLeft: 8, padding: 4, width: "calc(100% - 16px)" }}
+              />
+            </label>
+          </div>
 
           {/* 学年 */}
           <div style={boxStyle}>
@@ -1163,11 +1275,7 @@ export default function PracticeAddPage() {
                 }}
               />
             </label>
-            {!lockMeta && (
-              <small style={{ color: "#666" }}>
-                授業案が無い場合は手動で入力してください。
-              </small>
-            )}
+            {!lockMeta && <small style={{ color: "#666" }}>授業案が無い場合は手動で入力してください。</small>}
           </div>
 
           {/* モデルタイプ（自動） */}
@@ -1215,7 +1323,7 @@ export default function PracticeAddPage() {
               accept="image/*"
               onChange={handleFileChange}
               style={{ display: "none" }}
-              disabled={uploading}
+              disabled={uploading || draftSaving}
             />
           </label>
 
@@ -1267,7 +1375,6 @@ export default function PracticeAddPage() {
                     border: "1px solid #ccc",
                     display: "block",
                     maxWidth: "100%",
-                    // ▼ NEW: プレビューの見やすさ補正（ON/OFF）
                     filter: enhancePreview ? "contrast(1.12) brightness(1.03) saturate(1.05)" : "none",
                   }}
                 />
@@ -1287,9 +1394,7 @@ export default function PracticeAddPage() {
               <span>
                 児童の<strong>顔・氏名・その他個人を特定できる情報</strong>が写っていないことを確認しました。
                 {needsReconfirm && (
-                  <em style={{ color: "#e53935", marginLeft: 8 }}>
-                    （画像を変更したため、再確認が必要です）
-                  </em>
+                  <em style={{ color: "#e53935", marginLeft: 8 }}>（画像を変更したため、再確認が必要です）</em>
                 )}
               </span>
             </label>
@@ -1301,20 +1406,41 @@ export default function PracticeAddPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
             <button
               type="button"
-              onClick={() => {
-                const draft = buildDraft();
-                saveDraftLocal(draft);
-                void saveDraftCloud(draft);
-                alert("下書きを保存しました（ローカル＋クラウド）");
+              disabled={draftSaving || uploading}
+              onClick={async () => {
+                const localDraft = buildLocalDraft();
+                saveDraftLocal(localDraft);
+
+                const u = uid || auth.currentUser?.uid || null;
+                if (!u) {
+                  alert("ログインが必要です。");
+                  return;
+                }
+
+                setDraftSaving(true);
+                try {
+                  // ★画像はStorageへ、FirestoreにはURLだけ
+                  const urls = await uploadDraftImagesAndGetUrls();
+                  const cloudDraft = buildCloudDraft(urls);
+                  await saveDraftCloud(cloudDraft);
+                  alert("下書きを保存しました（ローカル＋クラウド：画像はURL保存）");
+                } catch (e) {
+                  console.error(e);
+                  alert("下書き保存に失敗しました");
+                } finally {
+                  setDraftSaving(false);
+                }
               }}
               style={{ ...secondaryBtnStyle, backgroundColor: "#13f46d3f", color: "#0a6a33" }}
             >
-              📝 下書きを保存
+              {draftSaving ? "📝 下書き保存中..." : "📝 下書きを保存"}
             </button>
+
             <button
               type="button"
+              disabled={draftSaving || uploading}
               onClick={async () => {
-                // ストレージの下書きを削除
+                // ストレージの下書きを削除（Firestoreのpayloadをnullにする）
                 try {
                   localStorage.removeItem(draftKey(id));
                 } catch {}
@@ -1340,7 +1466,7 @@ export default function PracticeAddPage() {
             </button>
           </div>
 
-          <button type="submit" style={primaryBtnStyle} disabled={uploading}>
+          <button type="submit" style={primaryBtnStyle} disabled={uploading || draftSaving}>
             {uploading ? "アップロード中..." : "プレビューを生成"}
           </button>
         </form>
@@ -1351,9 +1477,7 @@ export default function PracticeAddPage() {
 
             {lessonPlan?.result && typeof lessonPlan.result === "object" && (
               <section style={planPreviewStyle}>
-                <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>
-                  授業案詳細（プレビュー）
-                </h3>
+                <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>授業案詳細（プレビュー）</h3>
 
                 <p>
                   <strong>教科書名：</strong>
@@ -1385,9 +1509,7 @@ export default function PracticeAddPage() {
                   <div>
                     <strong>知識・技能</strong>
                     <ul>
-                      {toStrArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]
-                      ).map((v, i) => (
+                      {toStrArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["知識・技能"]).map((v, i) => (
                         <li key={`knowledge-${i}`}>{v}</li>
                       ))}
                     </ul>
@@ -1396,9 +1518,7 @@ export default function PracticeAddPage() {
                   <div>
                     <strong>思考・判断・表現</strong>
                     <ul>
-                      {toStrArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]
-                      ).map((v, i) => (
+                      {toStrArray((lessonPlan.result as ParsedResult)["評価の観点"]?.["思考・判断・表現"]).map((v, i) => (
                         <li key={`thinking-${i}`}>{v}</li>
                       ))}
                     </ul>
@@ -1408,9 +1528,7 @@ export default function PracticeAddPage() {
                     <strong>主体的に学習に取り組む態度</strong>
                     <ul>
                       {toStrArray(
-                        (lessonPlan.result as ParsedResult)["評価の観点"]?.[
-                          "主体的に学習に取り組む態度"
-                        ] ??
+                        (lessonPlan.result as ParsedResult)["評価の観点"]?.["主体的に学習に取り組む態度"] ??
                           (lessonPlan.result as ParsedResult)["評価の観点"]?.["態度"]
                       ).map((v, i) => (
                         <li key={`attitude-${i}`}>{v}</li>
@@ -1443,9 +1561,7 @@ export default function PracticeAddPage() {
                       return (
                         <ul>
                           {flow.map((v, i) => (
-                            <li key={`flowarr-${i}`}>
-                              {typeof v === "string" ? v : JSON.stringify(v)}
-                            </li>
+                            <li key={`flowarr-${i}`}>{typeof v === "string" ? v : JSON.stringify(v)}</li>
                           ))}
                         </ul>
                       );
@@ -1506,19 +1622,10 @@ export default function PracticeAddPage() {
               {record.boardImages.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <strong>板書写真：</strong>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                    }}
-                  >
+                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}>
                     {record.boardImages.map((img, i) => (
                       <div key={img.name + i} style={{ width: "100%" }}>
-                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>
-                          板書{i + 1}
-                        </div>
+                        <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
                         <img
                           src={img.src}
                           alt={img.name}
@@ -1529,9 +1636,7 @@ export default function PracticeAddPage() {
                             border: "1px solid #ccc",
                             display: "block",
                             maxWidth: "100%",
-                            filter: enhancePreview
-                              ? "contrast(1.12) brightness(1.03) saturate(1.05)"
-                              : "none",
+                            filter: enhancePreview ? "contrast(1.12) brightness(1.03) saturate(1.05)" : "none",
                           }}
                         />
                       </div>
@@ -1550,7 +1655,7 @@ export default function PracticeAddPage() {
             backgroundColor: canSave ? "#4caf50" : "#9e9e9e",
             cursor: canSave ? "pointer" : "not-allowed",
           }}
-          disabled={uploading || !canSave}
+          disabled={uploading || draftSaving || !canSave}
           title={
             canSave
               ? undefined
