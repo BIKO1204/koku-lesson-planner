@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -19,22 +15,11 @@
     "noEmit": true,
     "jsx": "preserve",
     "incremental": true,
-    "types": [
-      "node",
-      "jest",
-      "next",
-      "next-auth"
-    ],
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "types": ["node", "jest", "next", "next-auth"],
+    "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     }
   },
   "include": [
@@ -46,6 +31,8 @@
   ],
   "exclude": [
     "node_modules",
-    ".next"
+    ".next",
+    "functions",
+    "functions/**"
   ]
 }

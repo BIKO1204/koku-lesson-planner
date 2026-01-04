@@ -139,7 +139,6 @@ function buildUserPromptFromInputs(args: {
   languageActivities: string;
   lessonPlanList: string[];
 }): string {
-
   const {
     styleName,
     subject,
@@ -165,7 +164,7 @@ function buildUserPromptFromInputs(args: {
     `【教科書名】${subject}`,
     `【学年】${grade}`,
     `【ジャンル】${genre}`,
-    `【教材名】${unit}`, // ← 表示を教材名に統一
+    `【教材名】${unit}`,
     `【授業時間数】${hours}`,
     "",
     "■ 単元の目標:",
@@ -244,7 +243,6 @@ function applyParsedResultToInputs(
   const subject = String(data["教科書名"] ?? "").trim();
   const grade = String(data["学年"] ?? "").trim();
   const genre = String(data["ジャンル"] ?? "").trim();
-  // ★ 後方互換：教材名が無ければ単元名を使う
   const unit = String(data["教材名"] ?? data["単元名"] ?? "").trim();
   const hours = Number(data["授業時間数"] ?? 0);
   const unitGoal = String(data["単元の目標"] ?? "").trim();
@@ -305,7 +303,15 @@ export default function ClientPlan() {
   const [hours, setHours] = useState("");
   const [unitGoal, setUnitGoal] = useState("");
 
+  // ✅ 現在の入力値
   const [evaluationPoints, setEvaluationPoints] = useState<EvaluationPoints>({
+    knowledge: [""],
+    thinking: [""],
+    attitude: [""],
+  });
+
+  // ✅ CSVテンプレ保持（クリア時にここへ戻す）
+  const [templateEvaluationPoints, setTemplateEvaluationPoints] = useState<EvaluationPoints>({
     knowledge: [""],
     thinking: [""],
     attitude: [""],
@@ -429,7 +435,9 @@ export default function ClientPlan() {
   /* ===== 学年×ジャンルの評価観点テンプレ（CSV） ===== */
   useEffect(() => {
     if (genre === "その他") {
-      setEvaluationPoints({ knowledge: [""], thinking: [""], attitude: [""] });
+      const blank = { knowledge: [""], thinking: [""], attitude: [""] };
+      setEvaluationPoints(blank);
+      setTemplateEvaluationPoints(blank); // ✅テンプレも「空」に
       return;
     }
 
@@ -448,6 +456,7 @@ export default function ClientPlan() {
         };
         if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
+          setTemplateEvaluationPoints(grouped); // ✅ここが追加：テンプレ保持
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -465,7 +474,7 @@ export default function ClientPlan() {
     subject,
     grade,
     genre,
-    unit, // 内部は unit のまま（教材名の実体）
+    unit,
     hours,
     unitGoal,
     evaluationPoints,
@@ -566,7 +575,9 @@ export default function ClientPlan() {
     setHours("");
     setUnitGoal("");
 
-    setEvaluationPoints({ knowledge: [""], thinking: [""], attitude: [""] });
+    // ✅重要：クリアしてもフォーマットが消えないようテンプレに戻す
+    setEvaluationPoints(templateEvaluationPoints);
+
     setChildVision("");
     setLanguageActivities("");
     setLessonPlanList([]);
@@ -729,7 +740,7 @@ export default function ClientPlan() {
         教科書名: subject,
         学年: grade,
         ジャンル: genre,
-        教材名: unit, // ← 教材名で返す
+        教材名: unit,
         授業時間数: count,
         単元の目標: unitGoal,
         評価の観点: {
@@ -746,7 +757,6 @@ export default function ClientPlan() {
       setLastPrompt(userPromptFromInputs);
       setParsedResult(manualResult);
 
-      // 入力欄へも反映（保存時の空欄を防ぐ）
       applyParsedResultToInputs(manualResult, {
         setSubject,
         setGrade,
@@ -857,7 +867,6 @@ ${languageActivities}
       }
       setParsedResult(data);
 
-      // 入力欄を生成結果で更新（保存時の空欄を防ぐ）
       applyParsedResultToInputs(data, {
         setSubject,
         setGrade,
@@ -905,7 +914,6 @@ ${languageActivities}
 
     const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
 
-    // ローカル履歴
     const existingArr: LessonPlanStored[] = JSON.parse(
       typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
     );
@@ -917,7 +925,7 @@ ${languageActivities}
               subject,
               grade,
               genre,
-              unit, // 内部は unit のまま
+              unit,
               hours,
               unitGoal,
               evaluationPoints,
@@ -938,7 +946,7 @@ ${languageActivities}
         subject,
         grade,
         genre,
-        unit, // 内部は unit のまま
+        unit,
         hours,
         unitGoal,
         evaluationPoints,
@@ -954,7 +962,6 @@ ${languageActivities}
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
-    // Firestore 保存
     try {
       await setDoc(
         doc(db, collectionName, idToUse),
@@ -963,7 +970,7 @@ ${languageActivities}
           subject,
           grade,
           genre,
-          unit, // 内部は unit のまま
+          unit,
           hours,
           unitGoal,
           evaluationPoints,
@@ -1007,7 +1014,6 @@ ${languageActivities}
       return;
     }
 
-    // 下書きクリア
     try {
       localStorage.removeItem(EDIT_KEY);
       if (uid) {
@@ -1096,7 +1102,7 @@ ${languageActivities}
             まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
             作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
           </p>
-           <p style={{ margin: "6px 0 0" }}>
+          <p style={{ margin: "6px 0 0" }}>
             <strong>下書きを保存する際は、必ず📝下書きを保存ボタンを押してください。</strong>
           </p>
         </section>
@@ -1401,8 +1407,11 @@ ${languageActivities}
                 <strong>知識・技能</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) || typeof parsedResult["評価の観点"]?.["知識・技能"] === "string"
-                      ? (Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) ? parsedResult["評価の観点"]["知識・技能"] : [parsedResult["評価の観点"]?.["知識・技能"]])
+                    Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) ||
+                    typeof parsedResult["評価の観点"]?.["知識・技能"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["知識・技能"])
+                        ? parsedResult["評価の観点"]["知識・技能"]
+                        : [parsedResult["評価の観点"]?.["知識・技能"]]
                       : []
                   ).map((v: string, i: number) => (
                     <li key={`knowledge-${i}`}>{v}</li>
@@ -1412,8 +1421,11 @@ ${languageActivities}
                 <strong>思考・判断・表現</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) || typeof parsedResult["評価の観点"]?.["思考・判断・表現"] === "string"
-                      ? (Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) ? parsedResult["評価の観点"]["思考・判断・表現"] : [parsedResult["評価の観点"]?.["思考・判断・表現"]])
+                    Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) ||
+                    typeof parsedResult["評価の観点"]?.["思考・判断・表現"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"])
+                        ? parsedResult["評価の観点"]["思考・判断・表現"]
+                        : [parsedResult["評価の観点"]?.["思考・判断・表現"]]
                       : []
                   ).map((v: string, i: number) => (
                     <li key={`thinking-${i}`}>{v}</li>
@@ -1423,8 +1435,11 @@ ${languageActivities}
                 <strong>主体的に学習に取り組む態度</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) || typeof parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"] === "string"
-                      ? (Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"] : [parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]])
+                    Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) ||
+                    typeof parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"])
+                        ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"]
+                        : [parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]]
                       : []
                   ).map((v: string, i: number) => (
                     <li key={`attitude-${i}`}>{v}</li>

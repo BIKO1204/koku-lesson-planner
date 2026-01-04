@@ -1,46 +1,51 @@
+// app/api/saveLessonPdf/route.ts（例）
+// ※あなたのファイルパスに合わせて置き換えてOK
+
 import { NextResponse, NextRequest } from "next/server";
-import { initializeApp, cert, getApps, ServiceAccount } from "firebase-admin/app";
-import { getStorage } from "firebase-admin/storage";
 import { google } from "googleapis";
-import type { JWTInput } from "google-auth-library";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 
-// serviceAccount.jsonをimport（相対パスは環境に合わせて調整してください）
-import serviceAccountJson from "../../../serviceAccount.json";
+import { getAdminStorage } from "@/lib/firebaseAdmin"; // あなたの firebaseAdmin.ts
 
-// 型キャスト
-const serviceAccount = serviceAccountJson as ServiceAccount;
+function getServiceAccountFromEnv() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) throw new Error("Missing env: FIREBASE_SERVICE_ACCOUNT");
 
-const bucketName    = process.env.FIREBASE_STORAGE_BUCKET!;
-const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
-if (!bucketName)    throw new Error("Missing env: FIREBASE_STORAGE_BUCKET");
-if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
-
-console.log("Using FIREBASE_STORAGE_BUCKET:", bucketName);
-
-const adminApp = !getApps().length
-  ? initializeApp({ credential: cert(serviceAccount), storageBucket: bucketName })
-  : getApps()[0];
-
-// バケット名を明示的に指定して取得
-const bucket = getStorage(adminApp).bucket(bucketName);
-
-const auth  = new google.auth.GoogleAuth({
-  credentials: serviceAccount as unknown as JWTInput,
-  scopes: ["https://www.googleapis.com/auth/drive.file"],
-});
-const drive = google.drive({ version: "v3", auth });
+  const creds: any = JSON.parse(raw);
+  if (typeof creds.private_key === "string") {
+    // \\n → \n（すでに \n なら無害）
+    creds.private_key = creds.private_key.replace(/\\n/g, "\n");
+  }
+  return creds;
+}
 
 export async function POST(req: NextRequest) {
   try {
+    // ✅ envチェックは「ここ」でやる（ビルド時には実行されない）
+    const bucketName =
+      process.env.FIREBASE_STORAGE_BUCKET ??
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+
+    const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    if (!bucketName) throw new Error("Missing env: FIREBASE_STORAGE_BUCKET");
+    if (!driveFolderId) throw new Error("Missing env: GOOGLE_DRIVE_FOLDER_ID");
+
+    const serviceAccount = getServiceAccountFromEnv();
+
+    // ===== PDF生成（あなたの既存処理）=====
     const data = (await req.json()) as {
       unit: string;
       unitGoal: string;
-      evaluationPoints: { knowledge: string[]; thinking: string[]; attitude: string[] };
+      evaluationPoints: {
+        knowledge: string[];
+        thinking: string[];
+        attitude: string[];
+      };
       childVision: string;
       lessonPlanList: string[];
       languageActivities: string;
@@ -52,20 +57,23 @@ export async function POST(req: NextRequest) {
     pdfDoc.registerFontkit(fontkit);
 
     let page = pdfDoc.addPage([595.28, 841.89]);
-    const fontPath = path.join(process.cwd(), "fonts", "NotoSerifCJKjp-Regular.otf");
-    if (!fs.existsSync(fontPath)) {
-      throw new Error(`Font not found: ${fontPath}`);
-    }
-    const fontBytes = fs.readFileSync(fontPath);
-    const font      = await pdfDoc.embedFont(fontBytes);
+    const fontPath = path.join(
+      process.cwd(),
+      "fonts",
+      "NotoSerifCJKjp-Regular.otf"
+    );
+    if (!fs.existsSync(fontPath)) throw new Error(`Font not found: ${fontPath}`);
 
-    const margin      = 40;
-    const lineGap     = 4;
-    const titleSize   = 20;
+    const fontBytes = fs.readFileSync(fontPath);
+    const font = await pdfDoc.embedFont(fontBytes);
+
+    const margin = 40;
+    const lineGap = 4;
+    const titleSize = 20;
     const headingSize = 14;
-    const textSize    = 12;
-    const maxWidth    = page.getWidth() - margin * 2;
-    let y             = page.getHeight() - margin;
+    const textSize = 12;
+    const maxWidth = page.getWidth() - margin * 2;
+    let y = page.getHeight() - margin;
 
     const drawWrapped = (text: string) => {
       let line = "";
@@ -77,7 +85,7 @@ export async function POST(req: NextRequest) {
           line = ch;
           if (y < margin) {
             page = pdfDoc.addPage([595.28, 841.89]);
-            y    = page.getHeight() - margin;
+            y = page.getHeight() - margin;
           }
         } else {
           line = test;
@@ -93,14 +101,14 @@ export async function POST(req: NextRequest) {
     y -= titleSize + 16;
 
     const sections: [string, string][] = [
-      ["■ 単元名",               data.unit],
-      ["■ 単元の目標",           data.unitGoal],
-      ["① 知識・技能",          data.evaluationPoints.knowledge.join("、 ")],
-      ["② 思考・判断・表現",     data.evaluationPoints.thinking.join("、 ")],
-      ["③ 態度",                data.evaluationPoints.attitude.join("、 ")],
-      ["■ 育てたい子どもの姿",   data.childVision],
-      ["■ 授業の展開",          data.lessonPlanList.map((t,i)=>`${i+1}時間目：${t}`).join("\n")],
-      ["■ 言語活動の工夫",       data.languageActivities],
+      ["■ 単元名", data.unit],
+      ["■ 単元の目標", data.unitGoal],
+      ["① 知識・技能", data.evaluationPoints.knowledge.join("、 ")],
+      ["② 思考・判断・表現", data.evaluationPoints.thinking.join("、 ")],
+      ["③ 態度", data.evaluationPoints.attitude.join("、 ")],
+      ["■ 育てたい子どもの姿", data.childVision],
+      ["■ 授業の展開", data.lessonPlanList.map((t, i) => `${i + 1}時間目：${t}`).join("\n")],
+      ["■ 言語活動の工夫", data.languageActivities],
     ];
 
     for (const [label, content] of sections) {
@@ -110,31 +118,44 @@ export async function POST(req: NextRequest) {
       y -= 8;
     }
 
-    const pdfBytes  = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save();
     const pdfBuffer = Buffer.from(pdfBytes);
 
-    // Firebase Storageに保存
-    await bucket.file(`lessons/${filename}`).save(pdfBuffer, {
-      contentType: "application/pdf",
+    // ===== Firebase Storage =====
+    const storage = getAdminStorage();
+    const bucket = storage.bucket(bucketName);
+    await bucket
+      .file(`lessons/${filename}`)
+      .save(pdfBuffer, { contentType: "application/pdf" });
+
+    // ===== Google Drive =====
+    // ✅ JWTInput import を使わずにそのまま渡す（型エラー回避）
+    const auth = new google.auth.GoogleAuth({
+      credentials: serviceAccount as any, // ← ここがポイント（最短で確実）
+      scopes: ["https://www.googleapis.com/auth/drive.file"],
     });
 
-    // Google Driveにアップロード
+    const drive = google.drive({ version: "v3", auth });
+
     const stream = Readable.from(pdfBuffer);
     const driveRes = await drive.files.create({
-      requestBody: { name: filename, mimeType: "application/pdf", parents: [driveFolderId] },
-      media:       { mimeType: "application/pdf", body: stream },
-      fields:      "id",
+      requestBody: {
+        name: filename,
+        mimeType: "application/pdf",
+        parents: [driveFolderId],
+      },
+      media: { mimeType: "application/pdf", body: stream },
+      fields: "id",
     });
 
-    const fileId    = driveRes.data.id!;
+    const fileId = driveRes.data.id!;
     const driveLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
 
     return NextResponse.json({ driveLink });
-
   } catch (err: any) {
-    console.error("save-lesson error:", err);
+    console.error("saveLessonPdf error:", err);
     return NextResponse.json(
-      { error: err.message || "保存に失敗しました" },
+      { error: err?.message || "保存に失敗しました" },
       { status: 500 }
     );
   }
