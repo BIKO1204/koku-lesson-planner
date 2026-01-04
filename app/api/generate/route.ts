@@ -6,7 +6,6 @@ export const runtime = "nodejs";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-// OpenAIに渡すJSON Schema（厳格）
 const JSON_SCHEMA: Record<string, any> = {
   type: "object",
   additionalProperties: false,
@@ -44,14 +43,11 @@ const JSON_SCHEMA: Record<string, any> = {
       },
     },
     "育てたい子どもの姿": { type: "string" },
-
-    // 各時間目は「文字列」なので、ここを“やわらかい連続文章”にさせる
     "授業の流れ": {
       type: "object",
       patternProperties: { "^\\d+時間目$": { type: "string" } },
       additionalProperties: false,
     },
-
     "言語活動の工夫": { type: "string" },
     "結果": { type: "string" },
   },
@@ -66,40 +62,31 @@ export async function POST(request: NextRequest) {
   const prompt = typeof body?.prompt === "string" ? body.prompt : "";
   if (!prompt) return NextResponse.json({ error: "prompt が必要です" }, { status: 400 });
 
-  // モデルは env 優先、未設定なら現状維持
   const model = process.env.OPENAI_MODEL || "gpt-4o-2024-08-06";
 
-  // ★「やわらかめ」寄り：少しだけ温度を上げる（硬さが抜けやすい）
-  const temperature = Number(process.env.GENERATE_TEMPERATURE ?? 0.7);
-  const maxTokens = Number(process.env.GENERATE_MAX_TOKENS ?? 2200);
+  // ★前の感じに戻す（硬さ・安定性）
+  const temperature = Number(process.env.GENERATE_TEMPERATURE ?? 0.4);
+  const maxTokens = Number(process.env.GENERATE_MAX_TOKENS ?? 2000);
 
-  // ★ここが本体：文体・出力のしかたを「やわらかめ」「連続文章」に固定
+  // ★「連続文章で表示」だけ強める（やわらかめ押しはしない）
   const system = `
-あなたは小学校国語の授業づくりのアシスタントです。
-必ずスキーマ準拠のJSONのみを返してください（説明文や前置きは禁止）。
-
-【文体（重要）】
-- 授業案として「やわらかめ」で書く。堅い指導案の文体（〜させる／〜を図る）を多用しない。
-- できるだけ自然な日本語で、「〜していく」「〜してみる」「〜を確かめる」などの実践メモに近い書きぶりにする。
-- ただし内容は具体性を落とさない。
+あなたは小学校国語の授業設計の専門家です。
+必ずスキーマ準拠のJSONのみを返してください（説明文は禁止）。
 
 【品質要件】
 - 「単元の目標」は学習者の到達像が分かる1〜3文で具体化する。
 - 「評価の観点」は各観点2〜5項目の配列で、観察可能な行動で書く。
 - 「言語活動の工夫」は“何を／どの形式で／どう交流するか”が分かる具体で書く。
-
-【授業の流れ（最重要）】
-- 各時間目の値は、箇条書きや見出し（例：教師の手立て：／子どもの活動：／評価：）を使わず、
-  1〜3段落程度の「連続した文章」で書く。
-- 文章の中に自然に「教師の関わり」「子どもの活動」「見取り（評価）」が入るようにする（項目名で分けない）。
 - 入力が空欄の時間目は、前後の流れに整合するよう補完する。
-
-【キーの扱い】
 - 「教材名」を正式キーとして必ず含める（互換のため必要なら「単元名」も同値で含めてよい）。
+
+【授業の流れ（表示要件）】
+- 各「n時間目」の値は、箇条書きや見出し（例：教師の手立て：／評価：など）に分けず、
+  連続した文章（1〜2段落）として書く。
+- 文章の中に自然に「教師の手立て」「子どもの活動」「評価の見取り」が読み取れるように含める。
 `.trim();
 
   try {
-    // Structured Outputs
     const resp = await openai.chat.completions.create({
       model,
       temperature,
@@ -117,13 +104,11 @@ export async function POST(request: NextRequest) {
     const text = resp.choices?.[0]?.message?.content ?? "{}";
     const obj = JSON.parse(text);
 
-    // 互換補完
     if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
     if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
 
     return NextResponse.json(obj);
   } catch (e: any) {
-    // フォールバック（JSONモード）
     try {
       const fb = await openai.chat.completions.create({
         model,
