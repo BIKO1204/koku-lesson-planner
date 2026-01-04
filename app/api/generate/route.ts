@@ -11,35 +11,49 @@ const JSON_SCHEMA: Record<string, any> = {
   type: "object",
   additionalProperties: false,
   required: [
-    "教科書名","学年","ジャンル","単元名","授業時間数","単元の目標",
-    "評価の観点","育てたい子どもの姿","授業の流れ","言語活動の工夫","結果"
+    "教科書名",
+    "学年",
+    "ジャンル",
+    "教材名", // ★「教材名」を必須に統一
+    "授業時間数",
+    "単元の目標",
+    "評価の観点",
+    "育てたい子どもの姿",
+    "授業の流れ",
+    "言語活動の工夫",
+    "結果",
   ],
   properties: {
     "教科書名": { type: "string" },
     "学年": { type: "string" },
     "ジャンル": { type: "string" },
+
+    // ★教材名を正式キーに
+    "教材名": { type: "string" },
+    // ★後方互換（任意）
     "単元名": { type: "string" },
+
     "授業時間数": { type: "integer", minimum: 1 },
     "単元の目標": { type: "string" },
     "評価の観点": {
       type: "object",
       additionalProperties: false,
-      required: ["知識・技能","思考・判断・表現","主体的に学習に取り組む態度"],
+      required: ["知識・技能", "思考・判断・表現", "主体的に学習に取り組む態度"],
       properties: {
         "知識・技能": { type: "array", items: { type: "string" } },
         "思考・判断・表現": { type: "array", items: { type: "string" } },
         "主体的に学習に取り組む態度": { type: "array", items: { type: "string" } },
-      }
+      },
     },
     "育てたい子どもの姿": { type: "string" },
     "授業の流れ": {
       type: "object",
       patternProperties: { "^\\d+時間目$": { type: "string" } },
-      additionalProperties: false
+      additionalProperties: false,
     },
     "言語活動の工夫": { type: "string" },
     "結果": { type: "string" },
-  }
+  },
 };
 
 export async function GET() {
@@ -47,14 +61,30 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  // 1) リクエストのパース
   const body = await request.json().catch(() => null);
   const prompt = typeof body?.prompt === "string" ? body.prompt : "";
   if (!prompt) return NextResponse.json({ error: "prompt が必要です" }, { status: 400 });
 
+  // ★モデルは env 優先、未設定なら現状維持（Structured Outputs対応）
   const model = process.env.OPENAI_MODEL || "gpt-4o-2024-08-06";
-  const temperature = Number(process.env.GENERATE_TEMPERATURE ?? 0.2);
-  const maxTokens = Number(process.env.GENERATE_MAX_TOKENS ?? 1200);
+
+  // ★授業案向け：硬すぎを緩める
+  const temperature = Number(process.env.GENERATE_TEMPERATURE ?? 0.4);
+  // ★時間数が増えても薄くならないように
+  const maxTokens = Number(process.env.GENERATE_MAX_TOKENS ?? 2000);
+
+  const system = `
+あなたは小学校国語の授業設計の専門家です。
+必ずスキーマ準拠のJSONのみを返してください（説明文は禁止）。
+
+【品質要件】
+- 「単元の目標」は学習者の到達像が分かる1〜3文で具体化する。
+- 「評価の観点」は各観点2〜5項目の配列で、観察可能な行動で書く。
+- 「授業の流れ」は各時間目について、最低でも「教師の手立て／子どもの活動／評価の見取り」が分かる文章にする。
+- 入力が空欄の時間目は、前後の流れに整合するよう補完する。
+- 「言語活動の工夫」は“何を／どの形式で／どう交流するか”が分かる具体で書く。
+- 「教材名」を正式キーとして必ず含める（互換のため必要なら「単元名」も同値で含めてよい）。
+`.trim();
 
   // 2) Chat Completions + Structured Outputs
   try {
@@ -67,17 +97,20 @@ export async function POST(request: NextRequest) {
         json_schema: { name: "LessonPlan", strict: true, schema: JSON_SCHEMA },
       },
       messages: [
-        {
-          role: "system",
-          content:
-            "あなたは小学校の国語の授業プランナーです。必ずスキーマ準拠のJSONのみを返してください。説明文は不要です。",
-        },
+        { role: "system", content: system },
         { role: "user", content: prompt },
       ],
     });
 
     const text = resp.choices?.[0]?.message?.content ?? "{}";
-    return NextResponse.json(JSON.parse(text));
+    const obj = JSON.parse(text);
+
+    // ★互換補完：教材名が無い場合は単元名から埋める
+    if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
+    // ★互換補完：単元名が無い場合は教材名から埋める
+    if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
+
+    return NextResponse.json(obj);
   } catch (e: any) {
     // 3) json_schema が使えない環境/モデルだった場合は JSONモードでフォールバック
     try {
@@ -85,14 +118,20 @@ export async function POST(request: NextRequest) {
         model,
         temperature,
         max_tokens: maxTokens,
-        response_format: { type: "json_object" }, // ← 常に有効なJSONを返す
+        response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "必ず有効なJSONのみを返してください。説明文は不要です。" },
+          { role: "system", content: system },
           { role: "user", content: prompt },
         ],
       });
+
       const text = fb.choices?.[0]?.message?.content ?? "{}";
-      return NextResponse.json(JSON.parse(text));
+      const obj = JSON.parse(text);
+
+      if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
+      if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
+
+      return NextResponse.json(obj);
     } catch (e2: any) {
       return NextResponse.json({ error: e2?.message || "Internal Error" }, { status: 500 });
     }
