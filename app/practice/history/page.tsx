@@ -30,10 +30,10 @@ type PracticeRecord = {
   grade?: string;
   genre?: string;
   unitName?: string; // 表示は「教材名」
-  modelType?: string;   // normalized: reading / writing / discussion / language_activity
+  modelType?: string; // normalized: reading / writing / discussion / language_activity
   author?: string;
   authorName?: string;
-  isShared?: boolean;   // ★ 追加：共有状態（shared / isShared どちらにも対応）
+  isShared?: boolean; // ★ 追加：共有状態（shared / isShared どちらにも対応）
 };
 
 type LessonPlan = {
@@ -86,9 +86,7 @@ function normalizeModelType(name: string) {
   return name.replace(/^lesson_plans_/, "").replace(/^practiceRecords_/, "");
 }
 
-async function fetchRemotePracticeRecords(
-  userEmail: string
-): Promise<PracticeRecord[]> {
+async function fetchRemotePracticeRecords(userEmail: string): Promise<PracticeRecord[]> {
   if (!userEmail) return [];
   const all: PracticeRecord[] = [];
   for (const coll of PRACTICE_COLLECTIONS) {
@@ -325,16 +323,14 @@ export default function PracticeHistoryPage() {
         doc(db, coll, rec.lessonId),
         {
           isShared: true, // 新スキーマ想定
-          shared: true,   // 互換フィールド
+          shared: true, // 互換フィールド
           sharedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
       // 画面反映
-      setRecords((prev) =>
-        prev.map((r) => (r.lessonId === rec.lessonId ? { ...r, isShared: true } : r))
-      );
+      setRecords((prev) => prev.map((r) => (r.lessonId === rec.lessonId ? { ...r, isShared: true } : r)));
 
       alert("再共有しました。");
     } catch (e) {
@@ -459,7 +455,6 @@ export default function PracticeHistoryPage() {
   };
 
   const pdfBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#FF9800" };
-  const driveBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#2196F3" };
   const actionBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#4CAF50" };
   const deleteBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#f44336" };
   const restoreBtn: CSSProperties = { ...buttonBaseStyle, backgroundColor: "#673ab7" };
@@ -617,9 +612,7 @@ export default function PracticeHistoryPage() {
                           </p>
                           <p>
                             <strong>教材名：</strong>
-                            {planForDisplay.result["教材名"] ??
-                              planForDisplay.result["単元名"] ??
-                              "－"}
+                            {planForDisplay.result["教材名"] ?? planForDisplay.result["単元名"] ?? "－"}
                           </p>
                           <p>
                             <strong>授業時間数：</strong>
@@ -740,10 +733,7 @@ export default function PracticeHistoryPage() {
                     </p>
 
                     {r.boardImages?.length > 0 && (
-                      <div
-                        style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}
-                        className="h2pdf-avoid"
-                      >
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }} className="h2pdf-avoid">
                         {r.boardImages.map((img, i) => (
                           <div key={`${img.name}-${i}`} style={{ width: "100%" }} className="h2pdf-avoid h2pdf-block">
                             <div style={{ marginBottom: 6, fontWeight: "bold" }}>板書{i + 1}</div>
@@ -766,15 +756,7 @@ export default function PracticeHistoryPage() {
                     )}
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      marginTop: 16,
-                      justifyContent: "flex-start",
-                    }}
-                  >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16, justifyContent: "flex-start" }}>
                     <button
                       onClick={() => {
                         import("html2pdf.js").then(({ default: html2pdf }) => {
@@ -795,35 +777,6 @@ export default function PracticeHistoryPage() {
                       style={pdfBtn}
                     >
                       📄 PDF保存
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        import("html2pdf.js").then(async ({ default: html2pdf }) => {
-                          const el = document.getElementById(`record-${r.lessonId}`);
-                          if (!el) return alert("Drive保存用の要素が見つかりませんでした。");
-                          const pdfBlob = await html2pdf()
-                            .from(el)
-                            .set({
-                              margin: [5, 5, 5, 5],
-                              jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-                              html2canvas: { useCORS: true, scale: scaleVal },
-                              pagebreak: { mode: ["css", "legacy", "avoid-all"] },
-                            })
-                            .outputPdf("blob");
-                          try {
-                            const { uploadToDrive } = await import("../../../lib/drive");
-                            await uploadToDrive(pdfBlob, `${sanitizeFilename(r.lessonTitle)}.pdf`, "application/pdf");
-                            alert("Driveへの保存が完了しました。");
-                          } catch (e) {
-                            console.error(e);
-                            alert("Drive保存に失敗しました。");
-                          }
-                        });
-                      }}
-                      style={driveBtn}
-                    >
-                      ☁️ Drive保存
                     </button>
 
                     {/* 授業案が見つからない時だけ 復元ボタン */}
