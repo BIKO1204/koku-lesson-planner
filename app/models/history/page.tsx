@@ -15,7 +15,6 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import html2pdf from "html2pdf.js";
 
 /* =========================
  * 型
@@ -58,8 +57,7 @@ function FieldWithDiff({
   previous?: string;
   label: string;
 }) {
-  const isChanged =
-    previous === undefined || current.trim() !== (previous ?? "").trim();
+  const isChanged = previous === undefined || current.trim() !== (previous ?? "").trim();
   return (
     <p
       style={{
@@ -79,16 +77,9 @@ function FieldWithDiff({
   );
 }
 
-function TimelineItem({
-  date,
-  children,
-}: {
-  date: string;
-  children: React.ReactNode;
-}) {
+function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
   return (
     <div
-      className="pdf-avoid-break" // ★PDFで途中改ページされにくくする（見た目は変わらない）
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -164,10 +155,56 @@ const TRIGGER_OPTIONS = [
 ] as const;
 
 const sanitizeFilename = (name: string) =>
-  (name || "教育観ポートフォリオ")
-    .trim()
-    .replace(/[\\\/:*?"<>|]+/g, "_")
-    .slice(0, 120);
+  (name || "教育観ポートフォリオ").trim().replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 120);
+
+/* =========================
+ * PDF出力（html2pdf.js）
+ * ======================= */
+async function exportPdf(rootId: string, filename: string) {
+  const el = document.getElementById(rootId);
+  if (!el) {
+    alert("PDF化する要素が見つかりませんでした。");
+    return;
+  }
+
+  // クリック直後にメニュー等が開いているとレイアウトが崩れるので少し待つ
+  await new Promise((r) => setTimeout(r, 80));
+
+  let html2pdf: any;
+  try {
+    // distを参照しない（TS型問題回避＆Nextで安定）
+    const m: any = await import("html2pdf.js");
+    html2pdf = m.default ?? m;
+  } catch (e) {
+    console.error("html2pdf.js の読み込みに失敗:", e);
+    alert("PDF機能の読み込みに失敗しました。");
+    return;
+  }
+
+  // A4縦・余白控えめ・ページ分割
+  const opt = {
+    margin: [10, 10, 10, 10], // top,left,bottom,right (mm換算として扱われる)
+    filename: `${sanitizeFilename(filename)}.pdf`,
+    image: { type: "jpeg", quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: "#ffffff",
+      scrollY: 0,
+    },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["css", "legacy"] },
+  };
+
+  try {
+    // html2pdf().from(el).set(opt).save()
+    await html2pdf().set(opt).from(el).save();
+  } catch (e) {
+    console.error("PDF生成エラー:", e);
+    alert("PDFの生成に失敗しました。");
+  }
+}
 
 /* =========================
  * ポートフォリオ編集（タグUIは削除）
@@ -181,16 +218,10 @@ function PortfolioEditor({
   onCancel: () => void;
   onSaved: (updated: Partial<EducationHistory>) => void;
 }) {
-  const [triggerType, setTriggerType] = useState<string>(
-    data.triggerType ?? ""
-  );
-  const [triggerText, setTriggerText] = useState<string>(
-    data.triggerText ?? ""
-  );
+  const [triggerType, setTriggerType] = useState<string>(data.triggerType ?? "");
+  const [triggerText, setTriggerText] = useState<string>(data.triggerText ?? "");
   const [reason, setReason] = useState<string>(data.reason ?? "");
-  const [reflection, setReflection] = useState<string>(
-    data.reflection ?? ""
-  );
+  const [reflection, setReflection] = useState<string>(data.reflection ?? "");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -217,11 +248,7 @@ function PortfolioEditor({
     <div style={editorWrapStyle}>
       <div style={editorRowStyle}>
         <label style={labelStyle}>きっかけ（分類）</label>
-        <select
-          value={triggerType}
-          onChange={(e) => setTriggerType(e.target.value)}
-          style={inputStyle}
-        >
+        <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} style={inputStyle}>
           <option value="">（未選択）</option>
           {TRIGGER_OPTIONS.map((opt) => (
             <option key={opt} value={opt}>
@@ -265,18 +292,10 @@ function PortfolioEditor({
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{ ...buttonBaseStyle, backgroundColor: "#4caf50", opacity: saving ? 0.8 : 1 }}
-        >
-          保存
+        <button disabled={saving} onClick={handleSave} style={{ ...buttonBaseStyle, backgroundColor: "#4caf50" }}>
+          {saving ? "保存中..." : "保存"}
         </button>
-        <button
-          onClick={onCancel}
-          disabled={saving}
-          style={{ ...buttonBaseStyle, backgroundColor: "#9e9e9e", opacity: saving ? 0.8 : 1 }}
-        >
+        <button disabled={saving} onClick={onCancel} style={{ ...buttonBaseStyle, backgroundColor: "#9e9e9e" }}>
           キャンセル
         </button>
       </div>
@@ -290,9 +309,7 @@ function PortfolioEditor({
 export default function GroupedHistoryPage() {
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
-  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>(
-    []
-  );
+  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -321,11 +338,7 @@ export default function GroupedHistoryPage() {
       return;
     }
     const colRef = collection(db, "educationModelsHistory");
-    const qy = query(
-      colRef,
-      where("creatorId", "==", userId),
-      orderBy("updatedAt", "desc")
-    );
+    const qy = query(colRef, where("creatorId", "==", userId), orderBy("updatedAt", "desc"));
 
     const unsub = onSnapshot(
       qy,
@@ -384,9 +397,7 @@ export default function GroupedHistoryPage() {
   // 全きっかけ（分類）候補を算出（フィルタUI用）
   const allTriggers = useMemo(() => {
     const set = new Set<string>();
-    groupedHistories.forEach((g) =>
-      g.histories.forEach((h) => h.triggerType && set.add(h.triggerType))
-    );
+    groupedHistories.forEach((g) => g.histories.forEach((h) => h.triggerType && set.add(h.triggerType)));
     return Array.from(set);
   }, [groupedHistories]);
 
@@ -426,82 +437,13 @@ export default function GroupedHistoryPage() {
 
     return (
       <div style={summaryCardStyle}>
-        <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-          サマリー（このモデル内の変化の要約）
-        </div>
+        <div style={{ fontWeight: "bold", marginBottom: 6 }}>サマリー（このモデル内の変化の要約）</div>
         <p style={{ margin: 0, fontSize: 14 }}>
           変化した領域：{changedFields.length ? changedFields.join("・") : "（大きな変化なし）"}
         </p>
       </div>
     );
   }
-
-  /* =========================
-   * PDF（画面DOMは触らず、複製してPDF専用DOMで出力）
-   * ======================= */
-  const exportPdf = async (elementId: string, fileBaseName: string) => {
-    if (typeof window === "undefined") return;
-
-    const src = document.getElementById(elementId);
-    if (!src) return alert("PDF生成対象が見つかりません。");
-
-    // 画面のDOMをそのままpdf化すると崩れ/切れ/余白が出やすいので、複製してPDF用に整形
-    const clone = src.cloneNode(true) as HTMLElement;
-
-    // PDFに不要なUI（検索欄・ボタンなど）を削除（画面には影響しない）
-    clone.querySelectorAll("button").forEach((n) => n.remove());
-    clone.querySelectorAll("input, select, textarea").forEach((n) => n.remove());
-
-    // PDF用ラッパー（A4幅固定・白背景）
-    const wrapper = document.createElement("div");
-    wrapper.style.position = "fixed";
-    wrapper.style.left = "-9999px";
-    wrapper.style.top = "0";
-    wrapper.style.width = "210mm";
-    wrapper.style.background = "white";
-    wrapper.style.color = "#222";
-    wrapper.style.fontFamily = "'Yu Gothic','游ゴシック','Noto Sans JP',sans-serif";
-    wrapper.style.fontSize = "14px";
-    wrapper.style.lineHeight = "1.7";
-    wrapper.style.padding = "12mm 12mm";
-    wrapper.style.boxSizing = "border-box";
-    wrapper.style.wordBreak = "break-word";
-
-    // PDFで途中改ページされやすいブロックに対策CSSを差し込む（wrapper内だけ）
-    const style = document.createElement("style");
-    style.innerHTML = `
-      .pdf-avoid-break { break-inside: avoid; page-break-inside: avoid; }
-      h1,h2,h3 { break-after: avoid; page-break-after: avoid; }
-    `;
-    wrapper.appendChild(style);
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
-
-    const filename = `${sanitizeFilename(fileBaseName)}.pdf`;
-
-    try {
-      await html2pdf()
-        .from(wrapper)
-        .set({
-          filename,
-          margin: 8,
-          pagebreak: { mode: ["css", "legacy"] },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: "#ffffff",
-            windowWidth: wrapper.scrollWidth,
-          },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        })
-        .save();
-    } catch (e) {
-      console.error(e);
-      alert("PDFの生成に失敗しました。");
-    } finally {
-      wrapper.remove();
-    }
-  };
 
   return (
     <>
@@ -541,7 +483,13 @@ export default function GroupedHistoryPage() {
         }}
         aria-hidden={!menuOpen}
       >
-        <button onClick={() => signOut()} style={logoutButtonStyle}>
+        <button
+          onClick={() => {
+            setMenuOpen(false);
+            signOut();
+          }}
+          style={logoutButtonStyle}
+        >
           🔓 ログアウト
         </button>
         <div style={menuScrollStyle}>
@@ -551,46 +499,22 @@ export default function GroupedHistoryPage() {
           <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
           </Link>
-          <Link
-            href="/plan/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/plan/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📖 計画履歴
           </Link>
-          <Link
-            href="/practice/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📷 実践履歴
           </Link>
-          <Link
-            href="/practice/share"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/practice/share" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🌐 共有版実践記録
           </Link>
-          <Link
-            href="/models/create"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/create" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             ✏️ 教育観作成
           </Link>
-          <Link
-            href="/models"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📚 教育観一覧
           </Link>
-          <Link
-            href="/models/history"
-            style={navLinkStyle}
-            onClick={() => setMenuOpen(false)}
-          >
+          <Link href="/models/history" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🕒 教育観履歴
           </Link>
         </div>
@@ -609,12 +533,11 @@ export default function GroupedHistoryPage() {
             授業改善の根拠が整理され、同僚への共有や校内研修、評価資料づくりにもそのまま使える「成長の記録」です。
           </p>
           <p style={{ margin: "6px 0 0" }}>
-            サマリー（このモデル内の変化の要約）は、<strong>どの領域が変わってきたか</strong>
-            をひと目で確認するための短いまとめです。
+            サマリー（このモデル内の変化の要約）は、<strong>どの領域が変わってきたか</strong>をひと目で確認するための短いまとめです。
           </p>
         </section>
 
-        {/* フィルタ＆操作バー（タグUIなし／きっかけ分類で絞り込み可能） */}
+        {/* フィルタ＆操作バー */}
         <section style={filterBarStyle}>
           <input
             type="text"
@@ -624,11 +547,7 @@ export default function GroupedHistoryPage() {
             style={filterInputStyle}
           />
 
-          <select
-            value={filterTrigger}
-            onChange={(e) => setFilterTrigger(e.target.value)}
-            style={filterSelectStyle}
-          >
+          <select value={filterTrigger} onChange={(e) => setFilterTrigger(e.target.value)} style={filterSelectStyle}>
             <option value="">きっかけ（すべて）</option>
             {allTriggers.map((t) => (
               <option key={t} value={t}>
@@ -638,11 +557,7 @@ export default function GroupedHistoryPage() {
           </select>
 
           <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <button
-              onClick={expandAll}
-              style={{ ...buttonBaseStyle, backgroundColor: "#607d8b" }}
-              title="すべて展開"
-            >
+            <button onClick={expandAll} style={{ ...buttonBaseStyle, backgroundColor: "#607d8b" }} title="すべて展開">
               すべて展開
             </button>
             <button
@@ -680,22 +595,14 @@ export default function GroupedHistoryPage() {
 
             return (
               <section key={modelId} style={groupSectionStyle} id={sectionId}>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button
                     onClick={() => toggleExpand(modelId)}
                     style={groupToggleBtnStyle}
                     aria-expanded={expandedIds.has(modelId)}
                     aria-controls={`section-${modelId}`}
                   >
-                    {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴{" "}
-                    {histories.length} 件）
+                    {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴 {histories.length} 件）
                   </button>
 
                   <button
@@ -707,7 +614,7 @@ export default function GroupedHistoryPage() {
                   </button>
                 </div>
 
-                {/* モデルサマリー（常時表示・注釈つき） */}
+                {/* モデルサマリー */}
                 <div style={{ marginTop: 8 }}>{renderModelSummary(desc)}</div>
 
                 {expandedIds.has(modelId) && (
@@ -721,26 +628,10 @@ export default function GroupedHistoryPage() {
                           <h2 style={cardTitleStyle}>{h.name}</h2>
 
                           {/* 変化点（差分ハイライト） */}
-                          <FieldWithDiff
-                            current={h.philosophy}
-                            previous={prev?.philosophy}
-                            label="教育観"
-                          />
-                          <FieldWithDiff
-                            current={h.evaluationFocus}
-                            previous={prev?.evaluationFocus}
-                            label="評価観点"
-                          />
-                          <FieldWithDiff
-                            current={h.languageFocus}
-                            previous={prev?.languageFocus}
-                            label="言語活動"
-                          />
-                          <FieldWithDiff
-                            current={h.childFocus}
-                            previous={prev?.childFocus}
-                            label="育てたい子どもの姿"
-                          />
+                          <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
+                          <FieldWithDiff current={h.evaluationFocus} previous={prev?.evaluationFocus} label="評価観点" />
+                          <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
+                          <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
 
                           {/* ポートフォリオ領域 */}
                           {!isEditing ? (
@@ -752,40 +643,23 @@ export default function GroupedHistoryPage() {
                               </p>
                               <p style={rowP}>
                                 <strong>理由・背景：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>
-                                  {h.reason || "—"}
-                                </span>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reason || "—"}</span>
                               </p>
                               <p style={rowP}>
                                 <strong>振り返りメモ：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>
-                                  {h.reflection || "—"}
-                                </span>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reflection || "—"}</span>
                               </p>
 
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 8,
-                                  marginTop: 6,
-                                  flexWrap: "wrap",
-                                }}
-                              >
+                              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
                                 <button
                                   onClick={() => setEditingId(h.id)}
-                                  style={{
-                                    ...buttonBaseStyle,
-                                    backgroundColor: "#1976d2",
-                                  }}
+                                  style={{ ...buttonBaseStyle, backgroundColor: "#1976d2" }}
                                 >
                                   ✏️ 追記・編集
                                 </button>
                                 <button
                                   onClick={() => deleteHistory(h.id)}
-                                  style={{
-                                    ...buttonBaseStyle,
-                                    backgroundColor: "#e53935",
-                                  }}
+                                  style={{ ...buttonBaseStyle, backgroundColor: "#e53935" }}
                                 >
                                   🗑 削除
                                 </button>
@@ -802,9 +676,7 @@ export default function GroupedHistoryPage() {
                                       ? g
                                       : {
                                           ...g,
-                                          histories: g.histories.map((x) =>
-                                            x.id === h.id ? { ...x, ...updated } : x
-                                          ),
+                                          histories: g.histories.map((x) => (x.id === h.id ? { ...x, ...updated } : x)),
                                         }
                                   )
                                 );
