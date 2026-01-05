@@ -344,9 +344,7 @@ export default function EducationModelsPage() {
         <div style={noticeBoxStyle}>
           <strong>このページの使い方：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
-            <li>
-              授業の考え方を「モデル」として残し、比較・共有・振り返りに活かせます。
-            </li>
+            <li>授業の考え方を「モデル」として残し、比較・共有・振り返りに活かせます。</li>
             <li>
               モデル名は、既にある公開名に合わせても、新しく作ってもOKです（同名が増えるほど比較しやすくなります）。
             </li>
@@ -496,14 +494,18 @@ export default function EducationModelsPage() {
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                      {/* 編集ボタン：青 */}
-                      <button type="button" onClick={() => startEdit(m)} style={editBtnBlueStyle}>
+                      {/* ★編集・削除：同じサイズ */}
+                      <button
+                        type="button"
+                        onClick={() => startEdit(m)}
+                        style={{ ...smallActionBtnStyle, backgroundColor: "#1976d2" }}
+                      >
                         編集
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(m.id)}
-                        style={{ ...ghostBtnStyle, backgroundColor: "#e53935", color: "#fff", border: "none" }}
+                        style={{ ...smallActionBtnStyle, backgroundColor: "#e53935" }}
                       >
                         削除
                       </button>
@@ -676,14 +678,17 @@ const ghostBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const editBtnBlueStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  backgroundColor: "#1976d2",
+/** ★一覧の「編集/削除」用：同じ大きさに揃える共通ボタン */
+const smallActionBtnStyle: React.CSSProperties = {
+  padding: "12px 12px", // ← 両方同一
+  minWidth: 72,         // ← 横幅も揃う（好みで 64〜80 で調整OK）
+  textAlign: "center",
   color: "#fff",
   border: "none",
   borderRadius: 6,
   cursor: "pointer",
   fontWeight: 700,
+  lineHeight: 1,
 };
 
 const listItemStyle: React.CSSProperties = {

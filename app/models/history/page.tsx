@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, CSSProperties } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import {
   collection,
@@ -15,6 +15,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import html2pdf from "html2pdf.js";
 
 /* =========================
  * 型
@@ -57,7 +58,8 @@ function FieldWithDiff({
   previous?: string;
   label: string;
 }) {
-  const isChanged = previous === undefined || current.trim() !== (previous ?? "").trim();
+  const isChanged =
+    previous === undefined || current.trim() !== (previous ?? "").trim();
   return (
     <p
       style={{
@@ -77,40 +79,51 @@ function FieldWithDiff({
   );
 }
 
-function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
+function TimelineItem({
+  date,
+  children,
+}: {
+  date: string;
+  children: React.ReactNode;
+}) {
   return (
     <div
+      className="pdf-avoid-break" // ★PDFで途中改ページされにくくする（見た目は変わらない）
       style={{
-        display: "grid",
-        gridTemplateColumns: "140px 1fr",
-        gap: 12,
-        alignItems: "start",
+        display: "flex",
+        alignItems: "flex-start",
         marginBottom: 16,
+        flexWrap: "wrap",
+        gap: 12,
       }}
     >
       <time
         style={{
+          width: 140,
           color: "#555",
           whiteSpace: "nowrap",
-          fontSize: 13,
-          fontFamily: "sans-serif",
+          flexShrink: 0,
+          fontSize: 14,
+          fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
         }}
       >
         {date}
       </time>
-
-      {/* 実践記録ページの「box」のトーンに寄せる */}
       <div
-        className="pdf-avoid-break"
         style={{
-          border: "2px solid #1976d2",
-          borderRadius: 6,
-          padding: 12,
-          backgroundColor: "#fff",
-          boxShadow: "0 2px 6px rgba(25,118,210,0.08)",
+          marginLeft: 12,
+          borderLeft: "4px solid #1976d2",
+          paddingLeft: 12,
+          flexGrow: 1,
+          backgroundColor: "#f9fbff",
+          borderRadius: 8,
+          paddingTop: 12,
+          paddingBottom: 12,
+          boxShadow: "0 2px 8px rgba(25, 118, 210, 0.1)",
+          fontSize: 15,
+          fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
           minWidth: 0,
           wordBreak: "break-word",
-          fontFamily: "sans-serif",
         }}
       >
         {children}
@@ -151,7 +164,10 @@ const TRIGGER_OPTIONS = [
 ] as const;
 
 const sanitizeFilename = (name: string) =>
-  (name || "教育観ポートフォリオ").trim().replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 120);
+  (name || "教育観ポートフォリオ")
+    .trim()
+    .replace(/[\\\/:*?"<>|]+/g, "_")
+    .slice(0, 120);
 
 /* =========================
  * ポートフォリオ編集（タグUIは削除）
@@ -165,10 +181,16 @@ function PortfolioEditor({
   onCancel: () => void;
   onSaved: (updated: Partial<EducationHistory>) => void;
 }) {
-  const [triggerType, setTriggerType] = useState<string>(data.triggerType ?? "");
-  const [triggerText, setTriggerText] = useState<string>(data.triggerText ?? "");
+  const [triggerType, setTriggerType] = useState<string>(
+    data.triggerType ?? ""
+  );
+  const [triggerText, setTriggerText] = useState<string>(
+    data.triggerText ?? ""
+  );
   const [reason, setReason] = useState<string>(data.reason ?? "");
-  const [reflection, setReflection] = useState<string>(data.reflection ?? "");
+  const [reflection, setReflection] = useState<string>(
+    data.reflection ?? ""
+  );
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -192,73 +214,68 @@ function PortfolioEditor({
   };
 
   return (
-    <div style={boxStyle}>
-      <strong style={{ display: "block", marginBottom: 8 }}>ポートフォリオ追記</strong>
-
-      <div style={{ display: "grid", gap: 10 }}>
-        <label style={labelStyle}>
-          きっかけ（分類）
-          <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} style={inputStyle}>
-            <option value="">（未選択）</option>
-            {TRIGGER_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={labelStyle}>
-          きっかけ（具体）
-          <input
-            type="text"
-            value={triggerText}
-            onChange={(e) => setTriggerText(e.target.value)}
-            placeholder="例）第2時のディスカッションで『根拠』が弱かった"
-            style={inputStyle}
-          />
-        </label>
-
-        <label style={labelStyle}>
-          理由・背景
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            placeholder="なぜその変更をしたのか、意図や根拠・背景を記録"
-            style={textareaStyle}
-          />
-        </label>
-
-        <label style={labelStyle}>
-          振り返りメモ
-          <textarea
-            value={reflection}
-            onChange={(e) => setReflection(e.target.value)}
-            rows={4}
-            placeholder="次回に活かす視点や児童の変化、自分の学び"
-            style={textareaStyle}
-          />
-        </label>
+    <div style={editorWrapStyle}>
+      <div style={editorRowStyle}>
+        <label style={labelStyle}>きっかけ（分類）</label>
+        <select
+          value={triggerType}
+          onChange={(e) => setTriggerType(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">（未選択）</option>
+          {TRIGGER_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+      <div style={editorRowStyle}>
+        <label style={labelStyle}>きっかけ（具体）</label>
+        <input
+          type="text"
+          value={triggerText}
+          onChange={(e) => setTriggerText(e.target.value)}
+          placeholder="例）第2時のディスカッションで『根拠』が弱かった"
+          style={inputStyle}
+        />
+      </div>
+
+      <div style={editorRowStyle}>
+        <label style={labelStyle}>理由・背景</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          placeholder="なぜその変更をしたのか、意図や根拠・背景を記録"
+          style={textareaStyle}
+        />
+      </div>
+
+      <div style={editorRowStyle}>
+        <label style={labelStyle}>振り返りメモ</label>
+        <textarea
+          value={reflection}
+          onChange={(e) => setReflection(e.target.value)}
+          rows={4}
+          placeholder="次回に活かす視点や児童の変化、自分の学び"
+          style={textareaStyle}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{
-            ...primaryBtnStyle,
-            backgroundColor: "#4caf50",
-            marginTop: 0,
-            opacity: saving ? 0.7 : 1,
-            cursor: saving ? "not-allowed" : "pointer",
-          }}
+          style={{ ...buttonBaseStyle, backgroundColor: "#4caf50", opacity: saving ? 0.8 : 1 }}
         >
-          {saving ? "保存中..." : "保存"}
+          保存
         </button>
         <button
           onClick={onCancel}
-          style={{ ...secondaryBtnStyle, backgroundColor: "#9e9e9e", color: "#fff" }}
+          disabled={saving}
+          style={{ ...buttonBaseStyle, backgroundColor: "#9e9e9e", opacity: saving ? 0.8 : 1 }}
         >
           キャンセル
         </button>
@@ -271,16 +288,16 @@ function PortfolioEditor({
  * メイン
  * ======================= */
 export default function GroupedHistoryPage() {
-  const router = useRouter();
   const { data: session } = useSession();
   const userId = session?.user?.email || "";
-
-  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
+  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>(
+    []
+  );
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // フィルタ／検索
+  // フィルタ／検索（タグ関連は削除）
   const [qText, setQText] = useState("");
   const [filterTrigger, setFilterTrigger] = useState<string>("");
 
@@ -304,7 +321,11 @@ export default function GroupedHistoryPage() {
       return;
     }
     const colRef = collection(db, "educationModelsHistory");
-    const qy = query(colRef, where("creatorId", "==", userId), orderBy("updatedAt", "desc"));
+    const qy = query(
+      colRef,
+      where("creatorId", "==", userId),
+      orderBy("updatedAt", "desc")
+    );
 
     const unsub = onSnapshot(
       qy,
@@ -360,10 +381,12 @@ export default function GroupedHistoryPage() {
     }
   };
 
-  // 全きっかけ（分類）候補を算出
+  // 全きっかけ（分類）候補を算出（フィルタUI用）
   const allTriggers = useMemo(() => {
     const set = new Set<string>();
-    groupedHistories.forEach((g) => g.histories.forEach((h) => h.triggerType && set.add(h.triggerType)));
+    groupedHistories.forEach((g) =>
+      g.histories.forEach((h) => h.triggerType && set.add(h.triggerType))
+    );
     return Array.from(set);
   }, [groupedHistories]);
 
@@ -389,7 +412,7 @@ export default function GroupedHistoryPage() {
     return true;
   }
 
-  // モデルごとのサマリー
+  // モデルごとのサマリー（注釈つき）
   function renderModelSummary(historiesDesc: EducationHistory[]) {
     if (historiesDesc.length === 0) return null;
     const latest = historiesDesc[0];
@@ -402,8 +425,10 @@ export default function GroupedHistoryPage() {
     if (latest.childFocus !== oldest.childFocus) changedFields.push("育てたい子どもの姿");
 
     return (
-      <div style={summaryBoxStyle}>
-        <strong style={{ display: "block", marginBottom: 6 }}>サマリー（このモデル内の変化の要約）</strong>
+      <div style={summaryCardStyle}>
+        <div style={{ fontWeight: "bold", marginBottom: 6 }}>
+          サマリー（このモデル内の変化の要約）
+        </div>
         <p style={{ margin: 0, fontSize: 14 }}>
           変化した領域：{changedFields.length ? changedFields.join("・") : "（大きな変化なし）"}
         </p>
@@ -411,312 +436,315 @@ export default function GroupedHistoryPage() {
     );
   }
 
-  // ===== PDF 書き出し（実践記録ページと同じUI感でボタンを置く前提） =====
-  const exportPdf = async (rootId: string, filenameBase: string) => {
-    const el = document.getElementById(rootId);
-    if (!el) {
-      alert("PDF対象の要素が見つかりません。");
-      return;
-    }
+  /* =========================
+   * PDF（画面DOMは触らず、複製してPDF専用DOMで出力）
+   * ======================= */
+  const exportPdf = async (elementId: string, fileBaseName: string) => {
+    if (typeof window === "undefined") return;
 
-    // メニューが開いていると被るので閉じる
-    setMenuOpen(false);
+    const src = document.getElementById(elementId);
+    if (!src) return alert("PDF生成対象が見つかりません。");
 
-    // クライアント側のみで読み込み
-    const html2pdfModule: any = await import("html2pdf.js");
-    const html2pdf = html2pdfModule.default ?? html2pdfModule;
+    // 画面のDOMをそのままpdf化すると崩れ/切れ/余白が出やすいので、複製してPDF用に整形
+    const clone = src.cloneNode(true) as HTMLElement;
 
-    const filename = `${sanitizeFilename(filenameBase)}.pdf`;
+    // PDFに不要なUI（検索欄・ボタンなど）を削除（画面には影響しない）
+    clone.querySelectorAll("button").forEach((n) => n.remove());
+    clone.querySelectorAll("input, select, textarea").forEach((n) => n.remove());
 
-    const opt = {
-      margin: [10, 10, 10, 10],
-      filename,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        scrollY: 0,
-      },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: {
-        mode: ["css", "legacy"],
-        avoid: [".pdf-avoid-break", "h1", "h2", "time"],
-      },
-    };
+    // PDF用ラッパー（A4幅固定・白背景）
+    const wrapper = document.createElement("div");
+    wrapper.style.position = "fixed";
+    wrapper.style.left = "-9999px";
+    wrapper.style.top = "0";
+    wrapper.style.width = "210mm";
+    wrapper.style.background = "white";
+    wrapper.style.color = "#222";
+    wrapper.style.fontFamily = "'Yu Gothic','游ゴシック','Noto Sans JP',sans-serif";
+    wrapper.style.fontSize = "14px";
+    wrapper.style.lineHeight = "1.7";
+    wrapper.style.padding = "12mm 12mm";
+    wrapper.style.boxSizing = "border-box";
+    wrapper.style.wordBreak = "break-word";
+
+    // PDFで途中改ページされやすいブロックに対策CSSを差し込む（wrapper内だけ）
+    const style = document.createElement("style");
+    style.innerHTML = `
+      .pdf-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+      h1,h2,h3 { break-after: avoid; page-break-after: avoid; }
+    `;
+    wrapper.appendChild(style);
+    wrapper.appendChild(clone);
+    document.body.appendChild(wrapper);
+
+    const filename = `${sanitizeFilename(fileBaseName)}.pdf`;
 
     try {
-      // PDFに不要なボタン類を一時的に非表示（編集/削除/展開など）
-      const buttons = el.querySelectorAll("button");
-      const prevDisplays: string[] = [];
-      buttons.forEach((b, i) => {
-        prevDisplays[i] = (b as HTMLElement).style.display;
-        (b as HTMLElement).style.display = "none";
-      });
-
-      await html2pdf().set(opt).from(el).save();
-
-      // 元に戻す
-      buttons.forEach((b, i) => ((b as HTMLElement).style.display = prevDisplays[i] ?? ""));
+      await html2pdf()
+        .from(wrapper)
+        .set({
+          filename,
+          margin: 8,
+          pagebreak: { mode: ["css", "legacy"] },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            windowWidth: wrapper.scrollWidth,
+          },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .save();
     } catch (e) {
       console.error(e);
-      alert("PDF書き出しに失敗しました。");
+      alert("PDFの生成に失敗しました。");
+    } finally {
+      wrapper.remove();
     }
   };
-
-  // 「全体PDF」や「モデルPDF」のとき、必要な範囲は自動で展開して出す
-  const exportAllPdf = async () => {
-    const prev = new Set(expandedIds);
-    expandAll();
-    // 展開描画待ち
-    setTimeout(async () => {
-      await exportPdf("portfolio-root", "教育観ポートフォリオ_全体");
-      setExpandedIds(prev);
-    }, 250);
-  };
-
-  const exportModelPdf = async (modelId: string, modelName: string) => {
-    const prev = new Set(expandedIds);
-    setExpandedIds(new Set([...Array.from(prev), modelId]));
-    const sectionId = `model-${modelId}`;
-
-    setTimeout(async () => {
-      await exportPdf(sectionId, `教育観_${modelName}`);
-      setExpandedIds(prev);
-    }, 250);
-  };
-
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   return (
     <>
-      {/* ===== 実践記録ページと同じナビバー ===== */}
+      {/* ナビバー */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
-          onClick={toggleMenu}
+          onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+          onKeyDown={(e) => e.key === "Enter" && setMenuOpen((v) => !v)}
         >
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
-          <span style={barStyle}></span>
+          <span style={barStyle} />
+          <span style={barStyle} />
+          <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem", userSelect: "none" }}>
-          国語授業プランナー
-        </h1>
+        <h1 style={navTitleStyle}>国語授業プランナー</h1>
       </nav>
 
-      {/* ===== 実践記録ページと同じオーバーレイ・メニュー ===== */}
-      <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
-      <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
-        <button
-          onClick={() => {
-            signOut();
-            setMenuOpen(false);
-          }}
-          style={logoutButtonStyle}
-        >
+      {/* メニューオーバーレイ */}
+      <div
+        style={{
+          ...overlayStyle,
+          opacity: menuOpen ? 1 : 0,
+          visibility: menuOpen ? "visible" : "hidden",
+        }}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
+
+      {/* メニュー */}
+      <div
+        style={{
+          ...menuWrapperStyle,
+          transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+        }}
+        aria-hidden={!menuOpen}
+      >
+        <button onClick={() => signOut()} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
-
-        <div style={menuLinksWrapperStyle}>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/");
-            }}
-          >
+        <div style={menuScrollStyle}>
+          <Link href="/" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             🏠 ホーム
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan");
-            }}
-          >
+          </Link>
+          <Link href="/plan" style={navLinkStyle} onClick={() => setMenuOpen(false)}>
             📋 授業作成
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan/history");
-            }}
+          </Link>
+          <Link
+            href="/plan/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             📖 計画履歴
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/history");
-            }}
+          </Link>
+          <Link
+            href="/practice/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             📷 実践履歴
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/share");
-            }}
+          </Link>
+          <Link
+            href="/practice/share"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             🌐 共有版実践記録
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/create");
-            }}
+          </Link>
+          <Link
+            href="/models/create"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             ✏️ 教育観作成
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models");
-            }}
+          </Link>
+          <Link
+            href="/models"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             📚 教育観一覧
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/history");
-            }}
+          </Link>
+          <Link
+            href="/models/history"
+            style={navLinkStyle}
+            onClick={() => setMenuOpen(false)}
           >
             🕒 教育観履歴
-          </button>
+          </Link>
         </div>
       </div>
 
-      {/* ===== メイン（実践記録ページの containerStyle と合わせる） ===== */}
-      <main style={containerStyle} id="portfolio-root">
-        <h2 style={{ marginTop: 0 }}>教育観履歴（教育観ポートフォリオ）</h2>
+      {/* メイン */}
+      <main style={mainStyle} id="portfolio-root">
+        <h1 style={titleStyle}>🕒 教育観履歴（教育観ポートフォリオ）</h1>
 
-        {/* 価値説明：実践記録の noticeBox トーン */}
-        <div style={noticeBoxStyle}>
-          <strong>ここでできること：</strong>
-          <ul style={{ margin: "8px 0 0 18px" }}>
-            <li>
-              教育観の変化を<strong>モデルごと</strong>に時系列で整理
-            </li>
-            <li>
-              変更の<strong>きっかけ・理由・振り返り</strong>まで記録して、校内研修・評価資料づくりにも使える
-            </li>
-            <li>PDF出力でそのまま共有しやすい</li>
-          </ul>
-        </div>
+        {/* ページの価値（説明） */}
+        <section style={valueNoteStyle}>
+          <p style={{ margin: 0 }}>
+            ここでは、あなたの<strong>教育観の変化</strong>をモデルごとに時系列で見渡し、変更の
+            <strong>きっかけ・理由・振り返り</strong>まで一緒に残せます。
+            <br />
+            授業改善の根拠が整理され、同僚への共有や校内研修、評価資料づくりにもそのまま使える「成長の記録」です。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            サマリー（このモデル内の変化の要約）は、<strong>どの領域が変わってきたか</strong>
+            をひと目で確認するための短いまとめです。
+          </p>
+        </section>
 
-        {/* フィルタ＆操作：実践記録の boxStyle に寄せる */}
-        <div style={boxStyle}>
-          <strong style={{ display: "block", marginBottom: 8 }}>検索・絞り込み</strong>
+        {/* フィルタ＆操作バー（タグUIなし／きっかけ分類で絞り込み可能） */}
+        <section style={filterBarStyle}>
+          <input
+            type="text"
+            placeholder="キーワード検索（本文・メモなど）"
+            value={qText}
+            onChange={(e) => setQText(e.target.value)}
+            style={filterInputStyle}
+          />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 12 }}>
-            <input
-              type="text"
-              placeholder="キーワード検索（本文・メモなど）"
-              value={qText}
-              onChange={(e) => setQText(e.target.value)}
-              style={inputStyle}
-            />
+          <select
+            value={filterTrigger}
+            onChange={(e) => setFilterTrigger(e.target.value)}
+            style={filterSelectStyle}
+          >
+            <option value="">きっかけ（すべて）</option>
+            {allTriggers.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
 
-            <select value={filterTrigger} onChange={(e) => setFilterTrigger(e.target.value)} style={inputStyle}>
-              <option value="">きっかけ（すべて）</option>
-              {allTriggers.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
-            <button onClick={expandAll} style={{ ...secondaryBtnStyle, backgroundColor: "#607d8b", color: "#fff" }}>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            <button
+              onClick={expandAll}
+              style={{ ...buttonBaseStyle, backgroundColor: "#607d8b" }}
+              title="すべて展開"
+            >
               すべて展開
             </button>
-            <button onClick={collapseAll} style={{ ...secondaryBtnStyle, backgroundColor: "#90a4ae", color: "#fff" }}>
+            <button
+              onClick={collapseAll}
+              style={{ ...buttonBaseStyle, backgroundColor: "#90a4ae" }}
+              title="すべて折りたたみ"
+            >
               すべて折りたたみ
             </button>
             <button
-              onClick={exportAllPdf}
-              style={{ ...secondaryBtnStyle, backgroundColor: "#ff9800", color: "#fff" }}
+              onClick={() => exportPdf("portfolio-root", "教育観ポートフォリオ_全体")}
+              style={{ ...buttonBaseStyle, backgroundColor: "#FF9800" }}
               title="このページ全体をPDF保存"
             >
               📄 全体PDF
             </button>
           </div>
-        </div>
+        </section>
 
         {groupedHistories.length === 0 ? (
           <p style={emptyStyle}>まだ履歴がありません。</p>
         ) : (
           groupedHistories.map(({ modelId, modelName, histories }) => {
+            // Firestoreからは新→旧なので、表示は「古い→新しい」の時系列に
             const historiesAsc = [...histories].reverse();
+
+            // フィルタ適用（モデルごと）
             const filteredAsc = historiesAsc.filter((h) => matchFilters(h));
             if (filteredAsc.length === 0) return null;
 
+            // サマリー用：新→旧の並び
             const desc = [...histories];
+
             const sectionId = `model-${modelId}`;
 
             return (
-              <section key={modelId} id={sectionId} style={{ marginBottom: 24 }}>
-                {/* 見出し：実践記録の boxStyle */}
-                <div style={boxStyle}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12, alignItems: "center" }}>
-                    <button
-                      onClick={() => toggleExpand(modelId)}
-                      style={{
-                        ...secondaryBtnStyle,
-                        backgroundColor: "#1976d2",
-                        color: "#fff",
-                        textAlign: "left",
-                        marginTop: 0,
-                      }}
-                      aria-expanded={expandedIds.has(modelId)}
-                      aria-controls={`section-${modelId}`}
-                    >
-                      {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴 {histories.length} 件）
-                    </button>
+              <section key={modelId} style={groupSectionStyle} id={sectionId}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    onClick={() => toggleExpand(modelId)}
+                    style={groupToggleBtnStyle}
+                    aria-expanded={expandedIds.has(modelId)}
+                    aria-controls={`section-${modelId}`}
+                  >
+                    {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴{" "}
+                    {histories.length} 件）
+                  </button>
 
-                    <button
-                      onClick={() => exportModelPdf(modelId, modelName)}
-                      style={{ ...secondaryBtnStyle, backgroundColor: "#ff9800", color: "#fff" }}
-                      title="このモデルだけPDF保存"
-                    >
-                      📄 モデルPDF
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: 10 }}>{renderModelSummary(desc)}</div>
+                  <button
+                    onClick={() => exportPdf(sectionId, `教育観_${modelName}`)}
+                    style={{ ...buttonBaseStyle, backgroundColor: "#FF9800" }}
+                    title="このモデルだけPDF保存"
+                  >
+                    📄 モデルPDF
+                  </button>
                 </div>
 
+                {/* モデルサマリー（常時表示・注釈つき） */}
+                <div style={{ marginTop: 8 }}>{renderModelSummary(desc)}</div>
+
                 {expandedIds.has(modelId) && (
-                  <div id={`section-${modelId}`} style={{ marginTop: 12 }}>
+                  <div id={`section-${modelId}`} style={historyListStyle}>
                     {filteredAsc.map((h, i) => {
                       const prev = i > 0 ? filteredAsc[i - 1] : undefined;
                       const isEditing = editingId === h.id;
 
                       return (
                         <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
-                          <h3 style={{ margin: "0 0 10px" }}>{h.name}</h3>
+                          <h2 style={cardTitleStyle}>{h.name}</h2>
 
-                          <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
-                          <FieldWithDiff current={h.evaluationFocus} previous={prev?.evaluationFocus} label="評価観点" />
-                          <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
-                          <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
+                          {/* 変化点（差分ハイライト） */}
+                          <FieldWithDiff
+                            current={h.philosophy}
+                            previous={prev?.philosophy}
+                            label="教育観"
+                          />
+                          <FieldWithDiff
+                            current={h.evaluationFocus}
+                            previous={prev?.evaluationFocus}
+                            label="評価観点"
+                          />
+                          <FieldWithDiff
+                            current={h.languageFocus}
+                            previous={prev?.languageFocus}
+                            label="言語活動"
+                          />
+                          <FieldWithDiff
+                            current={h.childFocus}
+                            previous={prev?.childFocus}
+                            label="育てたい子どもの姿"
+                          />
 
                           {/* ポートフォリオ領域 */}
                           {!isEditing ? (
-                            <div style={{ ...boxStyle, marginTop: 10, borderColor: "#9e9e9e" }}>
+                            <div style={portfolioViewStyle}>
                               <p style={rowP}>
                                 <strong>きっかけ：</strong>
                                 {h.triggerType || "—"}
@@ -724,23 +752,40 @@ export default function GroupedHistoryPage() {
                               </p>
                               <p style={rowP}>
                                 <strong>理由・背景：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reason || "—"}</span>
+                                <span style={{ whiteSpace: "pre-wrap" }}>
+                                  {h.reason || "—"}
+                                </span>
                               </p>
                               <p style={rowP}>
                                 <strong>振り返りメモ：</strong>
-                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reflection || "—"}</span>
+                                <span style={{ whiteSpace: "pre-wrap" }}>
+                                  {h.reflection || "—"}
+                                </span>
                               </p>
 
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  marginTop: 6,
+                                  flexWrap: "wrap",
+                                }}
+                              >
                                 <button
                                   onClick={() => setEditingId(h.id)}
-                                  style={{ ...secondaryBtnStyle, backgroundColor: "#1976d2", color: "#fff" }}
+                                  style={{
+                                    ...buttonBaseStyle,
+                                    backgroundColor: "#1976d2",
+                                  }}
                                 >
                                   ✏️ 追記・編集
                                 </button>
                                 <button
                                   onClick={() => deleteHistory(h.id)}
-                                  style={{ ...secondaryBtnStyle, backgroundColor: "#e53935", color: "#fff" }}
+                                  style={{
+                                    ...buttonBaseStyle,
+                                    backgroundColor: "#e53935",
+                                  }}
                                 >
                                   🗑 削除
                                 </button>
@@ -751,13 +796,15 @@ export default function GroupedHistoryPage() {
                               data={h}
                               onCancel={() => setEditingId(null)}
                               onSaved={(updated) => {
-                                setGroupedHistories((prevState) =>
-                                  prevState.map((g) =>
+                                setGroupedHistories((prev) =>
+                                  prev.map((g) =>
                                     g.modelId !== h.modelId
                                       ? g
                                       : {
                                           ...g,
-                                          histories: g.histories.map((x) => (x.id === h.id ? { ...x, ...updated } : x)),
+                                          histories: g.histories.map((x) =>
+                                            x.id === h.id ? { ...x, ...updated } : x
+                                          ),
                                         }
                                   )
                                 );
@@ -780,10 +827,10 @@ export default function GroupedHistoryPage() {
 }
 
 /* =========================
- * Styles（実践記録ページに寄せて統一）
+ * スタイル
  * ======================= */
 
-const navBarStyle: React.CSSProperties = {
+const navBarStyle: CSSProperties = {
   position: "fixed",
   top: 0,
   left: 0,
@@ -796,7 +843,7 @@ const navBarStyle: React.CSSProperties = {
   zIndex: 1000,
 };
 
-const hamburgerStyle: React.CSSProperties = {
+const hamburgerStyle: CSSProperties = {
   cursor: "pointer",
   width: 30,
   height: 22,
@@ -805,28 +852,43 @@ const hamburgerStyle: React.CSSProperties = {
   justifyContent: "space-between",
 };
 
-const barStyle: React.CSSProperties = {
+const barStyle: CSSProperties = {
   height: 4,
   backgroundColor: "white",
   borderRadius: 2,
 };
 
-const menuWrapperStyle = (menuOpen: boolean): React.CSSProperties => ({
+const navTitleStyle: CSSProperties = {
+  color: "white",
+  marginLeft: 16,
+  fontSize: "1.25rem",
+  userSelect: "none",
+};
+
+const menuWrapperStyle: CSSProperties = {
   position: "fixed",
   top: 56,
   left: 0,
-  width: 250,
+  width: "80vw",
+  maxWidth: 280,
   height: "calc(100vh - 56px)",
   backgroundColor: "#f0f0f0",
   boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-  transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
   transition: "transform 0.3s ease",
   zIndex: 999,
   display: "flex",
   flexDirection: "column",
-});
+};
 
-const logoutButtonStyle: React.CSSProperties = {
+const menuScrollStyle: CSSProperties = {
+  padding: "1rem",
+  paddingBottom: 80,
+  overflowY: "auto",
+  flexGrow: 1,
+};
+
+const logoutButtonStyle: CSSProperties = {
+  margin: "1rem",
   padding: "0.75rem 1rem",
   backgroundColor: "#e53935",
   color: "white",
@@ -834,126 +896,184 @@ const logoutButtonStyle: React.CSSProperties = {
   borderRadius: 6,
   border: "none",
   cursor: "pointer",
-  flexShrink: 0,
-  margin: "1rem",
+  zIndex: 1000,
 };
 
-const menuLinksWrapperStyle: React.CSSProperties = {
-  overflowY: "auto",
-  flexGrow: 1,
-  padding: "1rem",
-};
-
-const navBtnStyle: React.CSSProperties = {
-  marginBottom: 8,
-  padding: "0.5rem 1rem",
-  backgroundColor: "#1976d2",
-  color: "white",
-  borderRadius: 6,
-  border: "none",
-  cursor: "pointer",
-  display: "block",
-  width: "100%",
-  textAlign: "left",
-};
-
-const overlayStyle = (menuOpen: boolean): React.CSSProperties => ({
+const overlayStyle: CSSProperties = {
   position: "fixed",
   top: 56,
   left: 0,
   width: "100vw",
-  height: "calc(100vh - 56px)",
+  height: "100vh",
   backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: menuOpen ? 1 : 0,
-  visibility: menuOpen ? "visible" : "hidden",
   transition: "opacity 0.3s ease",
   zIndex: 998,
-});
+};
 
-const containerStyle: React.CSSProperties = {
-  padding: 24,
-  maxWidth: 800,
-  margin: "auto",
-  fontFamily: "sans-serif",
-  paddingTop: 72,
+const navLinkStyle: CSSProperties = {
+  display: "block",
+  padding: "0.75rem 1rem",
+  backgroundColor: "#1976d2",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  textDecoration: "none",
+  marginBottom: "0.5rem",
+  fontSize: "1rem",
+};
+
+const mainStyle: CSSProperties = {
+  padding: "1.5rem 1rem",
+  maxWidth: 900,
+  margin: "0 auto",
+  fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
+  paddingTop: 80,
   boxSizing: "border-box",
 };
 
-const noticeBoxStyle: React.CSSProperties = {
-  border: "2px solid #ff7043",
-  backgroundColor: "#fff3e0",
-  color: "#5d4037",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
+const titleStyle: CSSProperties = {
+  fontSize: "1.8rem",
+  marginBottom: "0.75rem",
+  textAlign: "center",
+  userSelect: "none",
 };
 
-const boxStyle: React.CSSProperties = {
-  border: "2px solid #1976d2",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
-  backgroundColor: "#fff",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 8,
-  borderRadius: 6,
-  border: "1px solid #ccc",
-  boxSizing: "border-box",
-} as CSSProperties;
-
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 8,
-  borderRadius: 6,
-  border: "1px solid #ccc",
-  boxSizing: "border-box",
-  resize: "vertical",
-} as CSSProperties;
-
-const labelStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 6,
-  fontSize: 13,
-  color: "#333",
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: 12,
-  backgroundColor: "#4caf50",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  width: "100%",
-  cursor: "pointer",
-  marginTop: 16,
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
+const valueNoteStyle: CSSProperties = {
+  background: "#fffef7",
+  border: "1px solid #ffecb3",
+  borderRadius: 8,
   padding: 10,
-  border: "none",
-  borderRadius: 6,
-  width: "100%",
-  cursor: "pointer",
-  marginTop: 0,
+  color: "#604a00",
+  marginBottom: 12,
+  lineHeight: 1.6,
+  fontSize: 14,
 };
 
-const emptyStyle: React.CSSProperties = {
+const emptyStyle: CSSProperties = {
   padding: "1.5rem",
   textAlign: "center",
   color: "#666",
-  fontSize: "1.05rem",
+  fontSize: "1.1rem",
 };
 
-const rowP: React.CSSProperties = {
-  margin: "6px 0",
+const filterBarStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
+  alignItems: "center",
+  margin: "0 0 16px",
+  background: "#f6f9ff",
+  border: "1px solid #d6e3ff",
+  borderRadius: 8,
+  padding: 8,
 };
 
-const summaryBoxStyle: React.CSSProperties = {
-  border: "1px solid #2196f3",
-  backgroundColor: "#e3f2fd",
+const filterInputStyle: CSSProperties = {
+  flex: "1 1 240px",
+  minWidth: 220,
+  padding: "8px 10px",
   borderRadius: 6,
+  border: "1px solid #c5d2f0",
+  outline: "none",
+};
+
+const filterSelectStyle: CSSProperties = {
+  flex: "0 0 auto",
+  minWidth: 160,
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid #c5d2f0",
+  outline: "none",
+  background: "white",
+};
+
+const groupSectionStyle: CSSProperties = {
+  marginBottom: "2rem",
+};
+
+const groupToggleBtnStyle: CSSProperties = {
+  cursor: "pointer",
+  textAlign: "left",
+  padding: "0.75rem 1rem",
+  fontSize: "1.05rem",
+  fontWeight: "bold",
+  backgroundColor: "#e3f2fd",
+  border: "none",
+  borderRadius: 6,
+  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+  userSelect: "none",
+};
+
+const historyListStyle: CSSProperties = {
+  marginTop: "1rem",
+};
+
+const cardTitleStyle: CSSProperties = {
+  fontSize: "1.2rem",
+  margin: "0 0 0.5rem",
+  wordBreak: "break-word",
+};
+
+const portfolioViewStyle: CSSProperties = {
+  background: "#fff",
+  border: "1px solid #e0e7ff",
+  borderRadius: 8,
   padding: 10,
+  marginTop: 6,
+};
+
+const rowP: CSSProperties = {
+  margin: "4px 0",
+};
+
+const editorWrapStyle: CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #bcd4ff",
+  borderRadius: 8,
+  padding: 12,
+  marginTop: 8,
+};
+
+const editorRowStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  marginBottom: 8,
+};
+
+const labelStyle: CSSProperties = {
+  fontSize: 13,
+  color: "#455a64",
+};
+
+const inputStyle: CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid #c5d2f0",
+  outline: "none",
+} as CSSProperties;
+
+const textareaStyle: CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid #c5d2f0",
+  outline: "none",
+  resize: "vertical",
+} as CSSProperties;
+
+const buttonBaseStyle: CSSProperties = {
+  padding: "8px 12px",
+  fontSize: "0.9rem",
+  borderRadius: 6,
+  cursor: "pointer",
+  border: "none",
+  color: "white",
+};
+
+const summaryCardStyle: CSSProperties = {
+  background: "#F5FAFF",
+  border: "1px solid #cfe3ff",
+  borderRadius: 8,
+  padding: 10,
+  fontSize: 14,
 };
