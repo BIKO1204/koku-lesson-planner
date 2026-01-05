@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState, CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -8,277 +8,489 @@ import {
   query,
   orderBy,
   where,
-  getDocs,
-  addDoc,
-  updateDoc,
-  doc,
+  onSnapshot,
   deleteDoc,
+  doc,
+  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-type EducationModel = {
+/* =========================
+ * 型
+ * ======================= */
+type EducationHistory = {
   id: string;
+  modelId: string;
+  updatedAt: any; // Firestore Timestamp | string | Date
   name: string;
   philosophy: string;
   evaluationFocus: string;
   languageFocus: string;
   childFocus: string;
-  updatedAt: string;
+  note?: string;
   creatorId: string;
-  creatorName: string;
+
+  // ▼ ポートフォリオ拡張（タグは廃止）
+  triggerType?: string;
+  triggerText?: string;
+  reason?: string;
+  reflection?: string;
+  portfolioUpdatedAt?: any;
 };
 
-export default function EducationModelsPage() {
-  const router = useRouter();
-  const { data: session } = useSession();
+type GroupedHistory = {
+  modelId: string;
+  modelName: string;
+  histories: EducationHistory[];
+};
 
-  const userId = session?.user?.email || "";
-  const userName = session?.user?.name || "名無し";
+/* =========================
+ * 小コンポーネント
+ * ======================= */
+function FieldWithDiff({
+  current,
+  previous,
+  label,
+}: {
+  current: string;
+  previous?: string;
+  label: string;
+}) {
+  const isChanged = previous === undefined || current.trim() !== (previous ?? "").trim();
+  return (
+    <p
+      style={{
+        backgroundColor: isChanged ? "#fff9c4" : undefined,
+        position: "relative",
+        cursor: isChanged ? "help" : undefined,
+        whiteSpace: "pre-wrap",
+        marginBottom: 6,
+        padding: isChanged ? "4px 8px" : undefined,
+        borderRadius: isChanged ? 4 : undefined,
+        transition: "background-color 0.3s ease",
+      }}
+      title={isChanged && previous ? `${label}（前回）: ${previous}` : undefined}
+    >
+      <strong>{label}：</strong> {current || "—"}
+    </p>
+  );
+}
 
-  const [models, setModels] = useState<EducationModel[]>([]);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    name: "",
-    philosophy: "",
-    evaluationFocus: "",
-    languageFocus: "",
-    childFocus: "",
-    creatorName: userName,
-  });
-  const [sortOrder, setSortOrder] = useState<"newest" | "nameAsc">("newest");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const [btnPressed, setBtnPressed] = useState(false);
+function TimelineItem({ date, children }: { date: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "140px 1fr",
+        gap: 12,
+        alignItems: "start",
+        marginBottom: 16,
+      }}
+    >
+      <time
+        style={{
+          color: "#555",
+          whiteSpace: "nowrap",
+          fontSize: 13,
+          fontFamily: "sans-serif",
+        }}
+      >
+        {date}
+      </time>
 
-  // フォームの作成者名をセッションに追随
-  useEffect(() => {
-    if (!editId) setForm((prev) => ({ ...prev, creatorName: userName }));
-  }, [userName, editId]);
+      {/* 実践記録ページの「box」のトーンに寄せる */}
+      <div
+        className="pdf-avoid-break"
+        style={{
+          border: "2px solid #1976d2",
+          borderRadius: 6,
+          padding: 12,
+          backgroundColor: "#fff",
+          boxShadow: "0 2px 6px rgba(25,118,210,0.08)",
+          minWidth: 0,
+          wordBreak: "break-word",
+          fontFamily: "sans-serif",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
-  // 一覧の取得（既存ロジックのまま）
-  useEffect(() => {
-    if (!userId) {
-      setModels([]);
-      return;
-    }
-    async function fetchModels() {
-      try {
-        const colRef = collection(db, "educationModels");
-        const qy = query(
-          colRef,
-          where("creatorId", "==", userId),
-          orderBy(
-            sortOrder === "newest" ? "updatedAt" : "name",
-            sortOrder === "newest" ? "desc" : "asc"
-          )
-        );
-        const snapshot = await getDocs(qy);
-        const data = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<EducationModel, "id">),
-        }));
-        setModels(data);
-        localStorage.setItem("educationStylesHistory", JSON.stringify(data));
-      } catch (e) {
-        console.error("Firestore読み込みエラー:", e);
-      }
-    }
-    fetchModels();
-  }, [sortOrder, userId]);
+/* =========================
+ * ユーティリティ
+ * ======================= */
+function formatDateTime(anyDate: any): string {
+  const d: Date =
+    typeof anyDate?.toDate === "function"
+      ? anyDate.toDate()
+      : typeof anyDate === "string"
+      ? new Date(anyDate)
+      : anyDate instanceof Date
+      ? anyDate
+      : new Date(NaN);
+  if (isNaN(d.getTime())) return "—";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+}
 
-  const toggleMenu = () => setMenuOpen((v) => !v);
+const TRIGGER_OPTIONS = [
+  "授業での気づき",
+  "児童の反応",
+  "同僚・管理職からの助言",
+  "研修・書籍・研究",
+  "評価の結果から",
+  "失敗からの学び",
+  "その他",
+] as const;
 
-  const handleChange = (field: keyof typeof form, value: string) =>
-    setForm((prev) => ({ ...prev, [field]: value }));
+const sanitizeFilename = (name: string) =>
+  (name || "教育観ポートフォリオ").trim().replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 120);
 
-  const startEdit = (m: EducationModel) => {
-    setEditId(m.id);
-    setForm({
-      name: m.name,
-      philosophy: m.philosophy,
-      evaluationFocus: m.evaluationFocus,
-      languageFocus: m.languageFocus,
-      childFocus: m.childFocus,
-      creatorName: m.creatorName,
-    });
-    setError("");
-    setSuccessMessage("");
-    setMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+/* =========================
+ * ポートフォリオ編集（タグUIは削除）
+ * ======================= */
+function PortfolioEditor({
+  data,
+  onCancel,
+  onSaved,
+}: {
+  data: EducationHistory;
+  onCancel: () => void;
+  onSaved: (updated: Partial<EducationHistory>) => void;
+}) {
+  const [triggerType, setTriggerType] = useState<string>(data.triggerType ?? "");
+  const [triggerText, setTriggerText] = useState<string>(data.triggerText ?? "");
+  const [reason, setReason] = useState<string>(data.reason ?? "");
+  const [reflection, setReflection] = useState<string>(data.reflection ?? "");
+  const [saving, setSaving] = useState(false);
 
-  const cancelEdit = () => {
-    setEditId(null);
-    setForm({
-      name: "",
-      philosophy: "",
-      evaluationFocus: "",
-      languageFocus: "",
-      childFocus: "",
-      creatorName: userName,
-    });
-    setError("");
-    setSuccessMessage("");
-  };
-
-  const saveModel = async (): Promise<boolean> => {
-    if (
-      !form.name.trim() ||
-      !form.philosophy.trim() ||
-      !form.evaluationFocus.trim() ||
-      !form.languageFocus.trim() ||
-      !form.childFocus.trim() ||
-      !form.creatorName.trim()
-    ) {
-      setError("必須項目をすべて入力してください。");
-      setSuccessMessage("");
-      return false;
-    }
-    if (!userId) {
-      setError("ログイン状態が不明です。再ログインしてください。");
-      setSuccessMessage("");
-      return false;
-    }
-
-    const now = new Date().toISOString();
-
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      let newModel: EducationModel;
-
-      if (editId) {
-        // 既存モデルの更新
-        const docRef = doc(db, "educationModels", editId);
-        await updateDoc(docRef, {
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-        });
-
-        // 履歴コレクションに編集履歴を追加
-        await addDoc(collection(db, "educationModelsHistory"), {
-          modelId: editId,
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-          note: "編集",
-        });
-
-        newModel = {
-          id: editId,
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-        };
-      } else {
-        // 新規モデル作成
-        const colRef = collection(db, "educationModels");
-        const docRef = await addDoc(colRef, {
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-        });
-
-        // 履歴コレクションに新規作成履歴を追加
-        await addDoc(collection(db, "educationModelsHistory"), {
-          modelId: docRef.id,
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-          note: "新規作成",
-        });
-
-        newModel = {
-          id: docRef.id,
-          name: form.name.trim(),
-          philosophy: form.philosophy.trim(),
-          evaluationFocus: form.evaluationFocus.trim(),
-          languageFocus: form.languageFocus.trim(),
-          childFocus: form.childFocus.trim(),
-          creatorName: form.creatorName.trim(),
-          creatorId: userId,
-          updatedAt: now,
-        };
-      }
-
-      const updatedLocalModels = editId
-        ? models.map((m) => (m.id === editId ? newModel : m))
-        : [newModel, ...models];
-
-      localStorage.setItem("educationStylesHistory", JSON.stringify(updatedLocalModels));
-      setModels(updatedLocalModels);
-
-      setError("");
-      setSuccessMessage(editId ? "更新しました！" : "作成しました！");
-
-      setTimeout(() => {
-        setSuccessMessage("");
-        router.push("/models");
-      }, 2000);
-
-      setMenuOpen(false);
-      setBtnPressed(false);
-      if (editId) setEditId(null);
-      return true;
+      const payload: Partial<EducationHistory> = {
+        triggerType: triggerType || undefined,
+        triggerText: triggerText || undefined,
+        reason: reason || undefined,
+        reflection: reflection || undefined,
+        portfolioUpdatedAt: serverTimestamp(),
+      };
+      await updateDoc(doc(db, "educationModelsHistory", data.id), payload as any);
+      onSaved(payload);
     } catch (e) {
-      console.error("Firestore保存エラー", e);
-      setError("保存に失敗しました。");
-      setSuccessMessage("");
-      setBtnPressed(false);
-      return false;
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    const model = models.find((m) => m.id === id);
-    if (!model) return;
-    if (model.creatorId !== userId) {
-      alert("削除は作成者本人のみ可能です。");
-      return;
-    }
-    if (!confirm("このモデルを削除しますか？")) return;
-
-    try {
-      await deleteDoc(doc(db, "educationModels", id));
-      const filtered = models.filter((m) => m.id !== id);
-      setModels(filtered);
-      localStorage.setItem("educationStylesHistory", JSON.stringify(filtered));
-      if (editId === id) cancelEdit();
-      setMenuOpen(false);
-    } catch (e) {
-      alert("削除に失敗しました。");
       console.error(e);
+      alert("保存に失敗しました。");
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
+    <div style={boxStyle}>
+      <strong style={{ display: "block", marginBottom: 8 }}>ポートフォリオ追記</strong>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <label style={labelStyle}>
+          きっかけ（分類）
+          <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} style={inputStyle}>
+            <option value="">（未選択）</option>
+            {TRIGGER_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={labelStyle}>
+          きっかけ（具体）
+          <input
+            type="text"
+            value={triggerText}
+            onChange={(e) => setTriggerText(e.target.value)}
+            placeholder="例）第2時のディスカッションで『根拠』が弱かった"
+            style={inputStyle}
+          />
+        </label>
+
+        <label style={labelStyle}>
+          理由・背景
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            placeholder="なぜその変更をしたのか、意図や根拠・背景を記録"
+            style={textareaStyle}
+          />
+        </label>
+
+        <label style={labelStyle}>
+          振り返りメモ
+          <textarea
+            value={reflection}
+            onChange={(e) => setReflection(e.target.value)}
+            rows={4}
+            placeholder="次回に活かす視点や児童の変化、自分の学び"
+            style={textareaStyle}
+          />
+        </label>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            ...primaryBtnStyle,
+            backgroundColor: "#4caf50",
+            marginTop: 0,
+            opacity: saving ? 0.7 : 1,
+            cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? "保存中..." : "保存"}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{ ...secondaryBtnStyle, backgroundColor: "#9e9e9e", color: "#fff" }}
+        >
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+ * メイン
+ * ======================= */
+export default function GroupedHistoryPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const userId = session?.user?.email || "";
+
+  const [groupedHistories, setGroupedHistories] = useState<GroupedHistory[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // フィルタ／検索
+  const [qText, setQText] = useState("");
+  const [filterTrigger, setFilterTrigger] = useState<string>("");
+
+  // 展開状態を永続化
+  useEffect(() => {
+    const saved = localStorage.getItem("expandedIds");
+    if (saved) {
+      try {
+        setExpandedIds(new Set(JSON.parse(saved)));
+      } catch {}
+    }
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("expandedIds", JSON.stringify(Array.from(expandedIds)));
+  }, [expandedIds]);
+
+  // Firestore購読
+  useEffect(() => {
+    if (!userId) {
+      setGroupedHistories([]);
+      return;
+    }
+    const colRef = collection(db, "educationModelsHistory");
+    const qy = query(colRef, where("creatorId", "==", userId), orderBy("updatedAt", "desc"));
+
+    const unsub = onSnapshot(
+      qy,
+      (snapshot) => {
+        const rows = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<EducationHistory, "id">),
+        })) as EducationHistory[];
+
+        // モデルIDでグループ
+        const map = new Map<string, GroupedHistory>();
+        rows.forEach((h) => {
+          if (!map.has(h.modelId)) {
+            map.set(h.modelId, { modelId: h.modelId, modelName: h.name, histories: [] });
+          }
+          map.get(h.modelId)!.histories.push(h);
+        });
+
+        setGroupedHistories(Array.from(map.values()));
+      },
+      (e) => {
+        console.error("Firestore購読エラー", e);
+        setGroupedHistories([]);
+      }
+    );
+    return () => unsub();
+  }, [userId]);
+
+  const toggleExpand = (modelId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(modelId) ? next.delete(modelId) : next.add(modelId);
+      return next;
+    });
+  };
+
+  const expandAll = () => setExpandedIds(new Set(groupedHistories.map((g) => g.modelId)));
+  const collapseAll = () => setExpandedIds(new Set());
+
+  const deleteHistory = async (id: string) => {
+    if (!confirm("この履歴を削除しますか？")) return;
+    try {
+      await deleteDoc(doc(db, "educationModelsHistory", id));
+      setGroupedHistories((prev) =>
+        prev
+          .map((g) => ({ ...g, histories: g.histories.filter((h) => h.id !== id) }))
+          .filter((g) => g.histories.length > 0)
+      );
+      alert("削除しました");
+    } catch (error) {
+      console.error(error);
+      alert("削除に失敗しました");
+    }
+  };
+
+  // 全きっかけ（分類）候補を算出
+  const allTriggers = useMemo(() => {
+    const set = new Set<string>();
+    groupedHistories.forEach((g) => g.histories.forEach((h) => h.triggerType && set.add(h.triggerType)));
+    return Array.from(set);
+  }, [groupedHistories]);
+
+  // フィルタリング＆検索
+  function matchFilters(h: EducationHistory) {
+    if (filterTrigger && h.triggerType !== filterTrigger) return false;
+    if (qText.trim()) {
+      const hay = [
+        h.name,
+        h.philosophy,
+        h.evaluationFocus,
+        h.languageFocus,
+        h.childFocus,
+        h.note ?? "",
+        h.reason ?? "",
+        h.reflection ?? "",
+        h.triggerText ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(qText.trim().toLowerCase())) return false;
+    }
+    return true;
+  }
+
+  // モデルごとのサマリー
+  function renderModelSummary(historiesDesc: EducationHistory[]) {
+    if (historiesDesc.length === 0) return null;
+    const latest = historiesDesc[0];
+    const oldest = historiesDesc[historiesDesc.length - 1];
+
+    const changedFields: string[] = [];
+    if (latest.philosophy !== oldest.philosophy) changedFields.push("教育観");
+    if (latest.evaluationFocus !== oldest.evaluationFocus) changedFields.push("評価観点");
+    if (latest.languageFocus !== oldest.languageFocus) changedFields.push("言語活動");
+    if (latest.childFocus !== oldest.childFocus) changedFields.push("育てたい子どもの姿");
+
+    return (
+      <div style={summaryBoxStyle}>
+        <strong style={{ display: "block", marginBottom: 6 }}>サマリー（このモデル内の変化の要約）</strong>
+        <p style={{ margin: 0, fontSize: 14 }}>
+          変化した領域：{changedFields.length ? changedFields.join("・") : "（大きな変化なし）"}
+        </p>
+      </div>
+    );
+  }
+
+  // ===== PDF 書き出し（実践記録ページと同じUI感でボタンを置く前提） =====
+  const exportPdf = async (rootId: string, filenameBase: string) => {
+    const el = document.getElementById(rootId);
+    if (!el) {
+      alert("PDF対象の要素が見つかりません。");
+      return;
+    }
+
+    // メニューが開いていると被るので閉じる
+    setMenuOpen(false);
+
+    // クライアント側のみで読み込み
+    const html2pdfModule: any = await import("html2pdf.js");
+    const html2pdf = html2pdfModule.default ?? html2pdfModule;
+
+    const filename = `${sanitizeFilename(filenameBase)}.pdf`;
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollY: 0,
+      },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: {
+        mode: ["css", "legacy"],
+        avoid: [".pdf-avoid-break", "h1", "h2", "time"],
+      },
+    };
+
+    try {
+      // PDFに不要なボタン類を一時的に非表示（編集/削除/展開など）
+      const buttons = el.querySelectorAll("button");
+      const prevDisplays: string[] = [];
+      buttons.forEach((b, i) => {
+        prevDisplays[i] = (b as HTMLElement).style.display;
+        (b as HTMLElement).style.display = "none";
+      });
+
+      await html2pdf().set(opt).from(el).save();
+
+      // 元に戻す
+      buttons.forEach((b, i) => ((b as HTMLElement).style.display = prevDisplays[i] ?? ""));
+    } catch (e) {
+      console.error(e);
+      alert("PDF書き出しに失敗しました。");
+    }
+  };
+
+  // 「全体PDF」や「モデルPDF」のとき、必要な範囲は自動で展開して出す
+  const exportAllPdf = async () => {
+    const prev = new Set(expandedIds);
+    expandAll();
+    // 展開描画待ち
+    setTimeout(async () => {
+      await exportPdf("portfolio-root", "教育観ポートフォリオ_全体");
+      setExpandedIds(prev);
+    }, 250);
+  };
+
+  const exportModelPdf = async (modelId: string, modelName: string) => {
+    const prev = new Set(expandedIds);
+    setExpandedIds(new Set([...Array.from(prev), modelId]));
+    const sectionId = `model-${modelId}`;
+
+    setTimeout(async () => {
+      await exportPdf(sectionId, `教育観_${modelName}`);
+      setExpandedIds(prev);
+    }, 250);
+  };
+
+  const toggleMenu = () => setMenuOpen((prev) => !prev);
+
+  return (
     <>
-      {/* ナビバー（実践記録ページと統一） */}
+      {/* ===== 実践記録ページと同じナビバー ===== */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
@@ -288,15 +500,17 @@ export default function EducationModelsPage() {
           tabIndex={0}
           onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
         >
-          <span style={barStyle} />
-          <span style={barStyle} />
-          <span style={barStyle} />
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem", userSelect: "none" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
+      {/* ===== 実践記録ページと同じオーバーレイ・メニュー ===== */}
       <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
-
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
         <button
           onClick={() => {
@@ -309,222 +523,266 @@ export default function EducationModelsPage() {
         </button>
 
         <div style={menuLinksWrapperStyle}>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/");
+            }}
+          >
             🏠 ホーム
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/plan"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan");
+            }}
+          >
             📋 授業作成
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/plan/history"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/plan/history");
+            }}
+          >
             📖 計画履歴
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/practice/history"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/history");
+            }}
+          >
             📷 実践履歴
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/practice/share"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/practice/share");
+            }}
+          >
             🌐 共有版実践記録
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models/create"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/create");
+            }}
+          >
             ✏️ 教育観作成
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models");
+            }}
+          >
             📚 教育観一覧
           </button>
-          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models/history"))}>
+          <button
+            style={navBtnStyle}
+            onClick={() => {
+              setMenuOpen(false);
+              router.push("/models/history");
+            }}
+          >
             🕒 教育観履歴
           </button>
         </div>
       </div>
 
-      {/* メイン */}
-      <main style={containerStyle}>
-        <h2 style={{ marginTop: 0 }}>{editId ? "教育観モデルを編集" : "新しい教育観モデルを作成"}</h2>
+      {/* ===== メイン（実践記録ページの containerStyle と合わせる） ===== */}
+      <main style={containerStyle} id="portfolio-root">
+        <h2 style={{ marginTop: 0 }}>教育観履歴（教育観ポートフォリオ）</h2>
 
-        {/* 注意書き（実践記録ページと統一の枠） */}
+        {/* 価値説明：実践記録の noticeBox トーン */}
         <div style={noticeBoxStyle}>
-          <strong>このページの使い方：</strong>
+          <strong>ここでできること：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
             <li>
-              授業の考え方を「モデル」として残し、比較・共有・振り返りに活かせます。
+              教育観の変化を<strong>モデルごと</strong>に時系列で整理
             </li>
             <li>
-              モデル名は、既にある公開名に合わせても、新しく作ってもOKです（同名が増えるほど比較しやすくなります）。
+              変更の<strong>きっかけ・理由・振り返り</strong>まで記録して、校内研修・評価資料づくりにも使える
             </li>
-            <li>
-              将来の検索・生成の質向上のために活用する場合があります。個人情報や<strong>特定の児童名</strong>は書かないでください。
-            </li>
+            <li>PDF出力でそのまま共有しやすい</li>
           </ul>
         </div>
 
-        {/* ソート＋編集解除 */}
+        {/* フィルタ＆操作：実践記録の boxStyle に寄せる */}
         <div style={boxStyle}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-            <label>
-              並び替え：
-              <select
-                value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as "newest" | "nameAsc")}
-                style={{ marginLeft: 8, padding: 6 }}
-              >
-                <option value="newest">新着順</option>
-                <option value="nameAsc">名前順（A→Z）</option>
-              </select>
-            </label>
+          <strong style={{ display: "block", marginBottom: 8 }}>検索・絞り込み</strong>
 
-            {editId && (
-              <button type="button" onClick={cancelEdit} style={ghostBtnStyle}>
-                編集をやめる
-              </button>
-            )}
-          </div>
-        </div>
-
-        {error && <p style={errorStyle}>{error}</p>}
-
-        {/* 入力フォーム（青枠ブロック） */}
-        <div style={boxStyle}>
-          <label style={fieldLabelStyle}>
-            作成者名（ニックネーム）（必須）
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 12 }}>
             <input
               type="text"
-              value={form.creatorName}
-              onChange={(e) => handleChange("creatorName", e.target.value)}
+              placeholder="キーワード検索（本文・メモなど）"
+              value={qText}
+              onChange={(e) => setQText(e.target.value)}
               style={inputStyle}
-              placeholder="例）〇〇先生"
             />
-          </label>
 
-          <label style={fieldLabelStyle}>
-            モデル名（必須）
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => handleChange("name", e.target.value)}
-              style={inputStyle}
-              placeholder="例）対話型授業、音読重視 など"
-            />
-          </label>
-
-          <label style={fieldLabelStyle}>
-            教育観（必須）
-            <textarea
-              rows={3}
-              value={form.philosophy}
-              onChange={(e) => handleChange("philosophy", e.target.value)}
-              style={textareaStyle}
-              placeholder="例）子ども一人ひとりの思いや考えを尊重し…"
-            />
-          </label>
-
-          <label style={fieldLabelStyle}>
-            評価観点の重視点（必須）
-            <textarea
-              rows={3}
-              value={form.evaluationFocus}
-              onChange={(e) => handleChange("evaluationFocus", e.target.value)}
-              style={textareaStyle}
-              placeholder="例）対話や振り返りから評価する…"
-            />
-          </label>
-
-          <label style={fieldLabelStyle}>
-            言語活動の重視点（必須）
-            <textarea
-              rows={3}
-              value={form.languageFocus}
-              onChange={(e) => handleChange("languageFocus", e.target.value)}
-              style={textareaStyle}
-              placeholder="例）発表や対話の機会を多く設け…"
-            />
-          </label>
-
-          <label style={fieldLabelStyle}>
-            育てたい子どもの姿（必須）
-            <textarea
-              rows={3}
-              value={form.childFocus}
-              onChange={(e) => handleChange("childFocus", e.target.value)}
-              style={textareaStyle}
-              placeholder="例）自分の考えを表現でき、友だちの意見を大切にする…"
-            />
-          </label>
-
-          {/* 保存ボタン */}
-          <div style={{ display: "grid", gridTemplateColumns: editId ? "1fr 1fr" : "1fr", gap: 12 }}>
-            <button
-              type="button"
-              onClick={async () => {
-                setBtnPressed(true);
-                const ok = await saveModel();
-                if (!ok) setBtnPressed(false);
-              }}
-              style={{
-                ...primaryBtnStyle,
-                backgroundColor: "#4caf50",
-                opacity: btnPressed ? 0.9 : 1,
-                cursor: btnPressed ? "not-allowed" : "pointer",
-              }}
-              disabled={btnPressed}
-            >
-              {editId ? "更新して保存" : "作成して保存"}
-            </button>
-
-            {editId && (
-              <button type="button" onClick={cancelEdit} style={ghostBtnStyle}>
-                キャンセル
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 一覧 */}
-        {models.length > 0 && (
-          <div style={boxStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <strong>あなたの教育観モデル</strong>
-              <span style={{ fontSize: 12, color: "#1976d2" }}>{models.length}件</span>
-            </div>
-
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-              {models.map((m) => (
-                <div key={m.id} style={listItemStyle}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, wordBreak: "break-word" }}>{m.name}</div>
-                      <div style={{ fontSize: 12, color: "#1976d2", marginTop: 4 }}>更新：{m.updatedAt}</div>
-                      <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>作成者：{m.creatorName}</div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                      {/* 編集ボタン：青 */}
-                      <button type="button" onClick={() => startEdit(m)} style={editBtnBlueStyle}>
-                        編集
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(m.id)}
-                        style={{ ...ghostBtnStyle, backgroundColor: "#e53935", color: "#fff", border: "none" }}
-                      >
-                        削除
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            <select value={filterTrigger} onChange={(e) => setFilterTrigger(e.target.value)} style={inputStyle}>
+              <option value="">きっかけ（すべて）</option>
+              {allTriggers.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
+            <button onClick={expandAll} style={{ ...secondaryBtnStyle, backgroundColor: "#607d8b", color: "#fff" }}>
+              すべて展開
+            </button>
+            <button onClick={collapseAll} style={{ ...secondaryBtnStyle, backgroundColor: "#90a4ae", color: "#fff" }}>
+              すべて折りたたみ
+            </button>
+            <button
+              onClick={exportAllPdf}
+              style={{ ...secondaryBtnStyle, backgroundColor: "#ff9800", color: "#fff" }}
+              title="このページ全体をPDF保存"
+            >
+              📄 全体PDF
+            </button>
+          </div>
+        </div>
+
+        {groupedHistories.length === 0 ? (
+          <p style={emptyStyle}>まだ履歴がありません。</p>
+        ) : (
+          groupedHistories.map(({ modelId, modelName, histories }) => {
+            const historiesAsc = [...histories].reverse();
+            const filteredAsc = historiesAsc.filter((h) => matchFilters(h));
+            if (filteredAsc.length === 0) return null;
+
+            const desc = [...histories];
+            const sectionId = `model-${modelId}`;
+
+            return (
+              <section key={modelId} id={sectionId} style={{ marginBottom: 24 }}>
+                {/* 見出し：実践記録の boxStyle */}
+                <div style={boxStyle}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12, alignItems: "center" }}>
+                    <button
+                      onClick={() => toggleExpand(modelId)}
+                      style={{
+                        ...secondaryBtnStyle,
+                        backgroundColor: "#1976d2",
+                        color: "#fff",
+                        textAlign: "left",
+                        marginTop: 0,
+                      }}
+                      aria-expanded={expandedIds.has(modelId)}
+                      aria-controls={`section-${modelId}`}
+                    >
+                      {expandedIds.has(modelId) ? "▼" : "▶"} {modelName}（履歴 {histories.length} 件）
+                    </button>
+
+                    <button
+                      onClick={() => exportModelPdf(modelId, modelName)}
+                      style={{ ...secondaryBtnStyle, backgroundColor: "#ff9800", color: "#fff" }}
+                      title="このモデルだけPDF保存"
+                    >
+                      📄 モデルPDF
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 10 }}>{renderModelSummary(desc)}</div>
+                </div>
+
+                {expandedIds.has(modelId) && (
+                  <div id={`section-${modelId}`} style={{ marginTop: 12 }}>
+                    {filteredAsc.map((h, i) => {
+                      const prev = i > 0 ? filteredAsc[i - 1] : undefined;
+                      const isEditing = editingId === h.id;
+
+                      return (
+                        <TimelineItem key={h.id} date={formatDateTime(h.updatedAt)}>
+                          <h3 style={{ margin: "0 0 10px" }}>{h.name}</h3>
+
+                          <FieldWithDiff current={h.philosophy} previous={prev?.philosophy} label="教育観" />
+                          <FieldWithDiff current={h.evaluationFocus} previous={prev?.evaluationFocus} label="評価観点" />
+                          <FieldWithDiff current={h.languageFocus} previous={prev?.languageFocus} label="言語活動" />
+                          <FieldWithDiff current={h.childFocus} previous={prev?.childFocus} label="育てたい子どもの姿" />
+
+                          {/* ポートフォリオ領域 */}
+                          {!isEditing ? (
+                            <div style={{ ...boxStyle, marginTop: 10, borderColor: "#9e9e9e" }}>
+                              <p style={rowP}>
+                                <strong>きっかけ：</strong>
+                                {h.triggerType || "—"}
+                                {h.triggerText ? `｜${h.triggerText}` : ""}
+                              </p>
+                              <p style={rowP}>
+                                <strong>理由・背景：</strong>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reason || "—"}</span>
+                              </p>
+                              <p style={rowP}>
+                                <strong>振り返りメモ：</strong>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{h.reflection || "—"}</span>
+                              </p>
+
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                                <button
+                                  onClick={() => setEditingId(h.id)}
+                                  style={{ ...secondaryBtnStyle, backgroundColor: "#1976d2", color: "#fff" }}
+                                >
+                                  ✏️ 追記・編集
+                                </button>
+                                <button
+                                  onClick={() => deleteHistory(h.id)}
+                                  style={{ ...secondaryBtnStyle, backgroundColor: "#e53935", color: "#fff" }}
+                                >
+                                  🗑 削除
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <PortfolioEditor
+                              data={h}
+                              onCancel={() => setEditingId(null)}
+                              onSaved={(updated) => {
+                                setGroupedHistories((prevState) =>
+                                  prevState.map((g) =>
+                                    g.modelId !== h.modelId
+                                      ? g
+                                      : {
+                                          ...g,
+                                          histories: g.histories.map((x) => (x.id === h.id ? { ...x, ...updated } : x)),
+                                        }
+                                  )
+                                );
+                                setEditingId(null);
+                              }}
+                            />
+                          )}
+                        </TimelineItem>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })
         )}
       </main>
-
-      {/* 成功トースト（2秒表示） */}
-      {successMessage && <div style={successToastStyle}>{successMessage}</div>}
     </>
   );
 }
 
-/* =========================================================
- * Styles（実践記録ページと揃えたトーン）
- * ======================================================= */
+/* =========================
+ * Styles（実践記録ページに寄せて統一）
+ * ======================= */
+
 const navBarStyle: React.CSSProperties = {
   position: "fixed",
   top: 0,
@@ -552,19 +810,6 @@ const barStyle: React.CSSProperties = {
   backgroundColor: "white",
   borderRadius: 2,
 };
-
-const overlayStyle = (menuOpen: boolean): React.CSSProperties => ({
-  position: "fixed",
-  top: 56,
-  left: 0,
-  width: "100vw",
-  height: "calc(100vh - 56px)",
-  backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: menuOpen ? 1 : 0,
-  visibility: menuOpen ? "visible" : "hidden",
-  transition: "opacity 0.3s ease",
-  zIndex: 998,
-});
 
 const menuWrapperStyle = (menuOpen: boolean): React.CSSProperties => ({
   position: "fixed",
@@ -612,12 +857,26 @@ const navBtnStyle: React.CSSProperties = {
   textAlign: "left",
 };
 
+const overlayStyle = (menuOpen: boolean): React.CSSProperties => ({
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "calc(100vh - 56px)",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  opacity: menuOpen ? 1 : 0,
+  visibility: menuOpen ? "visible" : "hidden",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+});
+
 const containerStyle: React.CSSProperties = {
   padding: 24,
   maxWidth: 800,
   margin: "auto",
   fontFamily: "sans-serif",
   paddingTop: 72,
+  boxSizing: "border-box",
 };
 
 const noticeBoxStyle: React.CSSProperties = {
@@ -637,77 +896,64 @@ const boxStyle: React.CSSProperties = {
   backgroundColor: "#fff",
 };
 
-const fieldLabelStyle: React.CSSProperties = {
-  display: "block",
-  fontWeight: 700,
-  marginBottom: 10,
-};
-
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  marginTop: 6,
-  padding: 10,
+  padding: 8,
   borderRadius: 6,
-  border: "1px solid #cfd8dc",
+  border: "1px solid #ccc",
   boxSizing: "border-box",
-};
+} as CSSProperties;
 
 const textareaStyle: React.CSSProperties = {
-  ...inputStyle,
+  width: "100%",
+  padding: 8,
+  borderRadius: 6,
+  border: "1px solid #ccc",
+  boxSizing: "border-box",
   resize: "vertical",
+} as CSSProperties;
+
+const labelStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+  fontSize: 13,
+  color: "#333",
 };
 
 const primaryBtnStyle: React.CSSProperties = {
   padding: 12,
+  backgroundColor: "#4caf50",
   color: "#fff",
   border: "none",
   borderRadius: 6,
   width: "100%",
   cursor: "pointer",
+  marginTop: 16,
 };
 
-const ghostBtnStyle: React.CSSProperties = {
-  padding: 12,
-  backgroundColor: "#90a4ae",
-  color: "#fff",
+const secondaryBtnStyle: React.CSSProperties = {
+  padding: 10,
   border: "none",
   borderRadius: 6,
   width: "100%",
   cursor: "pointer",
+  marginTop: 0,
 };
 
-const editBtnBlueStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  backgroundColor: "#1976d2",
-  color: "#fff",
-  border: "none",
+const emptyStyle: React.CSSProperties = {
+  padding: "1.5rem",
+  textAlign: "center",
+  color: "#666",
+  fontSize: "1.05rem",
+};
+
+const rowP: React.CSSProperties = {
+  margin: "6px 0",
+};
+
+const summaryBoxStyle: React.CSSProperties = {
+  border: "1px solid #2196f3",
+  backgroundColor: "#e3f2fd",
   borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const listItemStyle: React.CSSProperties = {
-  border: "1px solid #e0e0e0",
-  borderRadius: 6,
-  padding: 12,
-  backgroundColor: "#fff",
-};
-
-const errorStyle: React.CSSProperties = {
-  color: "#d32f2f",
-  fontWeight: 800,
-  margin: "0 0 12px",
-};
-
-const successToastStyle: React.CSSProperties = {
-  position: "fixed",
-  left: "50%",
-  transform: "translateX(-50%)",
-  bottom: 24,
-  background: "#2e7d32",
-  color: "white",
-  padding: "10px 16px",
-  borderRadius: 999,
-  boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
-  zIndex: 1500,
+  padding: 10,
 };
