@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 
@@ -21,7 +21,7 @@ type EducationHistory = EducationModel & {
 
 export default function StyleDetailPage() {
   const params = useParams();
-  const id = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? "");
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
   const router = useRouter();
 
   // --- state ---
@@ -39,16 +39,11 @@ export default function StyleDetailPage() {
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // トースト（デザイン統一用：alertは残しても良い）
-  const [toast, setToast] = useState("");
-
-  // --- データロード（機能そのまま：localStorage） ---
+  // --- データロード ---
   useEffect(() => {
     if (!id) return;
-
-    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]") as EducationModel[];
-    const foundStyle = styleModels.find((s) => s.id === id);
-
+    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]");
+    const foundStyle = styleModels.find((s: EducationModel) => s.id === id);
     if (foundStyle) {
       setStyle(foundStyle);
       setEditForm({
@@ -59,22 +54,21 @@ export default function StyleDetailPage() {
         childFocus: foundStyle.childFocus,
       });
     }
-
     const plans = JSON.parse(localStorage.getItem("lessonPlans") || "[]");
     const matchedPlans = plans.filter((p: any) => p.usedStyleName === foundStyle?.name);
     setRelatedPlans(matchedPlans);
 
     const hist = JSON.parse(localStorage.getItem("educationModelsHistory") || "[]") as EducationHistory[];
-    const filteredHist = hist.filter((h) => h.id === id);
+    const filteredHist = hist.filter(h => h.id === id);
     setHistory(filteredHist);
   }, [id]);
 
   // --- 入力変更 ---
   const handleChange = (field: keyof typeof editForm, value: string) => {
-    setEditForm((prev) => ({ ...prev, [field]: value }));
+    setEditForm(prev => ({ ...prev, [field]: value }));
   };
 
-  // --- 保存処理（機能そのまま） ---
+  // --- 保存処理 ---
   const handleSave = (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -101,28 +95,17 @@ export default function StyleDetailPage() {
       updatedAt: now,
     };
 
-    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]") as EducationModel[];
-    const updatedModels = styleModels.map((s) => (s.id === id ? updatedModel : s));
+    const styleModels = JSON.parse(localStorage.getItem("educationModels") || "[]");
+    const updatedModels = styleModels.map((s: EducationModel) => (s.id === id ? updatedModel : s));
     localStorage.setItem("educationModels", JSON.stringify(updatedModels));
     setStyle(updatedModel);
 
-    const newHistoryEntry: EducationHistory = {
-      ...updatedModel,
-      note: note.trim() || "（更新時にメモなし）",
-    };
+    const newHistoryEntry: EducationHistory = { ...updatedModel, note: note.trim() || "（更新時にメモなし）" };
     const prevHistory = JSON.parse(localStorage.getItem("educationModelsHistory") || "[]") as EducationHistory[];
     const updatedHistory = [newHistoryEntry, ...prevHistory];
     localStorage.setItem("educationModelsHistory", JSON.stringify(updatedHistory));
-
-    // 画面の「このIDの履歴」表示はフィルタしたものにする（機能維持：ただし表示の正しさは上がる）
-    const filtered = updatedHistory.filter((h) => h.id === id);
-    setHistory(filtered);
-
+    setHistory(updatedHistory);
     setNote("");
-
-    // alertは好みで残せます。統一感のためトーストも出します
-    setToast("✅ 教育観モデルを更新しました！");
-    setTimeout(() => setToast(""), 2000);
 
     alert("✅ 教育観モデルを更新しました！");
   };
@@ -130,31 +113,8 @@ export default function StyleDetailPage() {
   if (!style) return <p style={{ padding: "2rem" }}>スタイルを読み込んでいます...</p>;
 
   // --- ハンバーガーメニューの開閉 ---
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
+  const toggleMenu = () => setMenuOpen(prev => !prev);
   const closeMenu = () => setMenuOpen(false);
-
-  const fieldLabels = useMemo(
-    () => ({
-      name: { title: "モデル名（必須）", helper: "例）対話型授業、音読重視 など" },
-      philosophy: {
-        title: "教育観（必須）",
-        helper: "例）子ども一人ひとりの思いや考えを尊重し、対話を通して学びを深める。",
-      },
-      evaluationFocus: {
-        title: "評価観点の重視点（必須）",
-        helper: "例）子どもの振り返り・対話の過程も含めて評価する。",
-      },
-      languageFocus: {
-        title: "言語活動の重視点（必須）",
-        helper: "例）話す・聞く・書く活動を往還させる。",
-      },
-      childFocus: {
-        title: "育てたい子どもの姿（必須）",
-        helper: "例）自分の言葉で考えを表現し、友だちの意見を大切にできる。",
-      },
-    }),
-    []
-  );
 
   return (
     <>
@@ -166,32 +126,34 @@ export default function StyleDetailPage() {
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+          onKeyDown={e => e.key === "Enter" && toggleMenu()}
         >
-          <span style={barStyle} />
-          <span style={barStyle} />
-          <span style={barStyle} />
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
+          <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
       {/* メニューオーバーレイ */}
-      <div style={overlayStyle(menuOpen)} onClick={closeMenu} aria-hidden={!menuOpen} />
+      <div
+        style={overlayStyle(menuOpen)}
+        onClick={closeMenu}
+        aria-hidden={!menuOpen}
+      />
 
       {/* メニュー本体 */}
       <div style={menuWrapperStyle(menuOpen)} aria-hidden={!menuOpen}>
-        <button
-          onClick={() => {
-            signOut();
-            closeMenu();
-          }}
-          style={logoutButtonStyle}
-        >
+        {/* ログアウトボタン */}
+        <button onClick={() => { signOut(); closeMenu(); }} style={logoutButtonStyle}>
           🔓 ログアウト
         </button>
 
+        {/* メニューリンク */}
         <div style={menuScrollStyle}>
-          {[
+          {[ 
             ["/", "🏠 ホーム"],
             ["/plan", "📋 授業作成"],
             ["/plan/history", "📖 計画履歴"],
@@ -215,210 +177,108 @@ export default function StyleDetailPage() {
         </div>
       </div>
 
-      {/* メイン */}
-      <main style={mainContainerStyle}>
-        <nav style={{ marginBottom: 12 }}>
-          <Link href="/models" style={{ color: "#1976d2", textDecoration: "none", fontWeight: 700 }}>
-            ← 教育観一覧へ
-          </Link>
+      {/* メインコンテンツ */}
+      <main style={mainStyle}>
+        <nav style={{ marginBottom: "2rem" }}>
+          <Link href="/models">← スタイル一覧へ</Link>
         </nav>
 
-        <h2 style={pageTitleStyle}>{style.name}</h2>
+        <h2 style={{ fontSize: "1.6rem", marginBottom: "1rem" }}>{style.name}</h2>
 
-        {/* 現在値（カード） */}
-        <section style={infoCardStyle}>
-          <div style={infoGridStyle}>
-            <div style={infoItemStyle}>
-              <div style={infoLabelStyle}>教育観</div>
-              <div style={infoValueStyle}>{style.philosophy}</div>
-            </div>
-            <div style={infoItemStyle}>
-              <div style={infoLabelStyle}>評価観点の重視</div>
-              <div style={infoValueStyle}>{style.evaluationFocus}</div>
-            </div>
-            <div style={infoItemStyle}>
-              <div style={infoLabelStyle}>言語活動の重視</div>
-              <div style={infoValueStyle}>{style.languageFocus}</div>
-            </div>
-            <div style={infoItemStyle}>
-              <div style={infoLabelStyle}>育てたい子どもの姿</div>
-              <div style={infoValueStyle}>{style.childFocus}</div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 10, fontSize: 12, color: "#1976d2" }}>
-            更新：{new Date(style.updatedAt).toLocaleString()}
-          </div>
+        <section style={infoSectionStyle}>
+          <p><strong>教育観：</strong><br />{style.philosophy}</p>
+          <p><strong>評価観点の重視：</strong><br />{style.evaluationFocus}</p>
+          <p><strong>言語活動の重視：</strong><br />{style.languageFocus}</p>
+          <p><strong>育てたい子どもの姿：</strong><br />{style.childFocus}</p>
         </section>
 
-        {/* 編集フォーム */}
-        <section style={formCardStyle}>
-          <h3 style={{ fontSize: "1.25rem", margin: "0 0 10px" }}>✏️ 教育観モデルを編集</h3>
+        <section style={{ marginBottom: "2rem" }}>
+          <h3 style={{ marginBottom: "1rem" }}>教育観モデルを編集</h3>
 
-          {error && <p style={errorStyle}>{error}</p>}
+          {error && <p style={{ color: "red", marginBottom: "1rem" }}>{error}</p>}
 
           <form onSubmit={handleSave}>
-            {/* モデル名 */}
-            <label style={labelStyle}>
-              {fieldLabels.name.title}
-              <div style={helperStyle}>{fieldLabels.name.helper}</div>
-              <input
-                type="text"
-                value={editForm.name}
-                onChange={(e) => handleChange("name", e.target.value)}
-                style={inputStyle}
-                required
-              />
-            </label>
+            {["name", "philosophy", "evaluationFocus", "languageFocus", "childFocus"].map(field => (
+              <label key={field} style={labelStyle}>
+                {field === "name" ? "モデル名（必須）：" : 
+                 field === "philosophy" ? "教育観（必須）：" :
+                 field === "evaluationFocus" ? "評価観点の重視（必須）：" :
+                 field === "languageFocus" ? "言語活動の重視（必須）：" :
+                 "育てたい子どもの姿（必須）："
+                }
+                {field === "name" ? (
+                  <input
+                    type="text"
+                    value={(editForm as any)[field]}
+                    onChange={e => handleChange(field as any, e.target.value)}
+                    style={inputStyle}
+                    required
+                  />
+                ) : (
+                  <textarea
+                    value={(editForm as any)[field]}
+                    onChange={e => handleChange(field as any, e.target.value)}
+                    rows={3}
+                    style={textareaStyle}
+                    required
+                  />
+                )}
+              </label>
+            ))}
 
-            {/* 教育観 */}
             <label style={labelStyle}>
-              {fieldLabels.philosophy.title}
-              <div style={helperStyle}>{fieldLabels.philosophy.helper}</div>
-              <textarea
-                value={editForm.philosophy}
-                onChange={(e) => handleChange("philosophy", e.target.value)}
-                rows={3}
-                style={textareaStyle}
-                required
-              />
-            </label>
-
-            {/* 評価観点 */}
-            <label style={labelStyle}>
-              {fieldLabels.evaluationFocus.title}
-              <div style={helperStyle}>{fieldLabels.evaluationFocus.helper}</div>
-              <textarea
-                value={editForm.evaluationFocus}
-                onChange={(e) => handleChange("evaluationFocus", e.target.value)}
-                rows={3}
-                style={textareaStyle}
-                required
-              />
-            </label>
-
-            {/* 言語活動 */}
-            <label style={labelStyle}>
-              {fieldLabels.languageFocus.title}
-              <div style={helperStyle}>{fieldLabels.languageFocus.helper}</div>
-              <textarea
-                value={editForm.languageFocus}
-                onChange={(e) => handleChange("languageFocus", e.target.value)}
-                rows={3}
-                style={textareaStyle}
-                required
-              />
-            </label>
-
-            {/* 育てたい子どもの姿 */}
-            <label style={labelStyle}>
-              {fieldLabels.childFocus.title}
-              <div style={helperStyle}>{fieldLabels.childFocus.helper}</div>
-              <textarea
-                value={editForm.childFocus}
-                onChange={(e) => handleChange("childFocus", e.target.value)}
-                rows={3}
-                style={textareaStyle}
-                required
-              />
-            </label>
-
-            {/* 更新メモ */}
-            <label style={labelStyle}>
-              更新メモ（任意）
-              <div style={helperStyle}>変更理由や補足メモを入力してください。</div>
+              更新メモ（任意）：
               <textarea
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={e => setNote(e.target.value)}
                 rows={2}
-                placeholder="例）評価観点を『過程重視』に変更"
+                placeholder="変更理由や補足メモを入力してください"
                 style={{ ...textareaStyle, fontStyle: "italic" }}
               />
             </label>
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 14 }}>
-              <button type="submit" style={buttonPrimary}>
-                保存する
-              </button>
-              <button
-                type="button"
-                style={buttonGhost}
-                onClick={() => router.push("/models")}
-              >
-                一覧へ戻る
-              </button>
-            </div>
+            <button type="submit" style={buttonStyle}>
+              保存する
+            </button>
           </form>
         </section>
 
         {/* 編集履歴 */}
-        <section style={sectionCardStyle}>
-          <h3 style={{ margin: "0 0 10px", fontSize: "1.2rem" }}>🕒 編集履歴</h3>
-          {history.length === 0 ? (
-            <p style={{ margin: 0, color: "#555" }}>編集履歴はありません。</p>
-          ) : (
-            <ul style={historyListStyle}>
-              {history.map((h, i) => (
-                <li key={i} style={historyItemStyle}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800, color: "#1b1f24" }}>
-                      {new Date(h.updatedAt).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#1976d2" }}>モデル名：{h.name}</div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div style={miniLabelStyle}>メモ</div>
-                    <div style={miniValueStyle}>{h.note}</div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div style={miniLabelStyle}>教育観</div>
-                    <div style={miniValueStyle}>{h.philosophy}</div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div style={miniLabelStyle}>評価観点の重視</div>
-                    <div style={miniValueStyle}>{h.evaluationFocus}</div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div style={miniLabelStyle}>言語活動の重視</div>
-                    <div style={miniValueStyle}>{h.languageFocus}</div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div style={miniLabelStyle}>育てたい子どもの姿</div>
-                    <div style={miniValueStyle}>{h.childFocus}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+        <section style={{ marginTop: "3rem" }}>
+          <h3 style={{ marginBottom: "1rem" }}>編集履歴</h3>
+          {history.length === 0 && <p>編集履歴はありません。</p>}
+          <ul style={historyListStyle}>
+            {history.map((h, i) => (
+              <li key={i} style={historyItemStyle}>
+                <div><strong>更新日時：</strong>{new Date(h.updatedAt).toLocaleString()}</div>
+                <div><strong>メモ：</strong> {h.note}</div>
+                <div><strong>モデル名：</strong> {h.name}</div>
+                <div><strong>教育観：</strong> {h.philosophy}</div>
+                <div><strong>評価観点の重視：</strong> {h.evaluationFocus}</div>
+                <div><strong>言語活動の重視：</strong> {h.languageFocus}</div>
+                <div><strong>育てたい子どもの姿：</strong> {h.childFocus}</div>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* 関連授業案一覧 */}
-        <section style={sectionCardStyle}>
-          <h3 style={{ margin: "0 0 10px", fontSize: "1.2rem" }}>📎 このスタイルで作成した授業案</h3>
+        <section style={{ marginTop: "3rem" }}>
+          <h3 style={{ marginBottom: "1rem" }}>このスタイルで作成した授業案</h3>
           {relatedPlans.length === 0 ? (
-            <p style={{ margin: 0, color: "#555" }}>まだこのスタイルで作成された授業案はありません。</p>
+            <p>まだこのスタイルで作成された授業案はありません。</p>
           ) : (
-            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-              {relatedPlans.map((plan) => (
+            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+              {relatedPlans.map(plan => (
                 <li key={plan.id} style={relatedPlanItemStyle}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>
-                      {plan.unit}
-                      <span style={{ fontWeight: 500, color: "#607d8b" }}>
-                        {" "}
-                        （{plan.grade}・{plan.genre}）
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, color: "#455a64" }}>授業時間：{plan.hours}時間</div>
-                  </div>
-
-                  <Link href="/plan/history" style={{ textDecoration: "none" }}>
-                    <button style={relatedPlanButtonStyle}>📖 履歴ページで確認</button>
+                  <p>
+                    <strong>{plan.unit}</strong>（{plan.grade}・{plan.genre}）
+                  </p>
+                  <p>授業時間：{plan.hours}時間</p>
+                  <Link href="/plan/history">
+                    <button style={relatedPlanButtonStyle}>
+                      📖 履歴ページで確認
+                    </button>
                   </Link>
                 </li>
               ))}
@@ -426,16 +286,11 @@ export default function StyleDetailPage() {
           )}
         </section>
       </main>
-
-      {/* トースト */}
-      {toast && <div style={successBannerStyle}>{toast}</div>}
     </>
   );
 }
 
-/* =========================
- *  Styles（教育観ページと統一）
- * ======================= */
+// --- スタイル ---
 
 const navBarStyle: React.CSSProperties = {
   position: "fixed",
@@ -470,7 +325,7 @@ const overlayStyle = (menuOpen: boolean): React.CSSProperties => ({
   top: 56,
   left: 0,
   width: "100vw",
-  height: "calc(100vh - 56px)",
+  height: "100vh",
   backgroundColor: "rgba(0,0,0,0.3)",
   opacity: menuOpen ? 1 : 0,
   visibility: menuOpen ? "visible" : "hidden",
@@ -516,7 +371,6 @@ const navLinkStyle: React.CSSProperties = {
   textAlign: "left",
   width: "100%",
   boxSizing: "border-box",
-  border: "none",
 };
 
 const logoutButtonStyle: React.CSSProperties = {
@@ -533,187 +387,88 @@ const logoutButtonStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-const mainContainerStyle: React.CSSProperties = {
-  padding: "72px 24px 24px",
-  maxWidth: 900,
-  margin: "auto",
-  fontFamily: "'Yu Gothic', '游ゴシック', 'Noto Sans JP', sans-serif",
+const mainStyle: React.CSSProperties = {
+  padding: "2rem 1rem",
+  maxWidth: 800,
+  margin: "0 auto",
+  fontFamily: "sans-serif",
+  paddingTop: 72,
   boxSizing: "border-box",
+  width: "100%",
 };
 
-const pageTitleStyle: React.CSSProperties = {
-  fontSize: "1.8rem",
-  margin: "0 0 12px",
-  textAlign: "center",
-  userSelect: "none",
-};
-
-const infoCardStyle: React.CSSProperties = {
-  padding: 16,
-  borderRadius: 8,
-  backgroundColor: "#fff",
-  border: "1px solid #e0e7ff",
-  marginBottom: 14,
-};
-
-const infoGridStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 12,
-};
-
-const infoItemStyle: React.CSSProperties = {
-  background: "#fafbff",
-  border: "1px solid #dfe6ff",
-  borderRadius: 8,
-  padding: 12,
+const infoSectionStyle: React.CSSProperties = {
+  marginBottom: "2rem",
+  background: "#f9f9f9",
+  padding: "1rem",
+  borderRadius: "10px",
   whiteSpace: "pre-wrap",
-};
-
-const infoLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: "#455a64",
-  fontWeight: 800,
-  marginBottom: 6,
-};
-
-const infoValueStyle: React.CSSProperties = {
-  fontSize: 14,
-  color: "#1b1f24",
-  lineHeight: 1.6,
-};
-
-const formCardStyle: React.CSSProperties = {
-  padding: 20,
-  borderRadius: 8,
-  backgroundColor: "#fff",
-  border: "1px solid #e0e7ff",
-  marginTop: 12,
-};
-
-const sectionCardStyle: React.CSSProperties = {
-  padding: 18,
-  borderRadius: 8,
-  backgroundColor: "#fff",
-  border: "1px solid #e0e7ff",
-  marginTop: 16,
 };
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  marginBottom: 12,
-  fontWeight: 700,
-  color: "#444",
-  fontSize: "1.03rem",
-};
-
-const helperStyle: React.CSSProperties = {
-  fontSize: "0.9rem",
-  color: "#666",
-  margin: "4px 0 6px",
-  fontWeight: 500,
+  marginBottom: "1rem",
 };
 
 const inputStyle: React.CSSProperties = {
+  maxWidth: 800,
   width: "100%",
-  padding: 14,
-  fontSize: "1.05rem",
+  padding: 8,
+  fontSize: "1rem",
   borderRadius: 6,
-  border: "1px solid #c5d2f0",
+  border: "1px solid #ccc",
+  marginTop: 4,
   boxSizing: "border-box",
-  backgroundColor: "#fff",
 };
 
 const textareaStyle: React.CSSProperties = {
   ...inputStyle,
   resize: "vertical",
+  minHeight: 60,
 };
 
-const buttonPrimary: React.CSSProperties = {
-  backgroundColor: "#4caf50",
+const buttonStyle: React.CSSProperties = {
+  backgroundColor: "#4CAF50",
   color: "white",
-  padding: "12px 20px",
+  padding: "0.8rem 1.2rem",
+  fontSize: "1.1rem",
   border: "none",
   borderRadius: 8,
   cursor: "pointer",
-  fontWeight: 800,
-};
-
-const buttonGhost: React.CSSProperties = {
-  backgroundColor: "#90a4ae",
-  color: "white",
-  padding: "12px 18px",
-  border: "none",
-  borderRadius: 8,
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const errorStyle: React.CSSProperties = {
-  color: "#d32f2f",
-  marginBottom: 12,
-  fontWeight: 800,
-  textAlign: "center",
+  marginTop: "1rem",
 };
 
 const historyListStyle: React.CSSProperties = {
   listStyle: "none",
   paddingLeft: 0,
-  margin: 0,
-  display: "grid",
-  gap: 10,
 };
 
 const historyItemStyle: React.CSSProperties = {
-  border: "1px solid #dfe6ff",
-  borderRadius: 10,
-  padding: 14,
-  backgroundColor: "#fafbff",
+  border: "1px solid #ccc",
+  borderRadius: 8,
+  padding: "1rem",
+  marginBottom: "1rem",
+  backgroundColor: "#f9f9f9",
   whiteSpace: "pre-wrap",
-};
-
-const miniLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: "#455a64",
-  fontWeight: 800,
-  marginBottom: 4,
-};
-
-const miniValueStyle: React.CSSProperties = {
-  fontSize: 13,
-  color: "#1b1f24",
-  lineHeight: 1.55,
+  fontFamily: "monospace",
+  fontSize: "0.9rem",
 };
 
 const relatedPlanItemStyle: React.CSSProperties = {
-  marginBottom: 10,
-  padding: 14,
-  border: "1px solid #dfe6ff",
-  borderRadius: 10,
-  backgroundColor: "#fafbff",
+  marginBottom: "1rem",
+  padding: "1rem",
+  border: "1px solid #ccc",
+  borderRadius: "10px",
+  backgroundColor: "#fdfdfd",
 };
 
 const relatedPlanButtonStyle: React.CSSProperties = {
-  marginTop: 10,
+  marginTop: "0.5rem",
   backgroundColor: "#2196F3",
   color: "white",
   border: "none",
-  borderRadius: 8,
-  padding: "10px 14px",
+  borderRadius: 6,
+  padding: "0.5rem 1rem",
   fontSize: "0.95rem",
   cursor: "pointer",
-  fontWeight: 800,
-};
-
-const successBannerStyle: React.CSSProperties = {
-  position: "fixed",
-  left: "50%",
-  transform: "translateX(-50%)",
-  bottom: 24,
-  background: "#2e7d32",
-  color: "white",
-  padding: "10px 16px",
-  borderRadius: 999,
-  boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
-  zIndex: 1500,
-  transition: "opacity .25s ease",
 };
