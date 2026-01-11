@@ -1,6 +1,6 @@
 // app/api/fine-tune/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { getAdminAuth } from "@/lib/firebaseAdmin";
 
 export const runtime = "nodejs";
@@ -18,8 +18,9 @@ export async function POST(req: NextRequest) {
     const token = getBearerToken(req);
     if (!token) return NextResponse.json({ error: "Missing Bearer token" }, { status: 401 });
 
-    // 本人確認
-    await getAdminAuth().verifyIdToken(token);
+    const decoded = await getAdminAuth().verifyIdToken(token);
+    const isAdmin = decoded.admin === true;
+    if (!isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await req.json().catch(() => null);
     const jsonlText = typeof body?.jsonlText === "string" ? body.jsonlText : "";
@@ -29,8 +30,10 @@ export async function POST(req: NextRequest) {
 
     const baseModel = process.env.FT_BASE_MODEL || "gpt-4o-mini-2024-07-18";
 
-    // Node.js (Next route) は File が使える前提（Nextのruntime=nodejs）
-    const file = new File([jsonlText], "train.jsonl", { type: "application/jsonl" });
+    // ✅ Buffer → toFile（Next/node環境で File 依存を減らす）
+    const file = await toFile(Buffer.from(jsonlText, "utf-8"), "train.jsonl", {
+      type: "application/jsonl",
+    });
 
     const uploaded = await openai.files.create({
       file,

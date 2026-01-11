@@ -1,6 +1,7 @@
 // app/api/fine-tune/export/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
+import { FieldPath } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
@@ -35,9 +36,33 @@ function getBearerToken(req: NextRequest) {
 
 type StoredDoc = {
   ownerUid?: string;
-  userPromptText?: string; // lastPrompt
-  result?: any;            // 生成JSON
+  userPromptText?: string;
+  result?: any;
+  fineTuneOptIn?: boolean; // ✅ 同意フラグ（各docに入る）
 };
+
+function maskPII(s: string): string {
+  if (!s) return s;
+  let out = s;
+  out = out.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<EMAIL>");
+  out = out.replace(/(\+?\d{1,3}[-\s]?)?0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{3,4}/g, "<PHONE>");
+  out = out.replace(/https?:\/\/[^\s)]+/gi, "<URL>");
+  out = out.replace(/\b[a-f0-9]{16,64}\b/gi, "<TOKEN>");
+  out = out.replace(/\b\d{8,}\b/g, "<NUMBER>");
+  return out;
+}
+
+function sanitizeAny(v: any): any {
+  if (v == null) return v;
+  if (typeof v === "string") return maskPII(v);
+  if (Array.isArray(v)) return v.map(sanitizeAny);
+  if (typeof v === "object") {
+    const o: any = {};
+    for (const [k, val] of Object.entries(v)) o[k] = sanitizeAny(val);
+    return o;
+  }
+  return v;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,49 +71,91 @@ export async function GET(req: NextRequest) {
 
     const decoded = await getAdminAuth().verifyIdToken(token);
     const uid = decoded.uid;
+    const isAdmin = decoded.admin === true;
 
-    const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") || "500"), 2000);
+    const scope = (req.nextUrl.searchParams.get("scope") || "mine").toLowerCase(); // mine | all
+    if (scope === "all" && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const maxTotal = Math.min(Number(req.nextUrl.searchParams.get("maxTotal") || "2000"), 5000);
+    const pageSize = Math.min(Number(req.nextUrl.searchParams.get("pageSize") || "500"), 1000);
+
+    // ✅ scope=all のときは opt-in のみ（デフォルトON）
+    const optInOnly = (req.nextUrl.searchParams.get("optInOnly") ?? "1") !== "0";
 
     const lines: string[] = [];
+    let total = 0;
 
     for (const colName of COLLECTIONS) {
-      const snap = await getAdminDb()
-        .collection(colName)
-        .where("ownerUid", "==", uid)
-        .limit(limit)
-        .get();
+      if (total >= maxTotal) break;
 
-      for (const d of snap.docs) {
-        const data = d.data() as StoredDoc;
+      const colRef = getAdminDb().collection(colName);
+      let lastDocId: string | null = null;
 
-        const userPrompt = (data.userPromptText || "").trim();
-        const resultObj = data.result;
+      while (total < maxTotal) {
+        let q = colRef.orderBy(FieldPath.documentId()).limit(pageSize);
 
-        if (!userPrompt || !resultObj) continue;
+        if (scope !== "all") {
+          q = colRef
+            .where("ownerUid", "==", uid)
+            .orderBy(FieldPath.documentId())
+            .limit(pageSize);
+        } else if (optInOnly) {
+          q = colRef
+            .where("fineTuneOptIn", "==", true)
+            .orderBy(FieldPath.documentId())
+            .limit(pageSize);
+        }
 
-        // assistantは「JSON文字列だけ」にする（学習が安定）
-        const assistantJson = JSON.stringify(resultObj);
+        if (lastDocId) q = q.startAfter(lastDocId);
 
-        const sample = {
-          messages: [
-            { role: "system", content: TRAIN_SYSTEM },
-            { role: "user", content: userPrompt },
-            { role: "assistant", content: assistantJson },
-          ],
-        };
+        // ✅ 必要なフィールドだけ読む（コスト・漏えい対策）
+        const snap = await q.select("userPromptText", "result").get();
+        if (snap.empty) break;
 
-        // JSONL：1行=1JSON
-        lines.push(JSON.stringify(sample));
+        for (const d of snap.docs) {
+          if (total >= maxTotal) break;
+
+          const data = d.data() as StoredDoc;
+          const userPrompt = (data.userPromptText || "").trim();
+          const resultObj = data.result;
+
+          if (!userPrompt || !resultObj) continue;
+
+          const safePrompt = maskPII(userPrompt);
+          const safeResult = sanitizeAny(resultObj);
+          const assistantJson = JSON.stringify(safeResult);
+
+          const sample = {
+            messages: [
+              { role: "system", content: TRAIN_SYSTEM },
+              { role: "user", content: safePrompt },
+              { role: "assistant", content: assistantJson },
+            ],
+          };
+
+          lines.push(JSON.stringify(sample));
+          total++;
+        }
+
+        lastDocId = snap.docs[snap.docs.length - 1]?.id ?? null;
+        if (!lastDocId) break;
+        if (snap.size < pageSize) break;
       }
     }
 
     const jsonl = lines.join("\n") + (lines.length ? "\n" : "");
+    const filename =
+      scope === "all"
+        ? `train_all_${new Date().toISOString().slice(0, 10)}.jsonl`
+        : `train_${uid}.jsonl`;
 
     return new NextResponse(jsonl, {
       status: 200,
       headers: {
         "content-type": "application/jsonl; charset=utf-8",
-        "content-disposition": `attachment; filename="train_${uid}.jsonl"`,
+        "content-disposition": `attachment; filename="${filename}"`,
       },
     });
   } catch (e: any) {

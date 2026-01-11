@@ -8,11 +8,11 @@ import { db, auth } from "../firebaseConfig";
 import {
   doc,
   setDoc,
-  addDoc,
   collection,
   getDocs,
   serverTimestamp,
   getDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSession } from "next-auth/react";
@@ -70,6 +70,10 @@ type LessonPlanStored = {
   result: ParsedResult;
   timestamp: string;
   usedStyleName?: string | null;
+
+  // ★本人同意フラグ（学習提供）
+  allowTrain?: boolean;
+  allowTrainVersion?: string;
 };
 
 type LessonPlanDraft = {
@@ -91,6 +95,9 @@ type LessonPlanDraft = {
   result?: ParsedResult | null;
   timestamp: string;
   isDraft: true;
+
+  // ★本人同意フラグ（下書きにも保持）
+  allowTrain?: boolean;
 };
 
 /* ===================== 学習用Markdown生成 ===================== */
@@ -259,16 +266,16 @@ function applyParsedResultToInputs(
   const finalHours = hours || flowList.length || 0;
   const paddedFlow = Array.from({ length: finalHours }, (_, i) => flowList[i] ?? "");
 
-  if (subject) setSubject(subject);
-  if (grade) setGrade(grade);
-  if (genre) setGenre(genre);
-  if (unit) setUnit(unit);
-  if (finalHours >= 0) setHours(String(finalHours));
-  setUnitGoal(unitGoal);
-  setChildVision(childVision);
-  setLanguageActivities(languageActivities);
-  setEvaluationPoints({ knowledge, thinking, attitude });
-  setLessonPlanList(paddedFlow);
+  if (subject) setters.setSubject(subject);
+  if (grade) setters.setGrade(grade);
+  if (genre) setters.setGenre(genre);
+  if (unit) setters.setUnit(unit);
+  if (finalHours >= 0) setters.setHours(String(finalHours));
+  setters.setUnitGoal(unitGoal);
+  setters.setChildVision(childVision);
+  setters.setLanguageActivities(languageActivities);
+  setters.setEvaluationPoints({ knowledge, thinking, attitude });
+  setters.setLessonPlanList(paddedFlow);
 }
 
 /* ===================== メイン ===================== */
@@ -373,6 +380,9 @@ export default function ClientPlan() {
   /** 学習用に保存するプロンプト */
   const [lastPrompt, setLastPrompt] = useState<string>("");
 
+  /** ★本人同意（学習提供） */
+  const [consentTrain, setConsentTrain] = useState<boolean>(false);
+
   /* ===== 教育観モデルの取得 ===== */
   useEffect(() => {
     let mounted = true;
@@ -423,6 +433,9 @@ export default function ClientPlan() {
     if ((plan as any).selectedAuthorId !== undefined) setSelectedAuthorId((plan as any).selectedAuthorId ?? null);
     if ((plan as any).result) setParsedResult((plan as any).result as ParsedResult);
     if ((plan as any).mode) setMode((plan as any).mode as "ai" | "manual");
+
+    // ★同意状態も復元
+    if ((plan as any).allowTrain != null) setConsentTrain(Boolean((plan as any).allowTrain));
   };
 
   const pickLatestDraft = (a: any, b: any) => {
@@ -479,7 +492,7 @@ export default function ClientPlan() {
     if (genre === "その他") {
       const blank = { knowledge: [""], thinking: [""], attitude: [""] };
       setEvaluationPoints(blank);
-      setTemplateEvaluationPoints(blank); // ✅テンプレも「空」に
+      setTemplateEvaluationPoints(blank);
       return;
     }
 
@@ -498,7 +511,7 @@ export default function ClientPlan() {
         };
         if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
-          setTemplateEvaluationPoints(grouped); // ✅テンプレ保持
+          setTemplateEvaluationPoints(grouped);
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -529,6 +542,9 @@ export default function ClientPlan() {
     result: parsedResult ?? null,
     timestamp: new Date().toISOString(),
     isDraft: true,
+
+    // ★同意も下書きに保存
+    allowTrain: consentTrain,
   });
 
   const saveDraftLocal = (draft: LessonPlanDraft) => {
@@ -584,6 +600,7 @@ export default function ClientPlan() {
     selectedStyleName,
     selectedAuthorId,
     parsedResult,
+    consentTrain,
   ]);
 
   /* ===== 入力ハンドラ ===== */
@@ -626,6 +643,9 @@ export default function ClientPlan() {
 
     setParsedResult(null);
     setLastPrompt("");
+
+    // ★同意もリセット（毎回明示的にチェックさせる）
+    setConsentTrain(false);
   };
 
   /* ===================== スタイル ===================== */
@@ -645,7 +665,7 @@ export default function ClientPlan() {
     padding: "0.8rem",
     fontSize: "1.1rem",
     borderRadius: 8,
-    border: "1px solid " + "#ccc",
+    border: "1px solid #ccc",
     marginBottom: "1rem",
   };
 
@@ -928,6 +948,40 @@ ${languageActivities}
     }
   };
 
+  /* ===== ★同意（allowTrain）をこの授業案に反映（保存済みのみ） ===== */
+  const setAllowTrainForThisPlan = async (next: boolean) => {
+    if (!uid) {
+      alert("ログイン状態を確認できません。");
+      return;
+    }
+    if (!editId) {
+      alert("この授業案はまだFirestoreに保存されていません。先に「💾 授業案を保存する」を押してください。");
+      return;
+    }
+    if (!selectedAuthorId) {
+      alert("作成モデル（保存先カテゴリ）が不明です。");
+      return;
+    }
+    const author = authors.find((a) => a.id === selectedAuthorId);
+    if (!author) {
+      alert("保存先カテゴリが見つかりません。");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, author.collection, editId), {
+        allowTrain: next,
+        allowTrainAt: next ? serverTimestamp() : null,
+        allowTrainVersion: "v1",
+      });
+      setConsentTrain(next);
+      alert(next ? "学習への提供をONにしました。" : "学習への提供をOFFに戻しました。");
+    } catch (e) {
+      console.error(e);
+      alert("更新に失敗しました。");
+    }
+  };
+
   /* ===== 正式保存（履歴＋Firestore）。保存後、下書きをクリア ===== */
   const handleSave = async () => {
     if (!parsedResult) {
@@ -978,6 +1032,8 @@ ${languageActivities}
               result: parsedResult,
               timestamp: new Date().toISOString(),
               usedStyleName: selectedStyleName || author.label,
+              allowTrain: consentTrain,
+              allowTrainVersion: "v1",
             }
           : p
       );
@@ -999,12 +1055,16 @@ ${languageActivities}
         result: parsedResult,
         timestamp: new Date().toISOString(),
         usedStyleName: selectedStyleName || author.label,
+        allowTrain: consentTrain,
+        allowTrainVersion: "v1",
       };
       existingArr.push(newPlan);
       localStorage.setItem("lessonPlans", JSON.stringify(existingArr));
     }
 
     try {
+      const model = selectedStyleId ? styleModels.find((m) => m.id === selectedStyleId) : null;
+
       await setDoc(
         doc(db, collectionName, idToUse),
         {
@@ -1029,26 +1089,25 @@ ${languageActivities}
           modelId: selectedStyleId || null,
           modelName: selectedStyleName || null,
           modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
-          modelSnapshot: selectedStyleId
-            ? styleModels.find((m) => m.id === selectedStyleId)
-              ? {
-                  kind: "user-model" as const,
-                  id: selectedStyleId,
-                  name: styleModels.find((m) => m.id === selectedStyleId)!.name,
-                  at: new Date().toISOString(),
-                }
-              : authors.find((a) => a.id === selectedStyleId)
-              ? {
-                  kind: "builtin" as const,
-                  id: selectedStyleId,
-                  name: authors.find((a) => a.id === selectedStyleId)!.label,
-                  at: new Date().toISOString(),
-                }
-              : null
+          modelSnapshot: model
+            ? {
+                kind: "user-model" as const,
+                id: model.id,
+                name: model.name,
+                at: new Date().toISOString(),
+              }
             : null,
+
+          // ★本人同意（学習提供）
+          allowTrain: consentTrain,
+          allowTrainAt: consentTrain ? serverTimestamp() : null,
+          allowTrainVersion: "v1",
         },
         { merge: true }
       );
+
+      // 保存できたので editId を更新（次回 updateDoc で使える）
+      setEditId(idToUse);
     } catch (error) {
       console.error("Firestoreへの保存エラー:", error);
       alert("Firestoreへの保存中にエラーが発生しました");
@@ -1077,14 +1136,14 @@ ${languageActivities}
         alert("この操作は管理者のみ実行できます");
         return;
       }
-
       if (!auth.currentUser) {
         alert("Firebaseログインが必要です");
         return;
       }
       const token = await auth.currentUser.getIdToken();
 
-      const res = await fetch("/api/fine-tune/export?limit=500", {
+      // ✅ 新export仕様（scope=all + optInOnly=1）に対応。古い実装でも無視されるパラメータなので安全。
+      const res = await fetch("/api/fine-tune/export?scope=all&maxTotal=5000&pageSize=500&optInOnly=1&limit=5000", {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -1097,7 +1156,12 @@ ${languageActivities}
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "train.jsonl";
+
+      // 可能なら content-disposition からファイル名を拾う
+      const cd = res.headers.get("content-disposition") || "";
+      const m = cd.match(/filename="([^"]+)"/);
+      a.download = m?.[1] || "train.jsonl";
+
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1113,7 +1177,6 @@ ${languageActivities}
         alert("この操作は管理者のみ実行できます");
         return;
       }
-
       if (!auth.currentUser) {
         alert("Firebaseログインが必要です");
         return;
@@ -1121,7 +1184,7 @@ ${languageActivities}
       const token = await auth.currentUser.getIdToken();
 
       // 1) export（JSONL取得）
-      const exp = await fetch("/api/fine-tune/export?limit=500", {
+      const exp = await fetch("/api/fine-tune/export?scope=all&maxTotal=5000&pageSize=500&optInOnly=1&limit=5000", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!exp.ok) {
@@ -1130,7 +1193,7 @@ ${languageActivities}
       }
       const jsonlText = await exp.text();
       if (!jsonlText.trim()) {
-        alert("学習データが空です（保存済みの授業案が見つかりませんでした）");
+        alert("学習データが空です（対象の授業案が見つかりませんでした）");
         return;
       }
 
@@ -1150,8 +1213,12 @@ ${languageActivities}
         return;
       }
 
-      const data = JSON.parse(out);
-      alert(`fine-tune開始: job_id=${data.job_id} status=${data.status}`);
+      try {
+        const data = JSON.parse(out);
+        alert(`fine-tune開始: job_id=${data.job_id} status=${data.status}`);
+      } catch {
+        alert(`fine-tune開始（レスポンス）: ${out}`);
+      }
     } catch (e: any) {
       alert(`fine-tune開始に失敗しました：${e?.message || String(e)}`);
     }
@@ -1260,7 +1327,8 @@ ${languageActivities}
                 } else {
                   const foundStyle = styleModels.find((m) => m.id === val);
                   setSelectedStyleName(foundStyle ? foundStyle.name : "");
-                  setSelectedAuthorId(null);
+                  // 教育観モデルを選んでも、保存先（4分類）は別で必須のまま
+                  // ここでは selectedAuthorId は触らない（ユーザーが下の4ボタンで選択）
                 }
               }}
               style={inputStyle}
@@ -1340,13 +1408,21 @@ ${languageActivities}
               </label>
               {evaluationPoints[f].map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <textarea value={v} onChange={(e) => handleChangePoint(f, i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  <textarea
+                    value={v}
+                    onChange={(e) => handleChangePoint(f, i, e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
                   <button type="button" onClick={() => handleRemovePoint(f, i)}>
                     🗑
                   </button>
                 </div>
               ))}
-              <button type="button" onClick={() => handleAddPoint(f)} style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}>
+              <button
+                type="button"
+                onClick={() => handleAddPoint(f)}
+                style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}
+              >
                 ＋ 追加
               </button>
             </div>
@@ -1359,7 +1435,12 @@ ${languageActivities}
 
           <label>
             ■ 言語活動の工夫：<br />
-            <textarea value={languageActivities} onChange={(e) => setLanguageActivities(e.target.value)} rows={2} style={inputStyle} />
+            <textarea
+              value={languageActivities}
+              onChange={(e) => setLanguageActivities(e.target.value)}
+              rows={2}
+              style={inputStyle}
+            />
           </label>
 
           {hours && (
@@ -1368,7 +1449,11 @@ ${languageActivities}
               {Array.from({ length: Number(hours) }, (_, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <span style={{ width: "4rem", lineHeight: "2rem" }}>{i + 1}時間目:</span>
-                  <textarea value={lessonPlanList[i] || ""} onChange={(e) => handleLessonChange(i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  <textarea
+                    value={lessonPlanList[i] || ""}
+                    onChange={(e) => handleLessonChange(i, e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
                 </div>
               ))}
             </div>
@@ -1467,7 +1552,7 @@ ${languageActivities}
               🧹 下書きと入力をクリア
             </button>
 
-            {/* ★(5) 追加：JSONLダウンロード／fine-tune開始（管理者だけ表示） */}
+            {/* ★ JSONLダウンロード／fine-tune開始（管理者だけ表示） */}
             {isFineTuneAdmin && (
               <>
                 <button
@@ -1504,6 +1589,56 @@ ${languageActivities}
 
         {parsedResult && (
           <>
+            {/* ★本人同意UI */}
+            <div style={{ ...cardStyle, backgroundColor: "#fafafa" }}>
+              <div style={{ fontWeight: "bold", marginBottom: 8 }}>学習への提供（本人同意）</div>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={consentTrain}
+                  onChange={(e) => setConsentTrain(e.target.checked)}
+                />
+                この授業案を、AIの改善（fine-tune等）の学習データとして提供することに同意します。
+              </label>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setAllowTrainForThisPlan(true)}
+                  disabled={!consentTrain}
+                  style={{
+                    ...inputStyle,
+                    width: "auto",
+                    backgroundColor: consentTrain ? "#2E7D32" : "#ccc",
+                    color: "white",
+                    marginBottom: 0,
+                    cursor: consentTrain ? "pointer" : "not-allowed",
+                  }}
+                >
+                  ✅ 同意してON（保存済みの授業案に反映）
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAllowTrainForThisPlan(false)}
+                  style={{
+                    ...inputStyle,
+                    width: "auto",
+                    backgroundColor: "#757575",
+                    color: "white",
+                    marginBottom: 0,
+                  }}
+                >
+                  ⛔ OFFに戻す（保存済みの授業案に反映）
+                </button>
+              </div>
+
+              <p style={{ margin: "8px 0 0", fontSize: "0.9rem", opacity: 0.85 }}>
+                ※保存すると Firestore に <code>allowTrain</code> が記録され、ON の授業案だけを管理者が学習に集約できます。
+              </p>
+            </div>
+
             <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               <button
                 onClick={handleSave}
@@ -1521,7 +1656,10 @@ ${languageActivities}
               </button>
             </div>
 
-            <div id="result-content" style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}>
+            <div
+              id="result-content"
+              style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
+            >
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
