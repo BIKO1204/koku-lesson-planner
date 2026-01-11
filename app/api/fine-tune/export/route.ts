@@ -38,17 +38,25 @@ type StoredDoc = {
   ownerUid?: string;
   userPromptText?: string;
   result?: any;
-  fineTuneOptIn?: boolean; // ✅ 同意フラグ（各docに入る）
+  allowTrain?: boolean; // ✅ 同意フラグ（Firestore保存側に合わせる）
+  allowTrainVersion?: string;
 };
 
 function maskPII(s: string): string {
   if (!s) return s;
   let out = s;
+
+  // Email
   out = out.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<EMAIL>");
+  // Phone (ざっくり)
   out = out.replace(/(\+?\d{1,3}[-\s]?)?0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{3,4}/g, "<PHONE>");
+  // URL
   out = out.replace(/https?:\/\/[^\s)]+/gi, "<URL>");
+  // 16〜64桁くらいのトークン/IDっぽいもの
   out = out.replace(/\b[a-f0-9]{16,64}\b/gi, "<TOKEN>");
+  // 長い連番
   out = out.replace(/\b\d{8,}\b/g, "<NUMBER>");
+
   return out;
 }
 
@@ -71,17 +79,23 @@ export async function GET(req: NextRequest) {
 
     const decoded = await getAdminAuth().verifyIdToken(token);
     const uid = decoded.uid;
-    const isAdmin = decoded.admin === true;
+    const isAdmin = decoded.admin === true; // custom claims: admin:true
 
     const scope = (req.nextUrl.searchParams.get("scope") || "mine").toLowerCase(); // mine | all
     if (scope === "all" && !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const maxTotal = Math.min(Number(req.nextUrl.searchParams.get("maxTotal") || "2000"), 5000);
-    const pageSize = Math.min(Number(req.nextUrl.searchParams.get("pageSize") || "500"), 1000);
+    // ✅ UIが /export?limit=500 を叩いているので互換で受ける
+    const limitParam = req.nextUrl.searchParams.get("limit");
+    const maxTotalRaw = req.nextUrl.searchParams.get("maxTotal") || limitParam || "2000";
+    const pageSizeRaw = req.nextUrl.searchParams.get("pageSize") || "500";
+
+    const maxTotal = Math.min(Number(maxTotalRaw || "2000"), 5000);
+    const pageSize = Math.min(Number(pageSizeRaw || "500"), 1000);
 
     // ✅ scope=all のときは opt-in のみ（デフォルトON）
+    // optInOnly=0 を付けると全件（※運用上は基本おすすめしない）
     const optInOnly = (req.nextUrl.searchParams.get("optInOnly") ?? "1") !== "0";
 
     const lines: string[] = [];
@@ -91,26 +105,36 @@ export async function GET(req: NextRequest) {
       if (total >= maxTotal) break;
 
       const colRef = getAdminDb().collection(colName);
+
+      // ページング用：docIdで走査
       let lastDocId: string | null = null;
 
       while (total < maxTotal) {
         let q = colRef.orderBy(FieldPath.documentId()).limit(pageSize);
 
         if (scope !== "all") {
-          q = colRef
-            .where("ownerUid", "==", uid)
-            .orderBy(FieldPath.documentId())
-            .limit(pageSize);
-        } else if (optInOnly) {
-          q = colRef
-            .where("fineTuneOptIn", "==", true)
-            .orderBy(FieldPath.documentId())
-            .limit(pageSize);
+          // mine: 自分のデータのみ
+          q = colRef.where("ownerUid", "==", uid).orderBy(FieldPath.documentId()).limit(pageSize);
+
+          // （任意）mineでも optInOnly=1 の場合だけ同意ONに絞る
+          if (optInOnly) {
+            // Firestoreは where を複数つけてもOK（等価フィルタ）
+            q = colRef
+              .where("ownerUid", "==", uid)
+              .where("allowTrain", "==", true)
+              .orderBy(FieldPath.documentId())
+              .limit(pageSize);
+          }
+        } else {
+          // all: 管理者
+          if (optInOnly) {
+            q = colRef.where("allowTrain", "==", true).orderBy(FieldPath.documentId()).limit(pageSize);
+          }
         }
 
         if (lastDocId) q = q.startAfter(lastDocId);
 
-        // ✅ 必要なフィールドだけ読む（コスト・漏えい対策）
+        // ✅ 必要なフィールドだけ読む（コスト＆漏えい対策）
         const snap = await q.select("userPromptText", "result").get();
         if (snap.empty) break;
 
@@ -118,13 +142,16 @@ export async function GET(req: NextRequest) {
           if (total >= maxTotal) break;
 
           const data = d.data() as StoredDoc;
+
           const userPrompt = (data.userPromptText || "").trim();
           const resultObj = data.result;
-
           if (!userPrompt || !resultObj) continue;
 
+          // 匿名化（prompt/result 両方）
           const safePrompt = maskPII(userPrompt);
           const safeResult = sanitizeAny(resultObj);
+
+          // assistantは「JSON文字列だけ」
           const assistantJson = JSON.stringify(safeResult);
 
           const sample = {
@@ -141,6 +168,8 @@ export async function GET(req: NextRequest) {
 
         lastDocId = snap.docs[snap.docs.length - 1]?.id ?? null;
         if (!lastDocId) break;
+
+        // 次ページへ
         if (snap.size < pageSize) break;
       }
     }
@@ -154,7 +183,8 @@ export async function GET(req: NextRequest) {
     return new NextResponse(jsonl, {
       status: 200,
       headers: {
-        "content-type": "application/jsonl; charset=utf-8",
+        // jsonl の一般的なMIME
+        "content-type": "application/x-ndjson; charset=utf-8",
         "content-disposition": `attachment; filename="${filename}"`,
       },
     });
