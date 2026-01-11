@@ -31,11 +31,11 @@ const authors = [
 type StyleModel = {
   id: string;
   name: string;
-  content: string;          // philosophy（教育観）
+  content: string; // philosophy（教育観）
   evaluationFocus?: string; // 評価観点の重視点
-  languageFocus?: string;   // 言語活動の重視点
-  childFocus?: string;      // 育てたい子どもの姿
-  creatorName?: string;     // 作成者名（任意）
+  languageFocus?: string; // 言語活動の重視点
+  childFocus?: string; // 育てたい子どもの姿
+  creatorName?: string; // 作成者名（任意）
 };
 
 type ParsedResult = {
@@ -363,18 +363,6 @@ export default function ClientPlan() {
     };
   }, []);
 
-  /* ===== selectedStyleId から名前追従（クエリ復元にも対応） ===== */
-  useEffect(() => {
-    if (!selectedStyleId) return;
-    const a = authors.find((x) => x.id === selectedStyleId);
-    if (a) {
-      setSelectedStyleName(a.label);
-      return;
-    }
-    const m = styleModels.find((x) => x.id === selectedStyleId);
-    if (m) setSelectedStyleName(m.name);
-  }, [selectedStyleId, styleModels]);
-
   /* ===== draft適用ヘルパ ===== */
   const applyDraftToState = (plan: Partial<LessonPlanDraft | LessonPlanStored>) => {
     if (!plan) return;
@@ -394,7 +382,6 @@ export default function ClientPlan() {
     if ((plan as any).selectedAuthorId !== undefined) setSelectedAuthorId((plan as any).selectedAuthorId ?? null);
     if ((plan as any).result) setParsedResult((plan as any).result as ParsedResult);
     if ((plan as any).mode) setMode((plan as any).mode as "ai" | "manual");
-    if ((plan as any).userPromptText) setLastPrompt(String((plan as any).userPromptText ?? ""));
   };
 
   const pickLatestDraft = (a: any, b: any) => {
@@ -589,7 +576,7 @@ export default function ClientPlan() {
     setHours("");
     setUnitGoal("");
 
-    // ✅重要：クリアしてもフォーマットが消えないようテンプレに戻す
+    // ✅クリアしてもフォーマットが消えないようテンプレに戻す
     setEvaluationPoints(templateEvaluationPoints);
 
     setChildVision("");
@@ -931,7 +918,6 @@ ${languageActivities}
     const existingArr: LessonPlanStored[] = JSON.parse(
       typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
     );
-
     if (isEdit) {
       const newArr = existingArr.map((p) =>
         p.id === idToUse
@@ -1003,59 +989,25 @@ ${languageActivities}
           modelName: selectedStyleName || null,
           modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
           modelSnapshot: selectedStyleId
-            ? (styleModels.find((m) => m.id === selectedStyleId)
-                ? {
-                    kind: "user-model" as const,
-                    id: selectedStyleId,
-                    name: styleModels.find((m) => m.id === selectedStyleId)!.name,
-                    at: new Date().toISOString(),
-                  }
-                : authors.find((a) => a.id === selectedStyleId)
-                ? {
-                    kind: "builtin" as const,
-                    id: selectedStyleId,
-                    name: authors.find((a) => a.id === selectedStyleId)!.label,
-                    at: new Date().toISOString(),
-                  }
-                : null)
+            ? styleModels.find((m) => m.id === selectedStyleId)
+              ? {
+                  kind: "user-model" as const,
+                  id: selectedStyleId,
+                  name: styleModels.find((m) => m.id === selectedStyleId)!.name,
+                  at: new Date().toISOString(),
+                }
+              : authors.find((a) => a.id === selectedStyleId)
+              ? {
+                  kind: "builtin" as const,
+                  id: selectedStyleId,
+                  name: authors.find((a) => a.id === selectedStyleId)!.label,
+                  at: new Date().toISOString(),
+                }
+              : null
             : null,
         },
         { merge: true }
       );
-
-      // ✅ ここから追加：A方針（手動モードのみ、学習データを保存）
-      // - assistantJsonText は JSON.stringify で1行化（JSONL向け）
-      if (mode === "manual" && lastPrompt.trim()) {
-        try {
-          await addDoc(collection(db, "finetune_samples"), {
-            ownerUid: uid,
-            lessonPlanId: idToUse,
-            createdAt: serverTimestamp(),
-
-            userPromptText: lastPrompt,
-            assistantJsonText: JSON.stringify(parsedResult),
-
-            approved: true,
-            approvedAt: serverTimestamp(),
-
-            subject,
-            grade,
-            genre,
-            unit,
-            hours: Number(hours) || 0,
-
-            selectedStyleId: selectedStyleId || null,
-            selectedStyleName: selectedStyleName || null,
-            selectedAuthorId: selectedAuthorId || null,
-
-            promptVersion: "generate.v1",
-            schemaVersion: "LessonPlan.v1",
-          });
-        } catch (e) {
-          console.warn("finetune_samples 保存に失敗:", e);
-        }
-      }
-      // ✅ 追加ここまで
     } catch (error) {
       console.error("Firestoreへの保存エラー:", error);
       alert("Firestoreへの保存中にエラーが発生しました");
@@ -1075,6 +1027,83 @@ ${languageActivities}
 
     alert("一括保存しました（ローカル・Firestore）");
     router.push("/plan/history");
+  };
+
+  /* ===================== ★(5) JSONLダウンロード／fine-tune開始 ===================== */
+  const downloadJsonl = async () => {
+    try {
+      if (!auth.currentUser) {
+        alert("Firebaseログインが必要です");
+        return;
+      }
+      const token = await auth.currentUser.getIdToken();
+
+      const res = await fetch("/api/fine-tune/export?limit=500", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        alert(await res.text());
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "train.jsonl";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(`ダウンロードに失敗しました：${e?.message || String(e)}`);
+    }
+  };
+
+  const startFineTune = async () => {
+    try {
+      if (!auth.currentUser) {
+        alert("Firebaseログインが必要です");
+        return;
+      }
+      const token = await auth.currentUser.getIdToken();
+
+      // 1) export（JSONL取得）
+      const exp = await fetch("/api/fine-tune/export?limit=500", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!exp.ok) {
+        alert(await exp.text());
+        return;
+      }
+      const jsonlText = await exp.text();
+      if (!jsonlText.trim()) {
+        alert("学習データが空です（保存済みの授業案が見つかりませんでした）");
+        return;
+      }
+
+      // 2) start（fine-tune開始）
+      const st = await fetch("/api/fine-tune/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ jsonlText }),
+      });
+
+      const out = await st.text();
+      if (!st.ok) {
+        alert(out);
+        return;
+      }
+
+      const data = JSON.parse(out);
+      alert(`fine-tune開始: job_id=${data.job_id} status=${data.status}`);
+    } catch (e: any) {
+      alert(`fine-tune開始に失敗しました：${e?.message || String(e)}`);
+    }
   };
 
   /* ===================== JSX ===================== */
@@ -1173,20 +1202,15 @@ ${languageActivities}
                 const val = e.target.value;
                 setSelectedStyleId(val);
 
-                // ✅ 修正：教育観モデルを選んでも selectedAuthorId を勝手に null にしない
                 const foundAuthor = authors.find((a) => a.id === val);
                 if (foundAuthor) {
                   setSelectedStyleName(foundAuthor.label);
-                  setSelectedAuthorId(val); // 固定モデルを選んだら作成モデルにも反映
-                  return;
+                  setSelectedAuthorId(val);
+                } else {
+                  const foundStyle = styleModels.find((m) => m.id === val);
+                  setSelectedStyleName(foundStyle ? foundStyle.name : "");
+                  setSelectedAuthorId(null);
                 }
-                const foundStyle = styleModels.find((m) => m.id === val);
-                if (foundStyle) {
-                  setSelectedStyleName(foundStyle.name);
-                  // selectedAuthorId は維持（ボタンで選んだ作成モデルを残す）
-                  return;
-                }
-                setSelectedStyleName("");
               }}
               style={inputStyle}
             >
@@ -1271,11 +1295,7 @@ ${languageActivities}
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => handleAddPoint(f)}
-                style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}
-              >
+              <button type="button" onClick={() => handleAddPoint(f)} style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}>
                 ＋ 追加
               </button>
             </div>
@@ -1312,7 +1332,6 @@ ${languageActivities}
                   type="button"
                   onClick={() => {
                     setSelectedAuthorId(author.id);
-                    // 作成モデルは別枠なので、selectedStyleName は表示上の利便性として上書き
                     setSelectedStyleName(author.label);
                   }}
                   style={{
@@ -1395,6 +1414,33 @@ ${languageActivities}
               }}
             >
               🧹 下書きと入力をクリア
+            </button>
+
+            {/* ★(5) 追加：JSONLダウンロード／fine-tune開始 */}
+            <button
+              type="button"
+              onClick={downloadJsonl}
+              style={{
+                ...inputStyle,
+                backgroundColor: "#455A64",
+                color: "white",
+                marginBottom: 0,
+              }}
+            >
+              ⬇️ JSONLダウンロード
+            </button>
+
+            <button
+              type="button"
+              onClick={startFineTune}
+              style={{
+                ...inputStyle,
+                backgroundColor: "#2E7D32",
+                color: "white",
+                marginBottom: 0,
+              }}
+            >
+              🧠 fine-tune開始
             </button>
           </div>
         </form>
