@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, CSSProperties, FormEvent } from "react";
+import { useState, useEffect, useRef, useMemo, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
@@ -283,6 +283,47 @@ export default function ClientPlan() {
     const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
     return () => unsub();
   }, []);
+
+  /* ===================== ★ 管理者判定（UIでボタンを出すか） ===================== */
+  const adminAllowList = useMemo(() => {
+    const raw = (process.env.NEXT_PUBLIC_FINE_TUNE_ADMINS ?? "").trim();
+    return raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+  }, []);
+
+  const [isFineTuneAdmin, setIsFineTuneAdmin] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const u = auth.currentUser;
+        const email = (u?.email ?? session?.user?.email ?? "").toLowerCase();
+        const inAllow = !!email && adminAllowList.includes(email);
+
+        let hasClaim = false;
+        if (u) {
+          try {
+            const r = await u.getIdTokenResult(true);
+            hasClaim = r?.claims?.admin === true;
+          } catch {
+            hasClaim = false;
+          }
+        }
+
+        if (!cancelled) setIsFineTuneAdmin(inAllow || hasClaim);
+      } catch {
+        if (!cancelled) setIsFineTuneAdmin(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminAllowList, session?.user?.email, uid]);
 
   /** 復元→自動保存の競合を抑止するためのフラグ */
   const restoringRef = useRef(true);
@@ -1032,6 +1073,11 @@ ${languageActivities}
   /* ===================== ★(5) JSONLダウンロード／fine-tune開始 ===================== */
   const downloadJsonl = async () => {
     try {
+      if (!isFineTuneAdmin) {
+        alert("この操作は管理者のみ実行できます");
+        return;
+      }
+
       if (!auth.currentUser) {
         alert("Firebaseログインが必要です");
         return;
@@ -1063,6 +1109,11 @@ ${languageActivities}
 
   const startFineTune = async () => {
     try {
+      if (!isFineTuneAdmin) {
+        alert("この操作は管理者のみ実行できます");
+        return;
+      }
+
       if (!auth.currentUser) {
         alert("Firebaseログインが必要です");
         return;
@@ -1416,32 +1467,36 @@ ${languageActivities}
               🧹 下書きと入力をクリア
             </button>
 
-            {/* ★(5) 追加：JSONLダウンロード／fine-tune開始 */}
-            <button
-              type="button"
-              onClick={downloadJsonl}
-              style={{
-                ...inputStyle,
-                backgroundColor: "#455A64",
-                color: "white",
-                marginBottom: 0,
-              }}
-            >
-              ⬇️ JSONLダウンロード
-            </button>
+            {/* ★(5) 追加：JSONLダウンロード／fine-tune開始（管理者だけ表示） */}
+            {isFineTuneAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={downloadJsonl}
+                  style={{
+                    ...inputStyle,
+                    backgroundColor: "#455A64",
+                    color: "white",
+                    marginBottom: 0,
+                  }}
+                >
+                  ⬇️ JSONLダウンロード
+                </button>
 
-            <button
-              type="button"
-              onClick={startFineTune}
-              style={{
-                ...inputStyle,
-                backgroundColor: "#2E7D32",
-                color: "white",
-                marginBottom: 0,
-              }}
-            >
-              🧠 fine-tune開始
-            </button>
+                <button
+                  type="button"
+                  onClick={startFineTune}
+                  style={{
+                    ...inputStyle,
+                    backgroundColor: "#2E7D32",
+                    color: "white",
+                    marginBottom: 0,
+                  }}
+                >
+                  🧠 fine-tune開始
+                </button>
+              </>
+            )}
           </div>
         </form>
 
