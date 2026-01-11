@@ -8,7 +8,7 @@ import { db, auth } from "../firebaseConfig";
 import {
   doc,
   setDoc,
-  addDoc,  
+  addDoc,
   collection,
   getDocs,
   serverTimestamp,
@@ -363,6 +363,18 @@ export default function ClientPlan() {
     };
   }, []);
 
+  /* ===== selectedStyleId から名前追従（クエリ復元にも対応） ===== */
+  useEffect(() => {
+    if (!selectedStyleId) return;
+    const a = authors.find((x) => x.id === selectedStyleId);
+    if (a) {
+      setSelectedStyleName(a.label);
+      return;
+    }
+    const m = styleModels.find((x) => x.id === selectedStyleId);
+    if (m) setSelectedStyleName(m.name);
+  }, [selectedStyleId, styleModels]);
+
   /* ===== draft適用ヘルパ ===== */
   const applyDraftToState = (plan: Partial<LessonPlanDraft | LessonPlanStored>) => {
     if (!plan) return;
@@ -382,6 +394,7 @@ export default function ClientPlan() {
     if ((plan as any).selectedAuthorId !== undefined) setSelectedAuthorId((plan as any).selectedAuthorId ?? null);
     if ((plan as any).result) setParsedResult((plan as any).result as ParsedResult);
     if ((plan as any).mode) setMode((plan as any).mode as "ai" | "manual");
+    if ((plan as any).userPromptText) setLastPrompt(String((plan as any).userPromptText ?? ""));
   };
 
   const pickLatestDraft = (a: any, b: any) => {
@@ -457,7 +470,7 @@ export default function ClientPlan() {
         };
         if (grouped.knowledge.length || grouped.thinking.length || grouped.attitude.length) {
           setEvaluationPoints(grouped);
-          setTemplateEvaluationPoints(grouped); // ✅ここが追加：テンプレ保持
+          setTemplateEvaluationPoints(grouped); // ✅テンプレ保持
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -918,6 +931,7 @@ ${languageActivities}
     const existingArr: LessonPlanStored[] = JSON.parse(
       typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
     );
+
     if (isEdit) {
       const newArr = existingArr.map((p) =>
         p.id === idToUse
@@ -987,8 +1001,7 @@ ${languageActivities}
           author: session?.user?.email || "",
           modelId: selectedStyleId || null,
           modelName: selectedStyleName || null,
-          modelNameCanonical:
-            (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
+          modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
           modelSnapshot: selectedStyleId
             ? (styleModels.find((m) => m.id === selectedStyleId)
                 ? {
@@ -1009,6 +1022,40 @@ ${languageActivities}
         },
         { merge: true }
       );
+
+      // ✅ ここから追加：A方針（手動モードのみ、学習データを保存）
+      // - assistantJsonText は JSON.stringify で1行化（JSONL向け）
+      if (mode === "manual" && lastPrompt.trim()) {
+        try {
+          await addDoc(collection(db, "finetune_samples"), {
+            ownerUid: uid,
+            lessonPlanId: idToUse,
+            createdAt: serverTimestamp(),
+
+            userPromptText: lastPrompt,
+            assistantJsonText: JSON.stringify(parsedResult),
+
+            approved: true,
+            approvedAt: serverTimestamp(),
+
+            subject,
+            grade,
+            genre,
+            unit,
+            hours: Number(hours) || 0,
+
+            selectedStyleId: selectedStyleId || null,
+            selectedStyleName: selectedStyleName || null,
+            selectedAuthorId: selectedAuthorId || null,
+
+            promptVersion: "generate.v1",
+            schemaVersion: "LessonPlan.v1",
+          });
+        } catch (e) {
+          console.warn("finetune_samples 保存に失敗:", e);
+        }
+      }
+      // ✅ 追加ここまで
     } catch (error) {
       console.error("Firestoreへの保存エラー:", error);
       alert("Firestoreへの保存中にエラーが発生しました");
@@ -1126,15 +1173,20 @@ ${languageActivities}
                 const val = e.target.value;
                 setSelectedStyleId(val);
 
+                // ✅ 修正：教育観モデルを選んでも selectedAuthorId を勝手に null にしない
                 const foundAuthor = authors.find((a) => a.id === val);
                 if (foundAuthor) {
                   setSelectedStyleName(foundAuthor.label);
-                  setSelectedAuthorId(val);
-                } else {
-                  const foundStyle = styleModels.find((m) => m.id === val);
-                  setSelectedStyleName(foundStyle ? foundStyle.name : "");
-                  setSelectedAuthorId(null);
+                  setSelectedAuthorId(val); // 固定モデルを選んだら作成モデルにも反映
+                  return;
                 }
+                const foundStyle = styleModels.find((m) => m.id === val);
+                if (foundStyle) {
+                  setSelectedStyleName(foundStyle.name);
+                  // selectedAuthorId は維持（ボタンで選んだ作成モデルを残す）
+                  return;
+                }
+                setSelectedStyleName("");
               }}
               style={inputStyle}
             >
@@ -1189,23 +1241,12 @@ ${languageActivities}
 
           <label>
             教材名：<br />
-            <input
-              type="text"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              style={inputStyle}
-            />
+            <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle} />
           </label>
 
           <label>
             授業時間数：<br />
-            <input
-              type="number"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              style={inputStyle}
-              min={0}
-            />
+            <input type="number" value={hours} onChange={(e) => setHours(e.target.value)} style={inputStyle} min={0} />
           </label>
 
           <label>
@@ -1213,19 +1254,21 @@ ${languageActivities}
             <textarea value={unitGoal} onChange={(e) => setUnitGoal(e.target.value)} rows={2} style={inputStyle} />
           </label>
 
-          {( ["knowledge", "thinking", "attitude"] as const).map((f) => (
+          {(["knowledge", "thinking", "attitude"] as const).map((f) => (
             <div key={f} style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                {f === "knowledge" ? "① 知識・技能：" : f === "thinking" ? "② 思考・判断・表現：" : "③ 主体的に学習に取り組む態度："}
+                {f === "knowledge"
+                  ? "① 知識・技能："
+                  : f === "thinking"
+                  ? "② 思考・判断・表現："
+                  : "③ 主体的に学習に取り組む態度："}
               </label>
               {evaluationPoints[f].map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <textarea
-                    value={v}
-                    onChange={(e) => handleChangePoint(f, i, e.target.value)}
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
-                  <button type="button" onClick={() => handleRemovePoint(f, i)}>🗑</button>
+                  <textarea value={v} onChange={(e) => handleChangePoint(f, i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  <button type="button" onClick={() => handleRemovePoint(f, i)}>
+                    🗑
+                  </button>
                 </div>
               ))}
               <button
@@ -1245,12 +1288,7 @@ ${languageActivities}
 
           <label>
             ■ 言語活動の工夫：<br />
-            <textarea
-              value={languageActivities}
-              onChange={(e) => setLanguageActivities(e.target.value)}
-              rows={2}
-              style={inputStyle}
-            />
+            <textarea value={languageActivities} onChange={(e) => setLanguageActivities(e.target.value)} rows={2} style={inputStyle} />
           </label>
 
           {hours && (
@@ -1259,11 +1297,7 @@ ${languageActivities}
               {Array.from({ length: Number(hours) }, (_, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <span style={{ width: "4rem", lineHeight: "2rem" }}>{i + 1}時間目:</span>
-                  <textarea
-                    value={lessonPlanList[i] || ""}
-                    onChange={(e) => handleLessonChange(i, e.target.value)}
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
+                  <textarea value={lessonPlanList[i] || ""} onChange={(e) => handleLessonChange(i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
                 </div>
               ))}
             </div>
@@ -1278,6 +1312,7 @@ ${languageActivities}
                   type="button"
                   onClick={() => {
                     setSelectedAuthorId(author.id);
+                    // 作成モデルは別枠なので、selectedStyleName は表示上の利便性として上書き
                     setSelectedStyleName(author.label);
                   }}
                   style={{
@@ -1385,10 +1420,7 @@ ${languageActivities}
               </button>
             </div>
 
-            <div
-              id="result-content"
-              style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
-            >
+            <div id="result-content" style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}>
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
