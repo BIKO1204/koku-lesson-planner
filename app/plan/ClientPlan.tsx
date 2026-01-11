@@ -8,6 +8,7 @@ import { db, auth } from "../firebaseConfig";
 import {
   doc,
   setDoc,
+  addDoc,  
   collection,
   getDocs,
   serverTimestamp,
