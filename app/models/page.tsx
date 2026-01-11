@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -59,8 +59,6 @@ export default function EducationModelsPage() {
   // PDF用 refs
   const pdfRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  const toggleMenu = () => setMenuOpen((prev) => !prev);
-
   // リサイズ監視
   useEffect(() => {
     function handleResize() {
@@ -104,7 +102,10 @@ export default function EducationModelsPage() {
     const colRef = collection(db, "educationModels");
     const qy = query(
       colRef,
-      orderBy(sortOrder === "newest" ? "updatedAt" : "name", sortOrder === "newest" ? "desc" : "asc")
+      orderBy(
+        sortOrder === "newest" ? "updatedAt" : "name",
+        sortOrder === "newest" ? "desc" : "asc"
+      )
     );
 
     const unsub = onSnapshot(qy, (snapshot) => {
@@ -369,87 +370,9 @@ export default function EducationModelsPage() {
   };
 
   /* =========================
-   * スタイル
+   * スタイル（ページ固有）
    * ======================= */
   const isMobile = windowWidth < 480;
-
-  const navBarStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: 56,
-    backgroundColor: "#1976d2",
-    display: "flex",
-    alignItems: "center",
-    padding: "0 1rem",
-    zIndex: 1000,
-  };
-  const hamburgerStyle: React.CSSProperties = {
-    cursor: "pointer",
-    width: 30,
-    height: 22,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  };
-  const barStyle: React.CSSProperties = {
-    height: 4,
-    backgroundColor: "white",
-    borderRadius: 2,
-  };
-  const menuWrapperStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: 250,
-    height: "calc(100vh - 56px)",
-    backgroundColor: "#f0f0f0",
-    boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
-    transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
-    transition: "transform 0.3s ease",
-    zIndex: 999,
-    display: "flex",
-    flexDirection: "column",
-    padding: "0 1rem",
-    boxSizing: "border-box",
-  };
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    top: 56,
-    left: 0,
-    width: "100vw",
-    height: "calc(100vh - 56px)",
-    backgroundColor: "rgba(0,0,0,0.3)",
-    opacity: menuOpen ? 1 : 0,
-    visibility: menuOpen ? "visible" : "hidden",
-    transition: "opacity 0.3s ease",
-    zIndex: 998,
-  };
-  const navBtnStyle: React.CSSProperties = {
-    marginBottom: isMobile ? 14 : 8,
-    padding: isMobile ? "1rem 1rem" : "0.5rem 1rem",
-    backgroundColor: "#1976d2",
-    color: "white",
-    borderRadius: 6,
-    border: "none",
-    cursor: "pointer",
-    display: "block",
-    width: "100%",
-    textAlign: "left",
-    fontSize: isMobile ? "1.1rem" : "1rem",
-  };
-  const logoutButtonStyle: React.CSSProperties = {
-    padding: isMobile ? "1rem" : "0.75rem 1rem",
-    backgroundColor: "#e53935",
-    color: "white",
-    fontWeight: "bold",
-    border: "none",
-    cursor: "pointer",
-    flexShrink: 0,
-    margin: "1rem",
-    fontSize: isMobile ? "1.1rem" : "1rem",
-  };
 
   const mainStyle: React.CSSProperties = {
     padding: isMobile ? "72px 12px 12px" : "72px 24px 24px",
@@ -486,12 +409,12 @@ export default function EducationModelsPage() {
   };
 
   const selectStyle: React.CSSProperties = {
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid #c5d2f0",
-  outline: "none",
-  background: "white",
-} as React.CSSProperties;
+    padding: "8px 10px",
+    borderRadius: 6,
+    border: "1px solid #c5d2f0",
+    outline: "none",
+    background: "white",
+  };
 
   const cardStyle: React.CSSProperties = {
     border: "1px solid #e0e7ff",
@@ -537,7 +460,7 @@ export default function EducationModelsPage() {
     boxSizing: "border-box",
   };
 
-  /* ===== 新着UIスタイル ===== */
+  /* ===== 新着UIスタイル（重複定義しない） ===== */
   const newBannerStyle: React.CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
@@ -585,71 +508,79 @@ export default function EducationModelsPage() {
   /* =========================
    * UI
    * ======================= */
-  const displayModels = onlyNew ? models.filter(isNewItem) : models;
+  const visibleModels = onlyNew ? models.filter(isNewItem) : models;
 
   return (
     <>
-      {/* ナビバー */}
+      {/* ナビバー（教育観履歴と完全一致） */}
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
-          onClick={toggleMenu}
+          onClick={() => setMenuOpen((v) => !v)}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+          onKeyDown={(e) => e.key === "Enter" && setMenuOpen((v) => !v)}
         >
           <span style={barStyle} />
           <span style={barStyle} />
           <span style={barStyle} />
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
-          国語授業プランナー
-        </h1>
+        <h1 style={navTitleStyle}>国語授業プランナー</h1>
       </nav>
 
-      {/* オーバーレイ */}
+      {/* メニューオーバーレイ（教育観履歴と完全一致） */}
       <div
-        style={overlayStyle}
+        style={{
+          ...overlayStyle,
+          opacity: menuOpen ? 1 : 0,
+          visibility: menuOpen ? "visible" : "hidden",
+        }}
         onClick={() => setMenuOpen(false)}
         aria-hidden={!menuOpen}
       />
 
-      {/* メニュー */}
-      <div style={menuWrapperStyle} aria-hidden={!menuOpen}>
+      {/* メニュー（教育観履歴と完全一致） */}
+      <div
+        style={{
+          ...menuWrapperStyle,
+          transform: menuOpen ? "translateX(0)" : "translateX(-100%)",
+        }}
+        aria-hidden={!menuOpen}
+      >
         <button
           onClick={() => {
-            signOut();
             setMenuOpen(false);
+            signOut();
           }}
           style={logoutButtonStyle}
         >
           🔓 ログアウト
         </button>
 
-        <div style={{ overflowY: "auto", flexGrow: 1, paddingTop: "1rem", paddingBottom: 20 }}>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
+        <div style={menuScrollStyle}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
             📋 授業作成
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
             📖 計画履歴
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
             📷 実践履歴
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
             🌐 共有版実践記録
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
             📚 教育観一覧
           </button>
-          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
+          <button style={navLinkStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
             🕒 教育観履歴
           </button>
         </div>
@@ -700,7 +631,9 @@ export default function EducationModelsPage() {
           {showNewBanner && (
             <div style={newBannerStyle}>
               <span>🆕 新着 {newCount} 件</span>
-              <button onClick={markAllRead} style={bannerBtnStyle}>すべて既読にする</button>
+              <button onClick={markAllRead} style={bannerBtnStyle}>
+                すべて既読にする
+              </button>
             </div>
           )}
 
@@ -721,10 +654,10 @@ export default function EducationModelsPage() {
         )}
 
         {/* 一覧 */}
-        {(onlyNew ? models.filter(isNewItem) : models).length === 0 ? (
+        {visibleModels.length === 0 ? (
           <p style={{ color: "#666" }}>{onlyNew ? "新着はありません。" : "表示できるモデルがありません。"}</p>
         ) : (
-          (onlyNew ? models.filter(isNewItem) : models).map((m) => {
+          visibleModels.map((m) => {
             const shared = m.isShared !== false; // 未設定は共有中
             return (
               <div key={m.id} style={cardStyle}>
@@ -943,47 +876,102 @@ const labelEdit: React.CSSProperties = {
   color: "#455a64",
 };
 
-/* ===== 新着UIスタイル ===== */
-const newBannerStyle: React.CSSProperties = {
-  display: "inline-flex",
+/* =========================
+ * ここから下：教育観履歴と完全一致のメニュー用スタイル
+ * ======================= */
+
+const navBarStyle: CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: 56,
+  backgroundColor: "#1976d2",
+  display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "6px 10px",
-  borderRadius: 999,
-  background: "#E8F5E9",
-  border: "1px solid #A5D6A7",
-  color: "#1B5E20",
-  fontWeight: 700,
+  padding: "0 1rem",
+  zIndex: 1000,
 };
-const bannerBtnStyle: React.CSSProperties = {
-  background: "#43A047",
-  color: "#fff",
-  border: "none",
-  borderRadius: 6,
-  padding: "6px 10px",
+
+const hamburgerStyle: CSSProperties = {
   cursor: "pointer",
-  fontWeight: 700,
+  width: 30,
+  height: 22,
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
 };
-const chipToggleStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "4px 8px",
-  borderRadius: 999,
-  border: "1px solid #c5d2f0",
-  background: "#f5f8ff",
-  color: "#2a4aa0",
-  fontSize: 12,
+
+const barStyle: CSSProperties = {
+  height: 4,
+  backgroundColor: "white",
+  borderRadius: 2,
 };
-const newChip: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  marginLeft: 8,
-  padding: "2px 8px",
-  borderRadius: 999,
-  background: "#ffebee",
-  border: "1px solid #ffcdd2",
-  color: "#c62828",
-  fontSize: 11,
-  fontWeight: 800,
+
+const navTitleStyle: CSSProperties = {
+  color: "white",
+  marginLeft: 16,
+  fontSize: "1.25rem",
+  userSelect: "none",
+};
+
+const menuWrapperStyle: CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "80vw",
+  maxWidth: 280,
+  height: "calc(100vh - 56px)",
+  backgroundColor: "#f0f0f0",
+  boxShadow: "2px 0 5px rgba(0,0,0,0.3)",
+  transition: "transform 0.3s ease",
+  zIndex: 999,
+  display: "flex",
+  flexDirection: "column",
+};
+
+const menuScrollStyle: CSSProperties = {
+  padding: "1rem",
+  paddingBottom: 80,
+  overflowY: "auto",
+  flexGrow: 1,
+};
+
+const logoutButtonStyle: CSSProperties = {
+  margin: "1rem",
+  padding: "0.75rem 1rem",
+  backgroundColor: "#e53935",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  zIndex: 1000,
+};
+
+const overlayStyle: CSSProperties = {
+  position: "fixed",
+  top: 56,
+  left: 0,
+  width: "100vw",
+  height: "100vh",
+  backgroundColor: "rgba(0,0,0,0.3)",
+  transition: "opacity 0.3s ease",
+  zIndex: 998,
+};
+
+const navLinkStyle: CSSProperties = {
+  display: "block",
+  padding: "0.75rem 1rem",
+  backgroundColor: "#1976d2",
+  color: "white",
+  fontWeight: "bold",
+  borderRadius: 6,
+  textDecoration: "none",
+  marginBottom: "0.5rem",
+  fontSize: "1rem",
+  border: "none",
+  width: "100%",
+  textAlign: "left",
+  cursor: "pointer",
 };
