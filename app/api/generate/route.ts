@@ -53,6 +53,27 @@ const JSON_SCHEMA: Record<string, any> = {
   },
 };
 
+function pickModel(): string {
+  // ✅ ここが “切替の本体”
+  // 1) OPENAI_MODEL（fine-tune済み ft:... をここに入れる想定）
+  // 2) OPENAI_BASE_MODEL（通常モデルを置くならこちら）
+  // 3) デフォルト
+  const m =
+    (process.env.OPENAI_MODEL || "").trim() ||
+    (process.env.OPENAI_BASE_MODEL || "").trim() ||
+    "gpt-4o-2024-08-06";
+  return m;
+}
+
+function normalizeKeys(obj: any) {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
+  if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
+
+  return obj;
+}
+
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
 }
@@ -62,13 +83,11 @@ export async function POST(request: NextRequest) {
   const prompt = typeof body?.prompt === "string" ? body.prompt : "";
   if (!prompt) return NextResponse.json({ error: "prompt が必要です" }, { status: 400 });
 
-  const model = process.env.OPENAI_MODEL || "gpt-4o-2024-08-06";
+  const model = pickModel();
 
-  // ★前の感じに戻す（硬さ・安定性）
   const temperature = Number(process.env.GENERATE_TEMPERATURE ?? 0.4);
   const maxTokens = Number(process.env.GENERATE_MAX_TOKENS ?? 2000);
 
-  // ★「連続文章で表示」だけ強める（やわらかめ押しはしない）
   const system = `
 あなたは小学校国語の授業設計の専門家です。
 必ずスキーマ準拠のJSONのみを返してください（説明文は禁止）。
@@ -102,13 +121,13 @@ export async function POST(request: NextRequest) {
     });
 
     const text = resp.choices?.[0]?.message?.content ?? "{}";
-    const obj = JSON.parse(text);
+    const obj = normalizeKeys(JSON.parse(text));
 
-    if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
-    if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
-
-    return NextResponse.json(obj);
+    const res = NextResponse.json(obj);
+    res.headers.set("X-OpenAI-Model-Used", model); // ✅ 実際に使ったモデル確認用
+    return res;
   } catch (e: any) {
+    // フォールバック：json_object（スキーマが厳しすぎる時用）
     try {
       const fb = await openai.chat.completions.create({
         model,
@@ -122,14 +141,16 @@ export async function POST(request: NextRequest) {
       });
 
       const text = fb.choices?.[0]?.message?.content ?? "{}";
-      const obj = JSON.parse(text);
+      const obj = normalizeKeys(JSON.parse(text));
 
-      if (!obj["教材名"] && obj["単元名"]) obj["教材名"] = obj["単元名"];
-      if (!obj["単元名"] && obj["教材名"]) obj["単元名"] = obj["教材名"];
-
-      return NextResponse.json(obj);
+      const res = NextResponse.json(obj);
+      res.headers.set("X-OpenAI-Model-Used", model);
+      return res;
     } catch (e2: any) {
-      return NextResponse.json({ error: e2?.message || "Internal Error" }, { status: 500 });
+      return NextResponse.json(
+        { error: e2?.message || "Internal Error", modelUsed: model },
+        { status: 500 }
+      );
     }
   }
 }
