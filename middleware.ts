@@ -1,3 +1,4 @@
+// middleware.ts
 import { withAuth } from "next-auth/middleware";
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
@@ -13,16 +14,14 @@ export default withAuth({
       const t: any = token;
       const email = (t.email || "").toLowerCase();
 
-      // ① NextAuth側に role/admin が入っている
       const byRole = t.role === "admin" || t.admin === true;
-
-      // ② もしくは allowlist に入っている（Firebase側と揃える）
       const byAllowlist = !!email && ADMIN_EMAILS.includes(email);
 
       return byRole || byAllowlist;
     },
   },
-  pages: { signIn: "/welcome" },
+  // ★ここ重要：/welcome経由をやめてループ断ち
+  pages: { signIn: "/api/auth/signin" },
 });
 
 export const config = {

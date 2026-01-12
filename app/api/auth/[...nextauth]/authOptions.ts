@@ -5,12 +5,10 @@ import admin from "firebase-admin";
 import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
 
 /**
- * ✅ 管理者判定（3段階）
+ * 管理者判定（3段階）
  * 1) ADMIN_UIDS（最優先・最も確実）
  * 2) Firebase custom claims（admin:true）
  * 3) ADMIN_EMAILS（保険）
- *
- * どれか1つでも true なら NextAuth token に admin/role を載せる
  */
 
 const parseCsv = (v?: string | null) =>
@@ -20,19 +18,16 @@ const parseCsv = (v?: string | null) =>
     .filter(Boolean);
 
 const ADMIN_UIDS = parseCsv(process.env.ADMIN_UIDS);
-const ADMIN_EMAILS = parseCsv(process.env.ADMIN_EMAILS).map((e) =>
-  e.toLowerCase()
-);
+const ADMIN_EMAILS = parseCsv(process.env.ADMIN_EMAILS).map((e) => e.toLowerCase());
 
 const isAdminUid = (uid?: string | null) => !!uid && ADMIN_UIDS.includes(uid);
-
 const isAdminEmail = (email?: string | null) =>
   !!email && ADMIN_EMAILS.includes(email.toLowerCase());
 
 async function isAdminByFirebaseClaims(uid?: string | null) {
   if (!uid) return false;
   try {
-    const auth = getAdminAuth(); // ← server-only の初期化を必ず通す
+    const auth = getAdminAuth();
     const u = await auth.getUser(uid);
     return u.customClaims?.admin === true;
   } catch {
@@ -40,7 +35,7 @@ async function isAdminByFirebaseClaims(uid?: string | null) {
   }
 }
 
-/** GoogleのUID（sub）を常に安定して取得 */
+/** GoogleのUID（sub）を安定して取得 */
 function pickUid({
   token,
   account,
@@ -90,6 +85,10 @@ async function refreshAccessToken(token: any) {
 }
 
 export const authOptions: NextAuthOptions = {
+  session: { strategy: "jwt" },
+  secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV !== "production",
+
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -104,17 +103,9 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
-  session: { strategy: "jwt" },
-  secret: process.env.NEXTAUTH_SECRET,
-  debug: process.env.NODE_ENV !== "production",
-
-  pages: { signIn: "/welcome" },
-
   callbacks: {
     /**
-     * ✅ callbackUrl 増殖(414)を止めるためのリダイレクト制御
-     * - 相対パスのみ許可
-     * - 同一オリジンのみ許可
+     * callbackUrl 増殖(414)を止める
      */
     async redirect({ url, baseUrl }) {
       if (url.startsWith("/")) return `${baseUrl}${url}`;
@@ -126,7 +117,7 @@ export const authOptions: NextAuthOptions = {
     },
 
     /**
-     * ✅ users コレクションへの最終ログイン情報保存
+     * users に最終ログイン保存（UIDで統一）
      */
     async signIn({ user, account, profile }) {
       const uid = pickUid({ token: {}, account, user, profile });
@@ -149,13 +140,13 @@ export const authOptions: NextAuthOptions = {
     },
 
     /**
-     * ✅ token に admin/role/userId/accessToken を載せる
+     * token に admin/role/userId/accessToken を載せる
      */
     async jwt({ token, account, user, profile }) {
       const uid = pickUid({ token, account, user, profile });
       if (uid) (token as any).userId = uid;
 
-      // 初回ログイン時（accountあり）に判定を確定
+      // 初回ログイン時（accountあり）に admin/role 確定
       if (account && user) {
         const email =
           user.email ?? (profile as any)?.email ?? (token as any)?.email ?? null;
@@ -169,8 +160,7 @@ export const authOptions: NextAuthOptions = {
 
         (token as any).accessToken = (account as any).access_token;
         (token as any).refreshToken = (account as any).refresh_token;
-        (token as any).accessTokenExpires =
-          ((account as any).expires_at ?? 0) * 1000;
+        (token as any).accessTokenExpires = ((account as any).expires_at ?? 0) * 1000;
 
         (token as any).admin = isAdmin;
         (token as any).role = isAdmin ? "admin" : "user";
@@ -178,7 +168,7 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      // 通常リクエスト：期限内ならそのまま
+      // 通常：期限内ならそのまま
       const exp =
         typeof (token as any).accessTokenExpires === "number"
           ? (token as any).accessTokenExpires
@@ -186,12 +176,12 @@ export const authOptions: NextAuthOptions = {
 
       if (Date.now() < exp) return token;
 
-      // 期限切れなら refresh（admin/role は維持される）
+      // 期限切れなら refresh（admin/roleは保持される）
       return await refreshAccessToken(token);
     },
 
     /**
-     * ✅ session へ token を反映
+     * sessionへ反映
      */
     async session({ session, token }) {
       (session as any).accessToken = (token as any).accessToken;
