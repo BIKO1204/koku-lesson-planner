@@ -1,18 +1,35 @@
 // /lib/verifyFirebaseToken.ts
-import "server-only";
-import { getAdminAuth } from "@/lib/firebaseAdmin";
+import { getAuth } from "firebase-admin/auth";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
 
-/**
- * Authorization: Bearer <Firebase ID Token>
- * を検証して decodedToken を返す
- */
-export async function verifyBearerToken(authHeader: string | null) {
-  if (!authHeader) throw new Error("Missing Authorization header");
+function initAdmin() {
+  if (getApps().length) return;
 
-  const m = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!m?.[1]) throw new Error("Invalid Authorization header format");
+  // 🔽 どれか1つの方式に寄せてください（あなたの既存方式に合わせる）
+  // 方式A: 環境変数にサービスアカウントJSONを丸ごと入れている場合
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT is not set");
+  }
+  const serviceAccount = JSON.parse(raw);
 
-  const idToken = m[1].trim();
-  const decoded = await getAdminAuth().verifyIdToken(idToken, true);
-  return decoded;
+  initializeApp({
+    credential: cert(serviceAccount),
+  });
 }
+
+/** Authorization: Bearer <token> を検証して uid/email/claims を返す */
+export async function verifyFirebaseToken(authHeader: string | null) {
+  initAdmin();
+
+  if (!authHeader) throw new Error("Missing Authorization header");
+  const m = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!m) throw new Error("Invalid Authorization header format");
+
+  const idToken = m[1];
+  const decoded = await getAuth().verifyIdToken(idToken, true);
+  return decoded; // { uid, email, ...customClaims }
+}
+
+/** ★互換：route.ts が import している名前 */
+export const verifyBearerToken = verifyFirebaseToken;
