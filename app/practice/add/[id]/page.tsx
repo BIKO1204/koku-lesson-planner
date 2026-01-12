@@ -29,6 +29,9 @@ type PracticeRecord = {
   // ▼ 確認メタデータ（ローカル保持用）
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
+
+  // ▼ NEW: 研究学習オプトイン（実践が学習対象）
+  fineTuneOptIn?: boolean;
 };
 
 /** ローカル下書き：圧縮画像(base64)を持ってOK */
@@ -45,6 +48,7 @@ type PracticeDraftLocal = {
   modelType: string; // lesson_plans_*
   confirmedNoPersonalInfo: boolean;
   imagesSignature?: string;
+  fineTuneOptIn: boolean;
   timestamp: string;
   isDraft: true;
   draftMode: "local";
@@ -64,6 +68,7 @@ type PracticeDraftCloud = {
   modelType: string;
   confirmedNoPersonalInfo: boolean;
   imagesSignature?: string;
+  fineTuneOptIn: boolean;
   timestamp: string;
   isDraft: true;
   draftMode: "cloud";
@@ -172,10 +177,6 @@ async function getDB() {
     },
   });
 }
-async function getRecord(lessonId: string): Promise<PracticeRecord | undefined> {
-  const idb = await getDB();
-  return idb.get(STORE_NAME, lessonId);
-}
 async function saveRecordToIndexedDB(rec: PracticeRecord) {
   const idb = await getDB();
   await idb.put(STORE_NAME, rec);
@@ -234,11 +235,9 @@ function resizeAndCompressFile(
         reject(new Error("Canvas is not supported"));
         return;
       }
-      // 高品質リサンプリング
       ctx.imageSmoothingEnabled = true;
       (ctx as any).imageSmoothingQuality = "high";
 
-      // 見やすさ補正（任意）
       if (enhance) {
         ctx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
       }
@@ -347,7 +346,6 @@ const DRAFT_COLLECTION = "practice_record_drafts";
 const DRAFT_KEY_BASE = "editPracticeRecord";
 const draftKey = (lessonId: string) => `${DRAFT_KEY_BASE}:${lessonId}`;
 
-/** timestampの新しいほうを採用（ローカル/クラウドどちらも対応） */
 function pickLatestDraft(
   a: PracticeDraftLocal | PracticeDraftCloud | null,
   b: PracticeDraftLocal | PracticeDraftCloud | null
@@ -371,14 +369,29 @@ export default function PracticeAddPage() {
 
   // 認証UID（クラウド下書き保存用）
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+
+  // 管理者フラグ（Firebase custom claim: admin）
+  const [isAdmin, setIsAdmin] = useState(false);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUid(u?.uid ?? null);
+      if (!u) {
+        setIsAdmin(false);
+        return;
+      }
+      try {
+        const r = await u.getIdTokenResult(true);
+        setIsAdmin(r?.claims?.admin === true);
+      } catch {
+        setIsAdmin(false);
+      }
+    });
     return () => unsub();
   }, []);
 
   // 復元→自動保存の競合抑止
   const restoringRef = useRef(true);
-  // ★ クリア直後の1回だけ自動保存を抑止
   const skipAutoSaveOnceRef = useRef(false);
 
   // 状態
@@ -407,15 +420,19 @@ export default function PracticeAddPage() {
 
   // 確認関連
   const [confirmNoPersonalInfo, setConfirmNoPersonalInfo] = useState(false);
+
+  // NEW: 学習オプトイン（実践が学習対象）
+  const [fineTuneOptIn, setFineTuneOptIn] = useState<boolean>(false);
+
   const [currentSignature, setCurrentSignature] = useState<string>("");
   const [previousSignature, setPreviousSignature] = useState<string>("");
   const [needsReconfirm, setNeedsReconfirm] = useState<boolean>(true);
-  const POLICY_VERSION = "2025-09-02"; // 任意の版番号/日付
+  const POLICY_VERSION = "2025-09-02";
 
-  // ▼ NEW: 見やすさ設定
-  const [enhancePreview, setEnhancePreview] = useState<boolean>(true); // プレビューにフィルタ
-  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true); // 圧縮時に焼き込む
-  const [compressLongEdge, setCompressLongEdge] = useState<number>(1400); // 長辺ピクセル
+  // 見やすさ設定
+  const [enhancePreview, setEnhancePreview] = useState<boolean>(true);
+  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);
+  const [compressLongEdge, setCompressLongEdge] = useState<number>(1400);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
@@ -475,6 +492,9 @@ export default function PracticeAddPage() {
         setGenre(data.genre || "");
         setUnitName(data.unitName || "");
 
+        setConfirmNoPersonalInfo(!!data.confirmedNoPersonalInfo);
+        setFineTuneOptIn(!!data.fineTuneOptIn);
+
         const imgs: BoardImage[] = Array.isArray(data.boardImages) ? data.boardImages : [];
         setBoardImages(imgs);
         setCompressedImages(imgs);
@@ -493,6 +513,7 @@ export default function PracticeAddPage() {
           modelType: lessonType,
           confirmedNoPersonalInfo: data.confirmedNoPersonalInfo ?? undefined,
           imagesSignature: data.imagesSignature ?? undefined,
+          fineTuneOptIn: !!data.fineTuneOptIn,
         });
 
         if (data.imagesSignature) setPreviousSignature(String(data.imagesSignature));
@@ -605,10 +626,11 @@ export default function PracticeAddPage() {
         setUnitName(chosen.unitName || "");
         setModelType(chosen.modelType || "lesson_plans_reading");
         setConfirmNoPersonalInfo(!!chosen.confirmedNoPersonalInfo);
+        setFineTuneOptIn(!!(chosen as any).fineTuneOptIn);
         if (chosen.imagesSignature) setPreviousSignature(chosen.imagesSignature);
       }
 
-      restoringRef.current = false; // 復元完了→以降オート保存
+      restoringRef.current = false;
     })();
   }, [id, uid]);
 
@@ -619,7 +641,7 @@ export default function PracticeAddPage() {
       lessonId: id,
       practiceDate,
       reflection,
-      compressedImages, // base64 OK（ローカル用）
+      compressedImages,
       lessonTitle,
       authorName,
       grade: meta.grade,
@@ -628,6 +650,7 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
+      fineTuneOptIn,
       timestamp: new Date().toISOString(),
       isDraft: true,
       draftMode: "local",
@@ -640,7 +663,7 @@ export default function PracticeAddPage() {
       lessonId: id,
       practiceDate,
       reflection,
-      draftImages, // ★URLのみ
+      draftImages,
       lessonTitle,
       authorName,
       grade: meta.grade,
@@ -649,6 +672,7 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
+      fineTuneOptIn,
       timestamp: new Date().toISOString(),
       isDraft: true,
       draftMode: "cloud",
@@ -677,7 +701,6 @@ export default function PracticeAddPage() {
     }
   };
 
-  /** ★下書き画像をStorageへ → URL配列を返す */
   const uploadDraftImagesAndGetUrls = async (): Promise<BoardImage[]> => {
     const u = uid || auth.currentUser?.uid || null;
     if (!u) throw new Error("Not logged in");
@@ -687,9 +710,7 @@ export default function PracticeAddPage() {
 
     const uploadedUrls: BoardImage[] = await Promise.all(
       srcImages.map(async (img, idx) => {
-        if (img?.src && isFirebaseStorageUrl(img.src)) {
-          return { name: img.name, src: img.src };
-        }
+        if (img?.src && isFirebaseStorageUrl(img.src)) return { name: img.name, src: img.src };
         const safeName = `${id}_${idx}_${(img.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const url = await uploadDraftImageToStorageFromAny(img.src, safeName, u, id);
         return { name: img.name, src: url };
@@ -699,27 +720,22 @@ export default function PracticeAddPage() {
     return uploadedUrls;
   };
 
-  /* ===== 画面入力をすべてリセット ===== */
   const resetAllInputs = () => {
-    // テキスト系
     setPracticeDate("");
     setAuthorName("");
     setReflection("");
 
-    // 画像系
     setBoardImages([]);
     setCompressedImages([]);
 
-    // 確認メタ
     setConfirmNoPersonalInfo(false);
+    setFineTuneOptIn(false);
     setCurrentSignature("");
     setPreviousSignature("");
     setNeedsReconfirm(true);
 
-    // プレビューも消す
     setRecord(null);
 
-    // 授業案があればメタは授業案由来に戻す（なければ空）
     const r = (lessonPlan?.result as ParsedResult) || {};
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
@@ -735,9 +751,7 @@ export default function PracticeAddPage() {
     setLessonTitle(planUnit || "");
   };
 
-  /* ===================== 下書き：自動保存（デバウンス）
-   * ★おすすめ：自動保存はローカルのみ（クラウドは手動ボタンで）
-   * ======================================================= */
+  /* ===================== 下書き：自動保存（ローカルのみ） ===================== */
   useEffect(() => {
     if (restoringRef.current) return;
     if (skipAutoSaveOnceRef.current) {
@@ -747,7 +761,6 @@ export default function PracticeAddPage() {
     const t = setTimeout(() => {
       const draft = buildLocalDraft();
       saveDraftLocal(draft);
-      // ★クラウド自動保存はしない（Firestore負荷/詰まり防止）
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -762,6 +775,7 @@ export default function PracticeAddPage() {
     unitName,
     modelType,
     confirmNoPersonalInfo,
+    fineTuneOptIn,
     currentSignature,
     compressedImages,
   ]);
@@ -803,7 +817,6 @@ export default function PracticeAddPage() {
   const handleRemoveImage = (i: number) => {
     setBoardImages((prev) => prev.filter((_, idx) => idx !== i));
     setCompressedImages((prev) => prev.filter((_, idx) => idx !== i));
-
     setConfirmNoPersonalInfo(false);
     setNeedsReconfirm(true);
   };
@@ -847,6 +860,7 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
+      fineTuneOptIn,
     });
   };
 
@@ -855,11 +869,8 @@ export default function PracticeAddPage() {
     const imgs = (compressedImages?.length ? compressedImages : boardImages) || [];
     const sig = calcImagesSignature(imgs);
     setCurrentSignature(sig);
-    if (previousSignature && sig === previousSignature) {
-      setNeedsReconfirm(false);
-    } else {
-      setNeedsReconfirm(true);
-    }
+    if (previousSignature && sig === previousSignature) setNeedsReconfirm(false);
+    else setNeedsReconfirm(true);
   }, [boardImages, compressedImages, previousSignature]);
 
   /* ---- Firestore保存（確定） ---- */
@@ -880,19 +891,14 @@ export default function PracticeAddPage() {
 
     const uploadedUrls: BoardImage[] = await Promise.all(
       sourceImages.map(async (img, idx) => {
-        if (img?.src && isFirebaseStorageUrl(img.src)) {
-          return { name: img.name, src: img.src };
-        }
-        const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(
-          /[^a-zA-Z0-9._-]/g,
-          "_"
-        )}`;
+        if (img?.src && isFirebaseStorageUrl(img.src)) return { name: img.name, src: img.src };
+        const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const url = await uploadImageToStorageFromAny(img.src, safeName, u);
         return { name: img.name, src: url };
       })
     );
 
-    const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
+    const practiceRecordCollection = toPracticeFromLesson(rec.modelType);
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
     const finalSignature = rec.imagesSignature || calcImagesSignature(sourceImages);
@@ -909,17 +915,20 @@ export default function PracticeAddPage() {
         authorName: rec.authorName,
         grade: rec.grade || "",
         genre: rec.genre || "",
-        unitName: rec.unitName || "", // 表示は教材名
+        unitName: rec.unitName || "",
         modelType: rec.modelType,
         createdAt: serverTimestamp(),
 
-        // 確認メタ
         confirmedNoPersonalInfo: true,
         confirmedAt: serverTimestamp(),
         confirmedByUid: u,
         confirmedByEmail: userEmail,
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
+
+        // ★学習オプトイン（実践が学習対象）
+        fineTuneOptIn: !!rec.fineTuneOptIn,
+        fineTuneOptInAt: serverTimestamp(),
       },
       { merge: true }
     );
@@ -956,6 +965,7 @@ export default function PracticeAddPage() {
         unitName: meta.unitName,
         confirmedNoPersonalInfo: true,
         imagesSignature: currentSignature,
+        fineTuneOptIn,
       };
       await saveRecordToIndexedDB(toSaveLocal);
 
@@ -964,7 +974,7 @@ export default function PracticeAddPage() {
         compressedImages,
       });
 
-      // 確定保存後は下書きをクリア（UIの入力値はそのまま）
+      // 下書きクリア
       try {
         localStorage.removeItem(draftKey(id));
       } catch {}
@@ -988,6 +998,78 @@ export default function PracticeAddPage() {
     }
   };
 
+  /* ===================== 管理者：ダウンロード／ファインチューン ===================== */
+  const [ftScope, setFtScope] = useState<"mine" | "all">("all");
+  const [ftOptInOnly, setFtOptInOnly] = useState(true);
+  const [ftBusy, setFtBusy] = useState(false);
+
+  const getIdToken = async () => {
+    const u = auth.currentUser;
+    if (!u) throw new Error("Not logged in");
+    return u.getIdToken(true);
+  };
+
+  const downloadPracticeJsonl = async () => {
+    setFtBusy(true);
+    try {
+      const token = await getIdToken();
+      const qs = new URLSearchParams({
+        dataset: "practice",
+        scope: ftScope,
+        optInOnly: ftOptInOnly ? "1" : "0",
+      });
+      const res = await fetch(`/api/fine-tune/export?${qs.toString()}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t || "download failed");
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = ftScope === "all" ? "train_practice_all.jsonl" : "train_practice_mine.jsonl";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "ダウンロードに失敗しました");
+    } finally {
+      setFtBusy(false);
+    }
+  };
+
+  const startFineTune = async () => {
+    setFtBusy(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetch("/api/fine-tune/start", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dataset: "practice",
+          scope: ftScope,
+          optInOnly: ftOptInOnly,
+          // maxTotal/pageSize/suffix を必要なら追加
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "fine-tune start failed");
+
+      alert(`開始しました。\nfileId: ${data.fileId}\njobId: ${data.job?.id || "(unknown)"}`);
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "開始に失敗しました");
+    } finally {
+      setFtBusy(false);
+    }
+  };
+
   /* =========================================================
    * UI
    * ======================================================= */
@@ -1005,19 +1087,17 @@ export default function PracticeAddPage() {
       <nav style={navBarStyle}>
         <div
           style={hamburgerStyle}
-          onClick={toggleMenu}
+          onClick={() => setMenuOpen((p) => !p)}
           aria-label={menuOpen ? "メニューを閉じる" : "メニューを開く"}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && toggleMenu()}
+          onKeyDown={(e) => e.key === "Enter" && setMenuOpen((p) => !p)}
         >
           <span style={barStyle}></span>
           <span style={barStyle}></span>
           <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
-          国語授業プランナー
-        </h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
       </nav>
 
       <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
@@ -1033,114 +1113,93 @@ export default function PracticeAddPage() {
         </button>
 
         <div style={menuLinksWrapperStyle}>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/");
-            }}
-          >
-            🏠 ホーム
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan");
-            }}
-          >
-            📋 授業作成
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan/history");
-            }}
-          >
-            📖 計画履歴
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/history");
-            }}
-          >
-            📷 実践履歴
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/share");
-            }}
-          >
-            🌐 共有版実践記録
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/create");
-            }}
-          >
-            ✏️ 教育観作成
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models");
-            }}
-          >
-            📚 教育観一覧
-          </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/history");
-            }}
-          >
-            🕒 教育観履歴
-          </button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/"))}>🏠 ホーム</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/plan"))}>📋 授業作成</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/plan/history"))}>📖 計画履歴</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/practice/history"))}>📷 実践履歴</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/practice/share"))}>🌐 共有版実践記録</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models/create"))}>✏️ 教育観作成</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models"))}>📚 教育観一覧</button>
+          <button style={navBtnStyle} onClick={() => (setMenuOpen(false), router.push("/models/history"))}>🕒 教育観履歴</button>
         </div>
       </div>
 
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        {/* 注意書き */}
         <div style={noticeBoxStyle}>
           <strong>アップロード前に必ずご確認ください：</strong>
           <ul style={{ margin: "8px 0 0 18px" }}>
             <li>
               <strong>
                 板書の写真を<strong>追加・削除・並び替え</strong>した場合は、必ず
-                「プレビューを生成」ボタンを押してください（保存内容を正しく反映するため）。
+                「プレビューを生成」ボタンを押してください。
               </strong>
             </li>
-            <li>
-              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、
-              アカウント名、手書きの名前等）が写っていないこと。
-            </li>
-            <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
-            <li>
-              写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。
-            </li>
+            <li>児童の<strong>顔</strong>や<strong>氏名</strong>等が写っていないこと。</li>
+            <li>写り込みがある場合は投稿前に<strong>加工（モザイク等）</strong>してください。</li>
           </ul>
 
           <p style={{ marginTop: 8 }}>
-            <strong>
-              ※下書き保存：
-            </strong>{" "}
-            自動保存はローカルのみ。<strong>別端末でも画像付きで下書きを復元したい場合は「📝 下書きを保存」</strong>
-            を押してください（画像はStorageに保存され、FirestoreにはURLだけ保存されます）。
+            <strong>※下書き保存：</strong> 自動保存はローカルのみ。別端末で復元したい場合は「📝 下書きを保存」。
           </p>
         </div>
 
-        {/* ▼ NEW: 板書画像の見やすさ設定 */}
+        {/* 管理者パネル（授業案作成と同じ位置づけ） */}
+        {isAdmin && (
+          <div style={{ ...boxStyle, borderColor: "#6a1b9a" }}>
+            <strong style={{ color: "#6a1b9a" }}>管理者：学習データ（実践）</strong>
+
+            <div style={{ marginTop: 10, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                対象：
+                <select
+                  value={ftScope}
+                  onChange={(e) => setFtScope(e.target.value as any)}
+                  style={{ padding: 6 }}
+                >
+                  <option value="all">全参加者（all）</option>
+                  <option value="mine">自分のみ（mine）</option>
+                </select>
+              </label>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={ftOptInOnly}
+                  onChange={(e) => setFtOptInOnly(e.target.checked)}
+                />
+                オプトインのみ（fineTuneOptIn=true）
+              </label>
+            </div>
+
+            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <button
+                type="button"
+                onClick={downloadPracticeJsonl}
+                disabled={ftBusy}
+                style={{ ...secondaryBtnStyle, backgroundColor: "#ede7f6", color: "#4a148c" }}
+              >
+                {ftBusy ? "処理中..." : "⬇️ 学習データをダウンロード（JSONL）"}
+              </button>
+
+              <button
+                type="button"
+                onClick={startFineTune}
+                disabled={ftBusy}
+                style={{ ...secondaryBtnStyle, backgroundColor: "#6a1b9a", color: "white" }}
+              >
+                {ftBusy ? "開始中..." : "🚀 ファインチューニング開始（実践データ）"}
+              </button>
+            </div>
+
+            <p style={{ marginTop: 10, fontSize: 12, color: "#555" }}>
+              ※「ダウンロード」は内容確認用（任意）。「開始」はDBから直接作った最新データで実行します。
+            </p>
+          </div>
+        )}
+
+        {/* 見やすさ設定 */}
         <div style={boxStyle}>
           <strong>板書画像の見やすさ設定</strong>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
@@ -1150,7 +1209,7 @@ export default function PracticeAddPage() {
                 checked={enhancePreview}
                 onChange={(e) => setEnhancePreview(e.target.checked)}
               />
-              プレビューに見やすさ補正を適用（コントラスト等）
+              プレビューに補正を適用
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
@@ -1158,7 +1217,7 @@ export default function PracticeAddPage() {
                 checked={enhanceUpload}
                 onChange={(e) => setEnhanceUpload(e.target.checked)}
               />
-              アップロード用の圧縮画像にも補正を焼き込む
+              圧縮画像にも補正を焼き込む
             </label>
           </div>
           <div style={{ marginTop: 8 }}>
@@ -1211,11 +1270,7 @@ export default function PracticeAddPage() {
                 onChange={(e) => setGrade(e.target.value)}
                 required
                 disabled={lockMeta}
-                style={{
-                  marginLeft: 8,
-                  padding: 4,
-                  background: lockMeta ? "#f5f5f5" : undefined,
-                }}
+                style={{ marginLeft: 8, padding: 4, background: lockMeta ? "#f5f5f5" : undefined }}
               >
                 <option value="">{lockMeta ? (grade || "（未設定）") : "選択してください"}</option>
                 <option value="1年">1年</option>
@@ -1242,11 +1297,7 @@ export default function PracticeAddPage() {
                 onChange={(e) => setGenre(e.target.value)}
                 required
                 disabled={lockMeta}
-                style={{
-                  marginLeft: 8,
-                  padding: 4,
-                  background: lockMeta ? "#f5f5f5" : undefined,
-                }}
+                style={{ marginLeft: 8, padding: 4, background: lockMeta ? "#f5f5f5" : undefined }}
               >
                 <option value="">{lockMeta ? (genre || "（未設定）") : "選択してください"}</option>
                 <option value="物語文">物語文</option>
@@ -1257,7 +1308,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 教材名（旧：単元名） */}
+          {/* 教材名 */}
           <div style={boxStyle}>
             <label>
               教材名：
@@ -1278,7 +1329,7 @@ export default function PracticeAddPage() {
             {!lockMeta && <small style={{ color: "#666" }}>授業案が無い場合は手動で入力してください。</small>}
           </div>
 
-          {/* モデルタイプ（自動） */}
+          {/* モデルタイプ */}
           <div style={boxStyle}>
             <label>
               モデルタイプ：
@@ -1333,35 +1384,9 @@ export default function PracticeAddPage() {
                 <div style={{ marginBottom: 6, fontWeight: "bold", display: "flex", alignItems: "center", gap: 8 }}>
                   <span>板書{i + 1}</span>
                   <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveImage(i, -1)}
-                      disabled={i === 0}
-                      aria-label="画像を上に移動"
-                      style={reorderBtnStyle}
-                      title="上へ"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveImage(i, +1)}
-                      disabled={i === boardImages.length - 1}
-                      aria-label="画像を下に移動"
-                      style={reorderBtnStyle}
-                      title="下へ"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="画像を削除"
-                      onClick={() => handleRemoveImage(i)}
-                      style={removeImgBtnStyle}
-                      title="削除"
-                    >
-                      ×
-                    </button>
+                    <button type="button" onClick={() => handleMoveImage(i, -1)} disabled={i === 0} style={reorderBtnStyle}>↑</button>
+                    <button type="button" onClick={() => handleMoveImage(i, +1)} disabled={i === boardImages.length - 1} style={reorderBtnStyle}>↓</button>
+                    <button type="button" onClick={() => handleRemoveImage(i)} style={removeImgBtnStyle}>×</button>
                   </div>
                 </div>
 
@@ -1389,16 +1414,31 @@ export default function PracticeAddPage() {
                 type="checkbox"
                 checked={confirmNoPersonalInfo}
                 onChange={(e) => setConfirmNoPersonalInfo(e.target.checked)}
-                aria-describedby="confirm-help"
               />
               <span>
                 児童の<strong>顔・氏名・その他個人を特定できる情報</strong>が写っていないことを確認しました。
-                {needsReconfirm && (
-                  <em style={{ color: "#e53935", marginLeft: 8 }}>（画像を変更したため、再確認が必要です）</em>
-                )}
+                {needsReconfirm && <em style={{ color: "#e53935", marginLeft: 8 }}>（画像を変更したため、再確認が必要です）</em>}
               </span>
             </label>
-            <div id="confirm-help" style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
+
+            {/* NEW: 実践は学習対象＝ここで同意を取る */}
+            <div style={{ marginTop: 10, borderTop: "1px dashed #ccc", paddingTop: 10 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={fineTuneOptIn}
+                  onChange={(e) => setFineTuneOptIn(e.target.checked)}
+                />
+                <span>
+                  この実践記録を<strong>研究の学習データ（ファインチューニング等）</strong>として利用することに同意します（任意）。
+                </span>
+              </label>
+              <small style={{ color: "#666", display: "block", marginTop: 6 }}>
+                ※同意した記録のみ「全参加者（all）」での学習データ出力対象になります。
+              </small>
+            </div>
+
+            <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
               ポリシー版：{POLICY_VERSION}／シグネチャ：{currentSignature || "-"}
             </div>
           </div>
@@ -1419,11 +1459,10 @@ export default function PracticeAddPage() {
 
                 setDraftSaving(true);
                 try {
-                  // ★画像はStorageへ、FirestoreにはURLだけ
                   const urls = await uploadDraftImagesAndGetUrls();
                   const cloudDraft = buildCloudDraft(urls);
                   await saveDraftCloud(cloudDraft);
-                  alert("下書きを保存しました（ローカル＋クラウド：画像はURL保存）");
+                  alert("下書きを保存しました（ローカル＋クラウド）");
                 } catch (e) {
                   console.error(e);
                   alert("下書き保存に失敗しました");
@@ -1440,7 +1479,6 @@ export default function PracticeAddPage() {
               type="button"
               disabled={draftSaving || uploading}
               onClick={async () => {
-                // ストレージの下書きを削除（Firestoreのpayloadをnullにする）
                 try {
                   localStorage.removeItem(draftKey(id));
                 } catch {}
@@ -1453,11 +1491,8 @@ export default function PracticeAddPage() {
                     );
                   } catch {}
                 }
-
-                // ★ 直後の自動保存を一度だけ無効化し、入力もリセット
                 skipAutoSaveOnceRef.current = true;
                 resetAllInputs();
-
                 alert("下書きと画面入力をクリアしました（ローカル＋クラウド）");
               }}
               style={{ ...secondaryBtnStyle, backgroundColor: "#bc181885", color: "#fff" }}
@@ -1479,33 +1514,19 @@ export default function PracticeAddPage() {
               <section style={planPreviewStyle}>
                 <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1976d2" }}>授業案詳細（プレビュー）</h3>
 
-                <p>
-                  <strong>教科書名：</strong>
-                  {(lessonPlan.result as ParsedResult)["教科書名"] || ""}
-                </p>
-                <p>
-                  <strong>学年：</strong>
-                  {(lessonPlan.result as ParsedResult)["学年"] || ""}
-                </p>
-                <p>
-                  <strong>ジャンル：</strong>
-                  {(lessonPlan.result as ParsedResult)["ジャンル"] || ""}
-                </p>
+                <p><strong>教科書名：</strong>{(lessonPlan.result as ParsedResult)["教科書名"] || ""}</p>
+                <p><strong>学年：</strong>{(lessonPlan.result as ParsedResult)["学年"] || ""}</p>
+                <p><strong>ジャンル：</strong>{(lessonPlan.result as ParsedResult)["ジャンル"] || ""}</p>
                 <p>
                   <strong>教材名：</strong>
                   {(lessonPlan.result as ParsedResult)["教材名"] ??
                     (lessonPlan.result as ParsedResult)["単元名"] ??
                     ""}
                 </p>
-                <p>
-                  <strong>授業時間数：</strong>
-                  {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
-                </p>
+                <p><strong>授業時間数：</strong>{(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間</p>
 
-                {/* 評価の観点 */}
                 <div style={{ marginTop: 8 }}>
                   <strong>評価の観点：</strong>
-
                   <div>
                     <strong>知識・技能</strong>
                     <ul>
@@ -1514,7 +1535,6 @@ export default function PracticeAddPage() {
                       ))}
                     </ul>
                   </div>
-
                   <div>
                     <strong>思考・判断・表現</strong>
                     <ul>
@@ -1523,7 +1543,6 @@ export default function PracticeAddPage() {
                       ))}
                     </ul>
                   </div>
-
                   <div>
                     <strong>主体的に学習に取り組む態度</strong>
                     <ul>
@@ -1552,7 +1571,6 @@ export default function PracticeAddPage() {
                   <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
                 </div>
 
-                {/* 授業の流れ */}
                 <div style={{ marginTop: 8 }}>
                   <strong>授業の流れ：</strong>
                   {(() => {
@@ -1593,30 +1611,15 @@ export default function PracticeAddPage() {
               </section>
             )}
 
-            {/* 実践記録 */}
             <section style={{ marginTop: 24 }}>
               <h3>実践記録</h3>
-              <p>
-                <strong>実践開始日：</strong> {record.practiceDate}
-              </p>
-              <p>
-                <strong>作成者：</strong> {record.authorName || "不明"}
-              </p>
+              <p><strong>実践開始日：</strong> {record.practiceDate}</p>
+              <p><strong>作成者：</strong> {record.authorName || "不明"}</p>
+              <p><strong>学年：</strong> {record.grade || grade || "—"}</p>
+              <p><strong>ジャンル：</strong> {record.genre || genre || "—"}</p>
+              <p><strong>教材名：</strong> {record.unitName || unitName || "—"}</p>
 
-              {/* 学年・ジャンル・教材名（補完後） */}
-              <p>
-                <strong>学年：</strong> {record.grade || grade || "—"}
-              </p>
-              <p>
-                <strong>ジャンル：</strong> {record.genre || genre || "—"}
-              </p>
-              <p>
-                <strong>教材名：</strong> {record.unitName || unitName || "—"}
-              </p>
-
-              <p>
-                <strong>振り返り：</strong>
-              </p>
+              <p><strong>振り返り：</strong></p>
               <p>{record.reflection}</p>
 
               {record.boardImages.length > 0 && (
@@ -1696,11 +1699,7 @@ const hamburgerStyle: React.CSSProperties = {
   flexDirection: "column",
   justifyContent: "space-between",
 };
-const barStyle: React.CSSProperties = {
-  height: 4,
-  backgroundColor: "white",
-  borderRadius: 2,
-};
+const barStyle: React.CSSProperties = { height: 4, backgroundColor: "white", borderRadius: 2 };
 const menuWrapperStyle = (menuOpen: boolean): React.CSSProperties => ({
   position: "fixed",
   top: 56,
@@ -1726,11 +1725,7 @@ const logoutButtonStyle: React.CSSProperties = {
   flexShrink: 0,
   margin: "1rem",
 };
-const menuLinksWrapperStyle: React.CSSProperties = {
-  overflowY: "auto",
-  flexGrow: 1,
-  padding: "1rem",
-};
+const menuLinksWrapperStyle: React.CSSProperties = { overflowY: "auto", flexGrow: 1, padding: "1rem" };
 const navBtnStyle: React.CSSProperties = {
   marginBottom: 8,
   padding: "0.5rem 1rem",
@@ -1810,40 +1805,8 @@ const primaryBtnStyle: React.CSSProperties = {
   cursor: "pointer",
   marginTop: 16,
 };
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: 10,
-  border: "none",
-  borderRadius: 6,
-  width: "100%",
-  cursor: "pointer",
-};
-const boxStyle: React.CSSProperties = {
-  border: "2px solid #1976d2",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
-};
-const confirmBoxStyle: React.CSSProperties = {
-  border: "1px solid #9e9e9e",
-  borderRadius: 6,
-  padding: 12,
-  marginTop: 12,
-  background: "#fafafa",
-};
-const previewBoxStyle: React.CSSProperties = {
-  marginTop: 24,
-  padding: 24,
-  border: "1px solid #ccc",
-  borderRadius: 6,
-  backgroundColor: "#fff",
-  fontSize: 14,
-  lineHeight: 1.6,
-  fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif",
-};
-const planPreviewStyle: React.CSSProperties = {
-  border: "2px solid #2196F3",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 16,
-  backgroundColor: "#e3f2fd",
-};
+const secondaryBtnStyle: React.CSSProperties = { padding: 10, border: "none", borderRadius: 6, width: "100%", cursor: "pointer" };
+const boxStyle: React.CSSProperties = { border: "2px solid #1976d2", borderRadius: 6, padding: 12, marginBottom: 16 };
+const confirmBoxStyle: React.CSSProperties = { border: "1px solid #9e9e9e", borderRadius: 6, padding: 12, marginTop: 12, background: "#fafafa" };
+const previewBoxStyle: React.CSSProperties = { marginTop: 24, padding: 24, border: "1px solid #ccc", borderRadius: 6, backgroundColor: "#fff", fontSize: 14, lineHeight: 1.6, fontFamily: "'Hiragino Kaku Gothic ProN', sans-serif" };
+const planPreviewStyle: React.CSSProperties = { border: "2px solid #2196F3", borderRadius: 6, padding: 12, marginBottom: 16, backgroundColor: "#e3f2fd" };
