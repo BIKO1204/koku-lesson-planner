@@ -5,7 +5,7 @@ import { FieldPath } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
-/** ====== 対象コレクション ====== */
+/** 授業案コレクション */
 const LESSON_COLLECTIONS = [
   "lesson_plans_reading",
   "lesson_plans_discussion",
@@ -13,14 +13,14 @@ const LESSON_COLLECTIONS = [
   "lesson_plans_language_activity",
 ] as const;
 
+/** 実践コレクション */
 const PRACTICE_COLLECTIONS = [
   "practiceRecords_reading",
-  "practiceRecords_discussion",
   "practiceRecords_writing",
+  "practiceRecords_discussion",
   "practiceRecords_language_activity",
 ] as const;
 
-/** ====== 学習用 system ====== */
 const TRAIN_SYSTEM_LESSON = `
 あなたは小学校国語の授業設計の専門家です。
 必ずスキーマ準拠のJSONのみを返してください（説明文は禁止）。
@@ -38,28 +38,23 @@ const TRAIN_SYSTEM_LESSON = `
 `.trim();
 
 const TRAIN_SYSTEM_PRACTICE = `
-あなたは小学校国語の授業の実践記録を「研究用の構造化JSON」に整える専門家です。
+あなたは小学校国語の授業改善・省察（振り返り）を支援する専門家です。
 必ずJSONのみを返してください（説明文は禁止）。
 
-【出力スキーマ（必須キー）】
+【出力スキーマ】
 {
-  "実践開始日": "YYYY-MM-DD",
-  "作成者名": "ニックネーム",
-  "学年": "1年|2年|3年|4年|5年|6年",
-  "ジャンル": "物語文|説明文|詩|その他",
-  "教材名": "string",
-  "授業案タイトル": "string",
-  "振り返り": "string",
-  "板書写真枚数": number,
-  "タグ": ["string", ...]  // 任意。本文から抽出した短いキーワード
+  "振り返り": "…",
+  "よかった点": ["…"],
+  "改善点": ["…"],
+  "次時の手立て": ["…"]
 }
 
 【品質要件】
-- 個人情報（氏名・メール・電話・URLなど）は含めない（見つけたら <MASK> に置換）。
-- 文章は自然な日本語で、振り返りはそのまま維持する（要約しすぎない）。
+- 「振り返り」は教師の省察として自然な文章（2〜6文程度）。
+- 「よかった点／改善点／次時の手立て」は観察可能な事実と手立てで具体化。
+- 個人情報（児童の氏名・顔等）に触れない。
 `.trim();
 
-/** ====== 共通 ====== */
 function getBearerToken(req: NextRequest) {
   const h = req.headers.get("authorization") || "";
   if (!h.startsWith("Bearer ")) return null;
@@ -89,27 +84,29 @@ function sanitizeAny(v: any): any {
   return v;
 }
 
-type LessonStoredDoc = {
+/** 授業案doc */
+type LessonDoc = {
   ownerUid?: string;
   userPromptText?: string;
   result?: any;
   fineTuneOptIn?: boolean;
 };
 
-type PracticeStoredDoc = {
+/** 実践doc（あなたのPracticeAddPage保存形式に合わせる） */
+type PracticeDoc = {
   ownerUid?: string;
-  practiceDate?: string;
-  authorName?: string; // ニックネーム
+  reflection?: string;
   grade?: string;
   genre?: string;
-  unitName?: string; // 教材名
+  unitName?: string;
   lessonTitle?: string;
-  reflection?: string;
-  boardImages?: { name?: string; src?: string }[];
+  modelType?: string; // lesson_plans_*
   fineTuneOptIn?: boolean;
 };
 
-type Dataset = "practice" | "lesson";
+function toLessonCollectionFromPractice(coll: string) {
+  return coll.replace("practiceRecords_", "lesson_plans_");
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -120,47 +117,62 @@ export async function GET(req: NextRequest) {
     const uid = decoded.uid;
     const isAdmin = decoded.admin === true;
 
-    const dataset = ((req.nextUrl.searchParams.get("dataset") || "practice").toLowerCase() as Dataset);
+    const target = (req.nextUrl.searchParams.get("target") || "lesson").toLowerCase(); // lesson | practice
+    if (target !== "lesson" && target !== "practice") {
+      return NextResponse.json({ error: "Invalid target" }, { status: 400 });
+    }
+
     const scope = (req.nextUrl.searchParams.get("scope") || "mine").toLowerCase(); // mine | all
-    if (scope === "all" && !isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (scope === "all" && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const maxTotal = Math.min(Number(req.nextUrl.searchParams.get("maxTotal") || "2000"), 5000);
     const pageSize = Math.min(Number(req.nextUrl.searchParams.get("pageSize") || "500"), 1000);
 
-    // scope=all のとき opt-in のみ（デフォルトON）
+    // scope=all のときだけ opt-in を効かせる想定（デフォルトON）
     const optInOnly = (req.nextUrl.searchParams.get("optInOnly") ?? "1") !== "0";
 
+    const db = getAdminDb();
     const lines: string[] = [];
     let total = 0;
 
-    const db = getAdminDb();
+    // 授業案の result を繰り返し読むのを減らす軽いキャッシュ
+    const lessonCache = new Map<string, any>(); // key: `${collection}/${id}`
 
-    /** ====== LESSON ====== */
-    const exportLesson = async () => {
-      for (const colName of LESSON_COLLECTIONS) {
-        if (total >= maxTotal) break;
+    const collections = target === "lesson" ? LESSON_COLLECTIONS : PRACTICE_COLLECTIONS;
 
-        const colRef = db.collection(colName);
-        let lastDocId: string | null = null;
+    for (const colName of collections as readonly string[]) {
+      if (total >= maxTotal) break;
 
-        while (total < maxTotal) {
-          let q = colRef.orderBy(FieldPath.documentId()).limit(pageSize);
+      const colRef = db.collection(colName);
+      let lastDocId: string | null = null;
 
-          if (scope !== "all") {
-            q = colRef.where("ownerUid", "==", uid).orderBy(FieldPath.documentId()).limit(pageSize);
-          } else if (optInOnly) {
-            q = colRef.where("fineTuneOptIn", "==", true).orderBy(FieldPath.documentId()).limit(pageSize);
-          }
+      while (total < maxTotal) {
+        let q = colRef.orderBy(FieldPath.documentId()).limit(pageSize);
 
-          if (lastDocId) q = q.startAfter(lastDocId);
+        if (scope !== "all") {
+          q = colRef.where("ownerUid", "==", uid).orderBy(FieldPath.documentId()).limit(pageSize);
+        } else if (optInOnly) {
+          q = colRef.where("fineTuneOptIn", "==", true).orderBy(FieldPath.documentId()).limit(pageSize);
+        }
 
-          const snap = await q.select("userPromptText", "result").get();
-          if (snap.empty) break;
+        if (lastDocId) q = q.startAfter(lastDocId);
 
-          for (const d of snap.docs) {
-            if (total >= maxTotal) break;
-            const data = d.data() as LessonStoredDoc;
+        const snap =
+          target === "lesson"
+            ? await q.select("userPromptText", "result").get()
+            : await q.select("reflection", "grade", "genre", "unitName", "lessonTitle", "modelType").get();
 
+        if (snap.empty) break;
+
+        for (const d of snap.docs) {
+          if (total >= maxTotal) break;
+
+          const id = d.id;
+
+          if (target === "lesson") {
+            const data = d.data() as LessonDoc;
             const userPrompt = (data.userPromptText || "").trim();
             const resultObj = data.result;
             if (!userPrompt || !resultObj) continue;
@@ -179,112 +191,77 @@ export async function GET(req: NextRequest) {
 
             lines.push(JSON.stringify(sample));
             total++;
+            continue;
           }
 
-          lastDocId = snap.docs[snap.docs.length - 1]?.id ?? null;
-          if (!lastDocId || snap.size < pageSize) break;
+          // target === "practice"
+          const p = d.data() as PracticeDoc;
+          const reflection = (p.reflection || "").trim();
+          if (!reflection) continue;
+
+          // 対応する授業案 result を引っ張って「入力」にする（実践の中身＝学習対象）
+          const lessonColl = (p.modelType && p.modelType.startsWith("lesson_plans_"))
+            ? p.modelType
+            : toLessonCollectionFromPractice(colName);
+
+          const cacheKey = `${lessonColl}/${id}`;
+          let lessonResult: any = lessonCache.get(cacheKey);
+
+          if (lessonResult === undefined) {
+            const lessonSnap = await db.collection(lessonColl).doc(id).get();
+            lessonResult = lessonSnap.exists ? (lessonSnap.data() as any)?.result : null;
+            lessonCache.set(cacheKey, lessonResult ?? null);
+          }
+
+          if (!lessonResult) continue;
+
+          const safeLesson = sanitizeAny(lessonResult);
+          const safeReflection = maskPII(reflection);
+
+          const userPayload = {
+            学年: p.grade || "",
+            ジャンル: p.genre || "",
+            教材名: p.unitName || "",
+            授業タイトル: p.lessonTitle || "",
+            授業案JSON: safeLesson,
+          };
+
+          // assistantは“JSON”で返す約束にする（後で使いやすい）
+          const assistantPayload = {
+            振り返り: safeReflection,
+            よかった点: [],
+            改善点: [],
+            次時の手立て: [],
+          };
+
+          const sample = {
+            messages: [
+              { role: "system", content: TRAIN_SYSTEM_PRACTICE },
+              { role: "user", content: JSON.stringify(userPayload) },
+              { role: "assistant", content: JSON.stringify(assistantPayload) },
+            ],
+          };
+
+          lines.push(JSON.stringify(sample));
+          total++;
         }
+
+        lastDocId = snap.docs[snap.docs.length - 1]?.id ?? null;
+        if (!lastDocId) break;
+        if (snap.size < pageSize) break;
       }
-    };
-
-    /** ====== PRACTICE（実践中心） ====== */
-    const exportPractice = async () => {
-      for (const colName of PRACTICE_COLLECTIONS) {
-        if (total >= maxTotal) break;
-
-        const colRef = db.collection(colName);
-        let lastDocId: string | null = null;
-
-        while (total < maxTotal) {
-          let q = colRef.orderBy(FieldPath.documentId()).limit(pageSize);
-
-          if (scope !== "all") {
-            q = colRef.where("ownerUid", "==", uid).orderBy(FieldPath.documentId()).limit(pageSize);
-          } else if (optInOnly) {
-            q = colRef.where("fineTuneOptIn", "==", true).orderBy(FieldPath.documentId()).limit(pageSize);
-          }
-
-          if (lastDocId) q = q.startAfter(lastDocId);
-
-          // 必要なフィールドだけ読む
-          const snap = await q
-            .select("practiceDate", "authorName", "grade", "genre", "unitName", "lessonTitle", "reflection", "boardImages")
-            .get();
-
-          if (snap.empty) break;
-
-          for (const d of snap.docs) {
-            if (total >= maxTotal) break;
-            const data = d.data() as PracticeStoredDoc;
-
-            const practiceDate = (data.practiceDate || "").trim();
-            const authorName = (data.authorName || "").trim();
-            const grade = (data.grade || "").trim();
-            const genre = (data.genre || "").trim();
-            const unitName = (data.unitName || "").trim();
-            const lessonTitle = (data.lessonTitle || "").trim();
-            const reflection = (data.reflection || "").trim();
-
-            if (!practiceDate || !authorName || !grade || !genre || !unitName || !reflection) continue;
-
-            const imagesCount = Array.isArray(data.boardImages) ? data.boardImages.length : 0;
-
-            // user には「素材（実践内容）」を入れる
-            const userPayload = {
-              実践開始日: maskPII(practiceDate),
-              作成者名: maskPII(authorName),
-              学年: maskPII(grade),
-              ジャンル: maskPII(genre),
-              教材名: maskPII(unitName),
-              授業案タイトル: maskPII(lessonTitle || unitName),
-              振り返り: maskPII(reflection),
-              板書写真枚数: imagesCount,
-            };
-
-            // assistant は「構造化JSON」を出す（＝学習ターゲット）
-            const assistantPayload = {
-              実践開始日: userPayload.実践開始日,
-              作成者名: userPayload.作成者名,
-              学年: userPayload.学年,
-              ジャンル: userPayload.ジャンル,
-              教材名: userPayload.教材名,
-              授業案タイトル: userPayload.授業案タイトル,
-              振り返り: userPayload.振り返り,
-              板書写真枚数: userPayload.板書写真枚数,
-              タグ: [] as string[],
-            };
-
-            const sample = {
-              messages: [
-                { role: "system", content: TRAIN_SYSTEM_PRACTICE },
-                { role: "user", content: JSON.stringify(userPayload) },
-                { role: "assistant", content: JSON.stringify(assistantPayload) },
-              ],
-            };
-
-            lines.push(JSON.stringify(sample));
-            total++;
-          }
-
-          lastDocId = snap.docs[snap.docs.length - 1]?.id ?? null;
-          if (!lastDocId || snap.size < pageSize) break;
-        }
-      }
-    };
-
-    if (dataset === "lesson") await exportLesson();
-    else await exportPractice(); // デフォルト practice
+    }
 
     const jsonl = lines.join("\n") + (lines.length ? "\n" : "");
-    const today = new Date().toISOString().slice(0, 10);
+    const filenameBase =
+      target === "practice"
+        ? "practice"
+        : "lesson";
+
     const filename =
-      dataset === "lesson"
-        ? scope === "all"
-          ? `train_lesson_all_${today}.jsonl`
-          : `train_lesson_${uid}.jsonl`
-        : scope === "all"
-        ? `train_practice_all_${today}.jsonl`
-        : `train_practice_${uid}.jsonl`;
+      scope === "all"
+        ? `train_${filenameBase}_all_${new Date().toISOString().slice(0, 10)}.jsonl`
+        : `train_${filenameBase}_${uid}.jsonl`;
 
     return new NextResponse(jsonl, {
       status: 200,
