@@ -1,33 +1,51 @@
 "use client";
 
-import { signIn, useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { signIn, signOut, useSession } from "next-auth/react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
 function safeCallbackUrl(raw?: string | null) {
-  // 414防止：相対パスのみ許可（/admin など）
   if (!raw) return "/admin";
   if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
   return "/admin";
 }
 
 export default function WelcomePage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const sp = useSearchParams();
+  const router = useRouter();
 
-  // sp が null と解釈されても落ちないように、optional chaining で取得
   const callbackUrl = useMemo(() => {
-    const raw = sp?.get("callbackUrl"); // ← ここがポイント
+    const raw = sp?.get("callbackUrl");
     return safeCallbackUrl(raw);
   }, [sp]);
 
   useEffect(() => {
-    if (status === "authenticated") {
-      window.location.replace(callbackUrl);
-    }
-  }, [status, callbackUrl]);
+    if (status !== "authenticated") return;
 
-  if (status === "loading") return null;
+    const isAdmin = (session?.user as any)?.admin === true;
+
+    // ✅ adminなら戻す
+    if (isAdmin) {
+      router.replace(callbackUrl);
+      return;
+    }
+
+    // ✅ adminじゃないならループを止める（ここが重要）
+    //   - いったんトップへ逃がす
+    router.replace("/");
+  }, [status, session, callbackUrl, router]);
+
+  if (status === "loading") {
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+        <p>認証中…</p>
+      </main>
+    );
+  }
+
+  const authed = status === "authenticated";
+  const isAdmin = (session?.user as any)?.admin === true;
 
   return (
     <main
@@ -40,27 +58,44 @@ export default function WelcomePage() {
         padding: 16,
         boxSizing: "border-box",
         fontFamily: "sans-serif",
+        gap: 12,
       }}
     >
-      <h1 style={{ fontSize: 32, marginBottom: 32 }}>ようこそ！</h1>
+      <h1 style={{ fontSize: 32, marginBottom: 16 }}>ようこそ！</h1>
 
-      <button
-        onClick={() => signIn("google", { callbackUrl })}
-        style={{
-          width: 200,
-          height: 60,
-          fontSize: 20,
-          borderRadius: 8,
-          backgroundColor: "#4285F4",
-          color: "white",
-          border: "none",
-          cursor: "pointer",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-          userSelect: "none",
-        }}
-      >
-        Googleでログイン
-      </button>
+      {!authed && (
+        <button
+          onClick={() => signIn("google", { callbackUrl })}
+          style={{
+            width: 220,
+            height: 60,
+            fontSize: 20,
+            borderRadius: 8,
+            backgroundColor: "#4285F4",
+            color: "white",
+            border: "none",
+            cursor: "pointer",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+            userSelect: "none",
+          }}
+        >
+          Googleでログイン
+        </button>
+      )}
+
+      {authed && !isAdmin && (
+        <>
+          <p>このアカウントは管理者権限がありません。</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => router.replace("/")}>トップへ</button>
+            <button onClick={() => signOut({ callbackUrl: "/welcome" })}>
+              ログアウト
+            </button>
+          </div>
+        </>
+      )}
+
+      {authed && isAdmin && <p>権限確認中…</p>}
     </main>
   );
 }
