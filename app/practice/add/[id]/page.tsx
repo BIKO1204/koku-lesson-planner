@@ -30,7 +30,7 @@ type PracticeRecord = {
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
 
-  // ▼ Fine-tune（研究利用）同意
+  // ▼ 学習許諾
   fineTuneOptIn?: boolean;
 };
 
@@ -48,10 +48,6 @@ type PracticeDraftLocal = {
   modelType: string; // lesson_plans_*
   confirmedNoPersonalInfo: boolean;
   imagesSignature?: string;
-
-  // ▼ Fine-tune同意
-  fineTuneOptIn: boolean;
-
   timestamp: string;
   isDraft: true;
   draftMode: "local";
@@ -71,10 +67,6 @@ type PracticeDraftCloud = {
   modelType: string;
   confirmedNoPersonalInfo: boolean;
   imagesSignature?: string;
-
-  // ▼ Fine-tune同意
-  fineTuneOptIn: boolean;
-
   timestamp: string;
   isDraft: true;
   draftMode: "cloud";
@@ -87,21 +79,21 @@ type LessonPlan = {
 
 type ParsedResult = {
   [key: string]: any;
-  教科書名?: string;
-  学年?: string;
-  ジャンル?: string;
-  教材名?: string; // 新キー想定
-  単元名?: string; // 旧キー互換
-  授業時間数?: number;
-  単元の目標?: string;
-  育てたい子どもの姿?: string;
-  言語活動の工夫?: string;
-  授業の流れ?: Record<string, any> | string | any[];
-  評価の観点?: {
+  "教科書名"?: string;
+  "学年"?: string;
+  "ジャンル"?: string;
+  "教材名"?: string; // 新キー想定
+  "単元名"?: string; // 旧キー互換
+  "授業時間数"?: number;
+  "単元の目標"?: string;
+  "育てたい子どもの姿"?: string;
+  "言語活動の工夫"?: string;
+  "授業の流れ"?: Record<string, any> | string | any[];
+  "評価の観点"?: {
     "知識・技能"?: string[] | string;
     "思考・判断・表現"?: string[] | string;
     "主体的に学習に取り組む態度"?: string[] | string;
-    態度?: string[] | string;
+    "態度"?: string[] | string;
   };
 };
 
@@ -226,7 +218,6 @@ function resizeAndCompressFile(
     img.onload = () => {
       let { width, height } = img;
 
-      // アスペクト比維持で縮小
       const wScale = maxWidth / width;
       const hScale = maxHeight / height;
       const scale = Math.min(1, wScale, hScale);
@@ -241,11 +232,9 @@ function resizeAndCompressFile(
         reject(new Error("Canvas is not supported"));
         return;
       }
-      // 高品質リサンプリング
       ctx.imageSmoothingEnabled = true;
       (ctx as any).imageSmoothingQuality = "high";
 
-      // 見やすさ補正（任意）
       if (enhance) {
         ctx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
       }
@@ -374,14 +363,26 @@ export default function PracticeAddPage() {
 
   // 認証UID（クラウド下書き保存用）
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+
+  // ▼ 管理者判定（custom claims）
+  const [isAdmin, setIsAdmin] = useState(false);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUid(u?.uid ?? null));
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUid(u?.uid ?? null);
+      if (!u) {
+        setIsAdmin(false);
+        return;
+      }
+      // ★ claims反映が遅れるので true で強制更新
+      const tokenResult = await u.getIdTokenResult(true);
+      setIsAdmin(tokenResult?.claims?.admin === true);
+    });
     return () => unsub();
   }, []);
 
   // 復元→自動保存の競合抑止
   const restoringRef = useRef(true);
-  // ★ クリア直後の1回だけ自動保存を抑止
   const skipAutoSaveOnceRef = useRef(false);
 
   // 状態
@@ -393,11 +394,8 @@ export default function PracticeAddPage() {
   const [authorName, setAuthorName] = useState("");
   const [grade, setGrade] = useState("");
   const [genre, setGenre] = useState("");
-  const [unitName, setUnitName] = useState(""); // 表示は「教材名」
+  const [unitName, setUnitName] = useState("");
   const [modelType, setModelType] = useState("lesson_plans_reading");
-
-  // ▼ Fine-tune同意（実践が学習対象）
-  const [fineTuneOptIn, setFineTuneOptIn] = useState<boolean>(false);
 
   const [record, setRecord] = useState<PracticeRecord | null>(null);
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
@@ -407,7 +405,6 @@ export default function PracticeAddPage() {
 
   // モデルタイプ固定フラグ
   const [modelLocked, setModelLocked] = useState<boolean>(false);
-
   // 学年・ジャンル・教材名：固定 or 手動
   const [lockMeta, setLockMeta] = useState<boolean>(true);
 
@@ -416,85 +413,18 @@ export default function PracticeAddPage() {
   const [currentSignature, setCurrentSignature] = useState<string>("");
   const [previousSignature, setPreviousSignature] = useState<string>("");
   const [needsReconfirm, setNeedsReconfirm] = useState<boolean>(true);
-  const POLICY_VERSION = "2025-09-02"; // 任意の版番号/日付
+  const POLICY_VERSION = "2025-09-02";
 
   // ▼ NEW: 見やすさ設定
-  const [enhancePreview, setEnhancePreview] = useState<boolean>(true); // プレビューにフィルタ
-  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true); // 圧縮時に焼き込む
-  const [compressLongEdge, setCompressLongEdge] = useState<number>(1400); // 長辺ピクセル
+  const [enhancePreview, setEnhancePreview] = useState<boolean>(true);
+  const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);
+  const [compressLongEdge, setCompressLongEdge] = useState<number>(1400);
 
-  // ▼ NEW: 管理者パネル（ダウンロード）
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [ftBusy, setFtBusy] = useState(false);
-  const [ftScope, setFtScope] = useState<"mine" | "all">("all");
-  const [ftOptInOnly, setFtOptInOnly] = useState(true);
-  const [ftMaxTotal, setFtMaxTotal] = useState(2000);
+  // ▼ NEW: 学習許諾（fineTuneOptIn）
+  const [fineTuneOptIn, setFineTuneOptIn] = useState<boolean>(false);
+  const [fineTuneBusy, setFineTuneBusy] = useState<boolean>(false);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
-
-  /* ---- admin判定（Firebase custom claim: admin） ---- */
-  useEffect(() => {
-    (async () => {
-      const u = auth.currentUser;
-      if (!u) {
-        setIsAdmin(false);
-        return;
-      }
-      try {
-        const r = await u.getIdTokenResult(true);
-        setIsAdmin(r.claims?.admin === true);
-      } catch {
-        setIsAdmin(false);
-      }
-    })();
-  }, [uid]);
-
-  /* ---- 管理者：実践データ(train.jsonl)ダウンロード ---- */
-  async function downloadPracticeTrainJsonl() {
-    const u = auth.currentUser;
-    if (!u) {
-      alert("Firebaseログインが必要です。");
-      return;
-    }
-    setFtBusy(true);
-    try {
-      const token = await u.getIdToken(true);
-      const qs = new URLSearchParams({
-        target: "practice",
-        scope: ftScope,
-        optInOnly: ftScope === "all" ? (ftOptInOnly ? "1" : "0") : "0",
-        maxTotal: String(ftMaxTotal),
-      });
-
-      const res = await fetch(`/api/fine-tune/export?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || `export failed: ${res.status}`);
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-
-      const dispo = res.headers.get("content-disposition") || "";
-      const m = dispo.match(/filename="([^"]+)"/);
-      a.download = m?.[1] || "train_practice.jsonl";
-
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || "ダウンロードに失敗しました");
-    } finally {
-      setFtBusy(false);
-    }
-  }
 
   /* ---- 授業案（ローカル）＆ローカル下書き（起動時） ---- */
   useEffect(() => {
@@ -552,12 +482,12 @@ export default function PracticeAddPage() {
         setGenre(data.genre || "");
         setUnitName(data.unitName || "");
 
-        // ▼ fineTuneOptIn復元
-        setFineTuneOptIn(!!data.fineTuneOptIn);
-
         const imgs: BoardImage[] = Array.isArray(data.boardImages) ? data.boardImages : [];
         setBoardImages(imgs);
         setCompressedImages(imgs);
+
+        // ▼ 学習許諾の読み込み
+        setFineTuneOptIn(!!data.fineTuneOptIn);
 
         setRecord({
           lessonId: id,
@@ -687,12 +617,9 @@ export default function PracticeAddPage() {
         setModelType(chosen.modelType || "lesson_plans_reading");
         setConfirmNoPersonalInfo(!!chosen.confirmedNoPersonalInfo);
         if (chosen.imagesSignature) setPreviousSignature(chosen.imagesSignature);
-
-        // ▼ fineTuneOptIn復元
-        setFineTuneOptIn(!!(chosen as any).fineTuneOptIn);
       }
 
-      restoringRef.current = false; // 復元完了→以降オート保存
+      restoringRef.current = false;
     })();
   }, [id, uid]);
 
@@ -703,7 +630,7 @@ export default function PracticeAddPage() {
       lessonId: id,
       practiceDate,
       reflection,
-      compressedImages, // base64 OK（ローカル用）
+      compressedImages,
       lessonTitle,
       authorName,
       grade: meta.grade,
@@ -712,9 +639,6 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
-
-      fineTuneOptIn,
-
       timestamp: new Date().toISOString(),
       isDraft: true,
       draftMode: "local",
@@ -727,7 +651,7 @@ export default function PracticeAddPage() {
       lessonId: id,
       practiceDate,
       reflection,
-      draftImages, // ★URLのみ
+      draftImages,
       lessonTitle,
       authorName,
       grade: meta.grade,
@@ -736,9 +660,6 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
-
-      fineTuneOptIn,
-
       timestamp: new Date().toISOString(),
       isDraft: true,
       draftMode: "cloud",
@@ -791,28 +712,20 @@ export default function PracticeAddPage() {
 
   /* ===== 画面入力をすべてリセット ===== */
   const resetAllInputs = () => {
-    // テキスト系
     setPracticeDate("");
     setAuthorName("");
     setReflection("");
 
-    // 画像系
     setBoardImages([]);
     setCompressedImages([]);
 
-    // 確認メタ
     setConfirmNoPersonalInfo(false);
     setCurrentSignature("");
     setPreviousSignature("");
     setNeedsReconfirm(true);
 
-    // Fine-tune同意
-    setFineTuneOptIn(false);
-
-    // プレビューも消す
     setRecord(null);
 
-    // 授業案があればメタは授業案由来に戻す（なければ空）
     const r = (lessonPlan?.result as ParsedResult) || {};
     const planGrade = typeof r?.["学年"] === "string" ? r["学年"] : "";
     const planGenre = typeof r?.["ジャンル"] === "string" ? r["ジャンル"] : "";
@@ -828,9 +741,7 @@ export default function PracticeAddPage() {
     setLessonTitle(planUnit || "");
   };
 
-  /* ===================== 下書き：自動保存（デバウンス）
-   * ★おすすめ：自動保存はローカルのみ（クラウドは手動ボタンで）
-   * ======================================================= */
+  /* ===================== 下書き：自動保存（ローカルのみ） ===================== */
   useEffect(() => {
     if (restoringRef.current) return;
     if (skipAutoSaveOnceRef.current) {
@@ -840,7 +751,6 @@ export default function PracticeAddPage() {
     const t = setTimeout(() => {
       const draft = buildLocalDraft();
       saveDraftLocal(draft);
-      // ★クラウド自動保存はしない（Firestore負荷/詰まり防止）
     }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -857,7 +767,6 @@ export default function PracticeAddPage() {
     confirmNoPersonalInfo,
     currentSignature,
     compressedImages,
-    fineTuneOptIn,
   ]);
 
   /* ===================== 画像の追加・削除・並び替え ===================== */
@@ -871,12 +780,13 @@ export default function PracticeAddPage() {
     for (const file of files) {
       try {
         const fullBase64 = await fileToBase64(file);
-        const compressedBase64 = await resizeAndCompressFile(file, compressLongEdge, compressLongEdge, 0.9, {
-          enhance: enhanceUpload,
-          contrast: 1.12,
-          brightness: 1.03,
-          saturate: 1.05,
-        });
+        const compressedBase64 = await resizeAndCompressFile(
+          file,
+          compressLongEdge,
+          compressLongEdge,
+          0.9,
+          { enhance: enhanceUpload, contrast: 1.12, brightness: 1.03, saturate: 1.05 }
+        );
         newFullImages.push({ name: file.name, src: fullBase64 });
         newCompressedImages.push({ name: file.name, src: compressedBase64 });
       } catch (error) {
@@ -977,13 +887,16 @@ export default function PracticeAddPage() {
         if (img?.src && isFirebaseStorageUrl(img.src)) {
           return { name: img.name, src: img.src };
         }
-        const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const safeName = `${rec.lessonId}_${idx}_${(img.name || "image").replace(
+          /[^a-zA-Z0-9._-]/g,
+          "_"
+        )}`;
         const url = await uploadImageToStorageFromAny(img.src, safeName, u);
         return { name: img.name, src: url };
       })
     );
 
-    const practiceRecordCollection = toPracticeFromLesson(rec.modelType); // practiceRecords_*
+    const practiceRecordCollection = toPracticeFromLesson(rec.modelType);
     const docRef = doc(db, practiceRecordCollection, rec.lessonId);
 
     const finalSignature = rec.imagesSignature || calcImagesSignature(sourceImages);
@@ -1000,7 +913,7 @@ export default function PracticeAddPage() {
         authorName: rec.authorName,
         grade: rec.grade || "",
         genre: rec.genre || "",
-        unitName: rec.unitName || "", // 表示は教材名
+        unitName: rec.unitName || "",
         modelType: rec.modelType,
         createdAt: serverTimestamp(),
 
@@ -1012,9 +925,8 @@ export default function PracticeAddPage() {
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
 
-        // ▼ Fine-tune（研究利用）同意
+        // ▼ 学習許諾（保存する）
         fineTuneOptIn: !!rec.fineTuneOptIn,
-        fineTuneOptInAt: rec.fineTuneOptIn ? serverTimestamp() : null,
       },
       { merge: true }
     );
@@ -1060,7 +972,7 @@ export default function PracticeAddPage() {
         compressedImages,
       });
 
-      // 確定保存後は下書きをクリア（UIの入力値はそのまま）
+      // 確定保存後は下書きをクリア
       try {
         localStorage.removeItem(draftKey(id));
       } catch {}
@@ -1083,6 +995,70 @@ export default function PracticeAddPage() {
       setUploading(false);
     }
   };
+
+  /* =========================================================
+   * ▼ NEW: 管理者用 Fine-tune（実践）ユーティリティ
+   * ======================================================= */
+  async function downloadPracticeJsonl(scope: "mine" | "all") {
+    const u = auth.currentUser;
+    if (!u) {
+      alert("ログインが必要です。");
+      return;
+    }
+    setFineTuneBusy(true);
+    try {
+      const token = await u.getIdToken(true);
+
+      const url =
+        scope === "all"
+          ? "/api/fine-tune/export?target=practice&scope=all&maxTotal=5000&pageSize=500&optInOnly=1"
+          : "/api/fine-tune/export?target=practice&scope=mine&maxTotal=5000&pageSize=500&optInOnly=0";
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${t}`);
+      }
+
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+
+      // content-disposition があれば本当はそれに従うが、簡易で固定名
+      a.download = scope === "all" ? "train_practice_all.jsonl" : "train_practice_mine.jsonl";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setFineTuneBusy(false);
+    }
+  }
+
+  async function updateFineTuneOptIn(next: boolean) {
+    if (!modelLocked) {
+      alert("モデルタイプが確定してから操作してください（授業案から遷移してください）。");
+      return;
+    }
+    const u = auth.currentUser?.uid;
+    if (!u) {
+      alert("ログインが必要です。");
+      return;
+    }
+    const practiceCollection = toPracticeFromLesson(modelType);
+    await setDoc(
+      doc(db, practiceCollection, id),
+      {
+        fineTuneOptIn: next,
+        fineTuneOptInAt: serverTimestamp(),
+        fineTuneOptInBy: u,
+      },
+      { merge: true }
+    );
+    setFineTuneOptIn(next);
+  }
 
   /* =========================================================
    * UI
@@ -1111,7 +1087,9 @@ export default function PracticeAddPage() {
           <span style={barStyle}></span>
           <span style={barStyle}></span>
         </div>
-        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>国語授業プランナー</h1>
+        <h1 style={{ color: "white", marginLeft: "1rem", fontSize: "1.25rem" }}>
+          国語授業プランナー
+        </h1>
       </nav>
 
       <div style={overlayStyle(menuOpen)} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
@@ -1127,76 +1105,28 @@ export default function PracticeAddPage() {
         </button>
 
         <div style={menuLinksWrapperStyle}>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/"); }}>
             🏠 ホーム
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan"); }}>
             📋 授業作成
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/plan/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/plan/history"); }}>
             📖 計画履歴
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/history"); }}>
             📷 実践履歴
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/practice/share");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/practice/share"); }}>
             🌐 共有版実践記録
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/create");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/create"); }}>
             ✏️ 教育観作成
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models"); }}>
             📚 教育観一覧
           </button>
-          <button
-            style={navBtnStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              router.push("/models/history");
-            }}
-          >
+          <button style={navBtnStyle} onClick={() => { setMenuOpen(false); router.push("/models/history"); }}>
             🕒 教育観履歴
           </button>
         </div>
@@ -1205,59 +1135,48 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        {/* ✅ 管理者パネル（授業案作成と同じように「ダウンロード」ボタンを表示） */}
+        {/* ✅ NEW: 管理者用 Fine-tune パネル */}
         {isAdmin && (
-          <div style={{ ...boxStyle, borderColor: "#8e24aa" }}>
-            <strong style={{ color: "#6a1b9a" }}>管理者：ファインチューニング（実践記録）</strong>
+          <section style={{ ...boxStyle, borderColor: "#6a1b9a" }}>
+            <strong style={{ color: "#6a1b9a" }}>管理者：ファインチューニング（実践データ）</strong>
 
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <label>
-                対象範囲：
-                <select
-                  value={ftScope}
-                  onChange={(e) => setFtScope(e.target.value as "mine" | "all")}
-                  style={{ marginLeft: 8, padding: 4, width: "70%" }}
-                >
-                  <option value="all">全員（管理者）</option>
-                  <option value="mine">自分のみ</option>
-                </select>
-              </label>
-
-              <label>
-                最大件数：
+            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <input
-                  type="number"
-                  value={ftMaxTotal}
-                  onChange={(e) => setFtMaxTotal(Math.max(1, Number(e.target.value || 1)))}
-                  style={{ marginLeft: 8, padding: 4, width: "70%" }}
+                  type="checkbox"
+                  checked={fineTuneOptIn}
+                  onChange={(e) => updateFineTuneOptIn(e.target.checked)}
                 />
+                この実践記録を学習対象として利用してよい（fineTuneOptIn）
               </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => downloadPracticeJsonl("mine")}
+                  disabled={fineTuneBusy}
+                  style={{ ...secondaryBtnStyle, backgroundColor: "#ede7f6", color: "#4a148c" }}
+                  title="自分の実践記録のみをJSONLでダウンロード"
+                >
+                  {fineTuneBusy ? "⏳ 生成中..." : "⬇ 自分の実践をJSONLでDL"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => downloadPracticeJsonl("all")}
+                  disabled={fineTuneBusy}
+                  style={{ ...secondaryBtnStyle, backgroundColor: "#d1c4e9", color: "#311b92" }}
+                  title="fineTuneOptIn=true の実践記録のみを全件JSONLでダウンロード（管理者のみ）"
+                >
+                  {fineTuneBusy ? "⏳ 生成中..." : "⬇ Opt-in実践を全件JSONLでDL"}
+                </button>
+              </div>
+
+              <small style={{ color: "#666" }}>
+                ※「全件DL」は fineTuneOptIn=true の実践のみを含みます。NetworkでAuthorization(Bearer)が付いているか確認してください。
+              </small>
             </div>
-
-            {ftScope === "all" && (
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                <input type="checkbox" checked={ftOptInOnly} onChange={(e) => setFtOptInOnly(e.target.checked)} />
-                同意（fineTuneOptIn=true）のみを書き出す
-              </label>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 12 }}>
-              <button
-                type="button"
-                onClick={downloadPracticeTrainJsonl}
-                disabled={ftBusy}
-                style={{ ...secondaryBtnStyle, backgroundColor: "#8e24aa", color: "#fff" }}
-              >
-                {ftBusy ? "処理中..." : "⬇️ 実践データ(train.jsonl)をダウンロード"}
-              </button>
-
-              {/* 🚀 Fine-tune開始ボタンは、開始APIの仕様に合わせて接続が必要なのでここでは未実装 */}
-            </div>
-
-            <small style={{ display: "block", marginTop: 8, color: "#666" }}>
-              ※実践は「授業案JSON → 振り返り」の学習データとして書き出します。
-            </small>
-          </div>
+          </section>
         )}
 
         {/* 注意書き */}
@@ -1266,34 +1185,45 @@ export default function PracticeAddPage() {
           <ul style={{ margin: "8px 0 0 18px" }}>
             <li>
               <strong>
-                板書の写真を<strong>追加・削除・並び替え</strong>した場合は、必ず「プレビューを生成」ボタンを押してください
-                （保存内容を正しく反映するため）。
+                板書の写真を<strong>追加・削除・並び替え</strong>した場合は、必ず
+                「プレビューを生成」ボタンを押してください（保存内容を正しく反映するため）。
               </strong>
             </li>
             <li>
-              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、アカウント名、
-              手書きの名前等）が写っていないこと。
+              児童の<strong>顔</strong>や<strong>氏名</strong>、名札、出席番号、個人が特定できる要素（タブレット名、
+              アカウント名、手書きの名前等）が写っていないこと。
             </li>
             <li>掲示物・配布資料などに<strong>個人情報</strong>が含まれていないこと。</li>
-            <li>写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。</li>
+            <li>
+              写り込みがある場合は、アップロード前に<strong>必ず加工（モザイク等）</strong>してください。
+            </li>
           </ul>
 
           <p style={{ marginTop: 8 }}>
-            <strong>※下書き保存：</strong> 自動保存はローカルのみ。<strong>別端末でも画像付きで下書きを復元したい場合は「📝 下書きを保存」</strong>
-            を押してください（画像はStorageに保存され、FirestoreにはURLだけ保存されます）。
+            <strong>※下書き保存：</strong> 自動保存はローカルのみ。
+            <strong>別端末でも画像付きで下書きを復元したい場合は「📝 下書きを保存」</strong>
+            を押してください（画像はStorage、FirestoreにはURLのみ保存）。
           </p>
         </div>
 
-        {/* ▼ NEW: 板書画像の見やすさ設定 */}
+        {/* 見やすさ設定 */}
         <div style={boxStyle}>
           <strong>板書画像の見やすさ設定</strong>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" checked={enhancePreview} onChange={(e) => setEnhancePreview(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={enhancePreview}
+                onChange={(e) => setEnhancePreview(e.target.checked)}
+              />
               プレビューに見やすさ補正を適用（コントラスト等）
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" checked={enhanceUpload} onChange={(e) => setEnhanceUpload(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={enhanceUpload}
+                onChange={(e) => setEnhanceUpload(e.target.checked)}
+              />
               アップロード用の圧縮画像にも補正を焼き込む
             </label>
           </div>
@@ -1353,7 +1283,7 @@ export default function PracticeAddPage() {
                   background: lockMeta ? "#f5f5f5" : undefined,
                 }}
               >
-                <option value="">{lockMeta ? grade || "（未設定）" : "選択してください"}</option>
+                <option value="">{lockMeta ? (grade || "（未設定）") : "選択してください"}</option>
                 <option value="1年">1年</option>
                 <option value="2年">2年</option>
                 <option value="3年">3年</option>
@@ -1384,7 +1314,7 @@ export default function PracticeAddPage() {
                   background: lockMeta ? "#f5f5f5" : undefined,
                 }}
               >
-                <option value="">{lockMeta ? genre || "（未設定）" : "選択してください"}</option>
+                <option value="">{lockMeta ? (genre || "（未設定）") : "選択してください"}</option>
                 <option value="物語文">物語文</option>
                 <option value="説明文">説明文</option>
                 <option value="詩">詩</option>
@@ -1393,7 +1323,7 @@ export default function PracticeAddPage() {
             </label>
           </div>
 
-          {/* 教材名（旧：単元名） */}
+          {/* 教材名 */}
           <div style={boxStyle}>
             <label>
               教材名：
@@ -1414,7 +1344,7 @@ export default function PracticeAddPage() {
             {!lockMeta && <small style={{ color: "#666" }}>授業案が無い場合は手動で入力してください。</small>}
           </div>
 
-          {/* モデルタイプ（自動） */}
+          {/* モデルタイプ */}
           <div style={boxStyle}>
             <label>
               モデルタイプ：
@@ -1529,28 +1459,13 @@ export default function PracticeAddPage() {
               />
               <span>
                 児童の<strong>顔・氏名・その他個人を特定できる情報</strong>が写っていないことを確認しました。
-                {needsReconfirm && <em style={{ color: "#e53935", marginLeft: 8 }}>（画像を変更したため、再確認が必要です）</em>}
+                {needsReconfirm && (
+                  <em style={{ color: "#e53935", marginLeft: 8 }}>（画像を変更したため、再確認が必要です）</em>
+                )}
               </span>
             </label>
             <div id="confirm-help" style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-              ポリシー版：{POLICY_VERSION}／シグネチャ：{currentSignature || "-"}
-            </div>
-
-            {/* ✅ 実践は学習対象なので「同意」チェックをここに置く */}
-            <div style={{ marginTop: 10, borderTop: "1px dashed #ccc", paddingTop: 10 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <input
-                  type="checkbox"
-                  checked={fineTuneOptIn}
-                  onChange={(e) => setFineTuneOptIn(e.target.checked)}
-                />
-                <span>
-                  この実践記録（振り返り）を、研究の分析・評価およびサービス改善（学習データ作成）に利用することに同意します。
-                  <span style={{ display: "block", fontSize: 12, color: "#666", marginTop: 4 }}>
-                    ※同意した記録のみを書き出す設定（管理者のoptInOnly）に対応します。
-                  </span>
-                </span>
-              </label>
+              ポリシー版：{POLICY_VERSION}／シグネチャ： sayoutStyle? {currentSignature || "-"}
             </div>
           </div>
 
@@ -1570,7 +1485,6 @@ export default function PracticeAddPage() {
 
                 setDraftSaving(true);
                 try {
-                  // ★画像はStorageへ、FirestoreにはURLだけ
                   const urls = await uploadDraftImagesAndGetUrls();
                   const cloudDraft = buildCloudDraft(urls);
                   await saveDraftCloud(cloudDraft);
@@ -1591,7 +1505,6 @@ export default function PracticeAddPage() {
               type="button"
               disabled={draftSaving || uploading}
               onClick={async () => {
-                // ストレージの下書きを削除（Firestoreのpayloadをnullにする）
                 try {
                   localStorage.removeItem(draftKey(id));
                 } catch {}
@@ -1605,7 +1518,6 @@ export default function PracticeAddPage() {
                   } catch {}
                 }
 
-                // ★ 直後の自動保存を一度だけ無効化し、入力もリセット
                 skipAutoSaveOnceRef.current = true;
                 resetAllInputs();
 
@@ -1644,14 +1556,15 @@ export default function PracticeAddPage() {
                 </p>
                 <p>
                   <strong>教材名：</strong>
-                  {(lessonPlan.result as ParsedResult)["教材名"] ?? (lessonPlan.result as ParsedResult)["単元名"] ?? ""}
+                  {(lessonPlan.result as ParsedResult)["教材名"] ??
+                    (lessonPlan.result as ParsedResult)["単元名"] ??
+                    ""}
                 </p>
                 <p>
                   <strong>授業時間数：</strong>
                   {(lessonPlan.result as ParsedResult)["授業時間数"] ?? ""}時間
                 </p>
 
-                {/* 評価の観点 */}
                 <div style={{ marginTop: 8 }}>
                   <strong>評価の観点：</strong>
 
@@ -1701,7 +1614,6 @@ export default function PracticeAddPage() {
                   <p>{(lessonPlan.result as ParsedResult)["単元の目標"] || ""}</p>
                 </div>
 
-                {/* 授業の流れ */}
                 <div style={{ marginTop: 8 }}>
                   <strong>授業の流れ：</strong>
                   {(() => {
@@ -1742,7 +1654,6 @@ export default function PracticeAddPage() {
               </section>
             )}
 
-            {/* 実践記録 */}
             <section style={{ marginTop: 24 }}>
               <h3>実践記録</h3>
               <p>
@@ -1752,7 +1663,6 @@ export default function PracticeAddPage() {
                 <strong>作成者：</strong> {record.authorName || "不明"}
               </p>
 
-              {/* 学年・ジャンル・教材名（補完後） */}
               <p>
                 <strong>学年：</strong> {record.grade || grade || "—"}
               </p>
@@ -1761,10 +1671,6 @@ export default function PracticeAddPage() {
               </p>
               <p>
                 <strong>教材名：</strong> {record.unitName || unitName || "—"}
-              </p>
-
-              <p>
-                <strong>研究利用への同意：</strong> {record.fineTuneOptIn ? "同意する" : "同意しない"}
               </p>
 
               <p>

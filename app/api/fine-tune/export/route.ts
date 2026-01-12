@@ -92,7 +92,7 @@ type LessonDoc = {
   fineTuneOptIn?: boolean;
 };
 
-/** 実践doc（あなたのPracticeAddPage保存形式に合わせる） */
+/** 実践doc（PracticeAddPage保存形式想定） */
 type PracticeDoc = {
   ownerUid?: string;
   reflection?: string;
@@ -108,6 +108,52 @@ function toLessonCollectionFromPractice(coll: string) {
   return coll.replace("practiceRecords_", "lesson_plans_");
 }
 
+/** ===== 管理者判定（claimだけに依存しない） ===== */
+function parseAdminEmailsEnv(): string[] {
+  const raw = process.env.ADMIN_EMAILS || "";
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function isAdminUser(decoded: any): Promise<{ ok: boolean; reason: string }> {
+  // 1) custom claim
+  if (decoded?.admin === true) return { ok: true, reason: "custom_claim_admin_true" };
+
+  const email = (decoded?.email || "").toLowerCase();
+
+  // 2) env allowlist
+  const allow = parseAdminEmailsEnv();
+  if (email && allow.includes(email)) return { ok: true, reason: "env_ADMIN_EMAILS" };
+
+  const uid = decoded?.uid;
+  if (!uid) return { ok: false, reason: "no_uid_in_token" };
+
+  const db = getAdminDb();
+
+  // 3) admins/{uid} が存在
+  try {
+    const a = await db.collection("admins").doc(uid).get();
+    if (a.exists) return { ok: true, reason: "firestore_admins_doc_exists" };
+  } catch {
+    // 無視（次へ）
+  }
+
+  // 4) users/{uid} で role/isAdmin を見る（任意フォールバック）
+  try {
+    const u = await db.collection("users").doc(uid).get();
+    if (u.exists) {
+      const d = u.data() as any;
+      if (d?.role === "admin" || d?.isAdmin === true) return { ok: true, reason: "firestore_users_role_admin" };
+    }
+  } catch {
+    // 無視
+  }
+
+  return { ok: false, reason: "admin_not_detected" };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = getBearerToken(req);
@@ -115,29 +161,48 @@ export async function GET(req: NextRequest) {
 
     const decoded = await getAdminAuth().verifyIdToken(token);
     const uid = decoded.uid;
-    const isAdmin = decoded.admin === true;
 
+    // ★ target のデフォルトは「practice」に寄せたいならここを "practice" にしてOK
+    // 既存互換を優先するなら "lesson" のまま。
     const target = (req.nextUrl.searchParams.get("target") || "lesson").toLowerCase(); // lesson | practice
     if (target !== "lesson" && target !== "practice") {
       return NextResponse.json({ error: "Invalid target" }, { status: 400 });
     }
 
     const scope = (req.nextUrl.searchParams.get("scope") || "mine").toLowerCase(); // mine | all
-    if (scope === "all" && !isAdmin) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (scope !== "mine" && scope !== "all") {
+      return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+    }
+
+    // scope=all は「管理者のみ」
+    if (scope === "all") {
+      const admin = await isAdminUser(decoded);
+      if (!admin.ok) {
+        return NextResponse.json(
+          {
+            error: "Forbidden",
+            reason: admin.reason,
+            uid,
+            email: decoded?.email || null,
+            hint:
+              "admin claim / ADMIN_EMAILS / Firestore admins/{uid} / users/{uid}.role を確認してください。",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const maxTotal = Math.min(Number(req.nextUrl.searchParams.get("maxTotal") || "2000"), 5000);
     const pageSize = Math.min(Number(req.nextUrl.searchParams.get("pageSize") || "500"), 1000);
 
-    // scope=all のときだけ opt-in を効かせる想定（デフォルトON）
+    // scope=all のときだけ opt-in を効かせる（デフォルトON）
     const optInOnly = (req.nextUrl.searchParams.get("optInOnly") ?? "1") !== "0";
 
     const db = getAdminDb();
     const lines: string[] = [];
     let total = 0;
 
-    // 授業案の result を繰り返し読むのを減らす軽いキャッシュ
+    // 授業案 result のキャッシュ
     const lessonCache = new Map<string, any>(); // key: `${collection}/${id}`
 
     const collections = target === "lesson" ? LESSON_COLLECTIONS : PRACTICE_COLLECTIONS;
@@ -179,13 +244,12 @@ export async function GET(req: NextRequest) {
 
             const safePrompt = maskPII(userPrompt);
             const safeResult = sanitizeAny(resultObj);
-            const assistantJson = JSON.stringify(safeResult);
 
             const sample = {
               messages: [
                 { role: "system", content: TRAIN_SYSTEM_LESSON },
                 { role: "user", content: safePrompt },
-                { role: "assistant", content: assistantJson },
+                { role: "assistant", content: JSON.stringify(safeResult) },
               ],
             };
 
@@ -194,15 +258,16 @@ export async function GET(req: NextRequest) {
             continue;
           }
 
-          // target === "practice"
+          // ===== target === "practice" =====
           const p = d.data() as PracticeDoc;
           const reflection = (p.reflection || "").trim();
           if (!reflection) continue;
 
-          // 対応する授業案 result を引っ張って「入力」にする（実践の中身＝学習対象）
-          const lessonColl = (p.modelType && p.modelType.startsWith("lesson_plans_"))
-            ? p.modelType
-            : toLessonCollectionFromPractice(colName);
+          // 対応する授業案 result を引く（id同一前提）
+          const lessonColl =
+            p.modelType && p.modelType.startsWith("lesson_plans_")
+              ? p.modelType
+              : toLessonCollectionFromPractice(colName);
 
           const cacheKey = `${lessonColl}/${id}`;
           let lessonResult: any = lessonCache.get(cacheKey);
@@ -226,7 +291,7 @@ export async function GET(req: NextRequest) {
             授業案JSON: safeLesson,
           };
 
-          // assistantは“JSON”で返す約束にする（後で使いやすい）
+          // “この先生の振り返り文体” を学習させる用途：assistantに実データを入れる
           const assistantPayload = {
             振り返り: safeReflection,
             よかった点: [],
@@ -253,11 +318,7 @@ export async function GET(req: NextRequest) {
     }
 
     const jsonl = lines.join("\n") + (lines.length ? "\n" : "");
-    const filenameBase =
-      target === "practice"
-        ? "practice"
-        : "lesson";
-
+    const filenameBase = target === "practice" ? "practice" : "lesson";
     const filename =
       scope === "all"
         ? `train_${filenameBase}_all_${new Date().toISOString().slice(0, 10)}.jsonl`
