@@ -1,45 +1,51 @@
-// lib/firebaseAdmin.ts
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+// /lib/firebaseAdmin.ts
+import "server-only";
+import { cert, getApps, initializeApp, App } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
-function getServiceAccountFromEnv() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return null;
+function getServiceAccount() {
+  // どちらでもOK：FIREBASE_SERVICE_ACCOUNT か GOOGLE_APPLICATION_CREDENTIALS_JSON
+  const raw =
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
-  try {
-    return JSON.parse(raw);
-  } catch {
-    try {
-      const fixed = raw.replace(/\\n/g, "\n");
-      return JSON.parse(fixed);
-    } catch {
-      return null;
-    }
-  }
-}
-
-export function getAdminApp(): App {
-  if (getApps().length) return getApps()[0]!;
-
-  const sa = getServiceAccountFromEnv();
-  if (!sa) {
+  if (!raw) {
     throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT is missing. Set it to the Firebase service account JSON string in env."
+      "Missing Firebase Admin credentials. Set FIREBASE_SERVICE_ACCOUNT (JSON string)."
     );
   }
 
+  // JSON文字列をそのまま貼る運用を想定（改行エスケープにも耐える）
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Vercelの環境変数で `\n` が入るケース
+    return JSON.parse(raw.replace(/\\n/g, "\n"));
+  }
+}
+
+function initAdmin(): App {
+  if (getApps().length) return getApps()[0]!;
+  const sa = getServiceAccount();
+
   return initializeApp({
-    credential: cert(sa as any),
+    credential: cert({
+      projectId: sa.project_id,
+      clientEmail: sa.client_email,
+      privateKey: sa.private_key,
+    }),
   });
 }
 
-export function getAdminAuth(): Auth {
-  const app = getAdminApp();
-  return getAuth(app);
+export function getAdminApp() {
+  return initAdmin();
 }
 
-export function getAdminDb(): Firestore {
-  const app = getAdminApp();
-  return getFirestore(app);
+export function getAdminAuth() {
+  return getAuth(getAdminApp());
+}
+
+export function getAdminDb() {
+  return getFirestore(getAdminApp());
 }
