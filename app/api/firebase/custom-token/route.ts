@@ -1,36 +1,33 @@
 // app/api/firebase/custom-token/route.ts
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { getServerSession } from "next-auth/next"; // ←こっち推奨
+import { authOptions } from "@/lib/authOptions";
 import { getAdminAuth } from "@/lib/firebaseAdmin";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json(
-      { error: "unauthorized" },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
-    );
+  try {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    if (!email) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const adminAuth = getAdminAuth();
+    const uid = `email:${email}`;
+
+    try {
+      await adminAuth.getUser(uid);
+    } catch {
+      await adminAuth.createUser({ uid, email });
+    }
+
+    const customToken = await adminAuth.createCustomToken(uid);
+    return NextResponse.json({ ok: true, customToken });
+  } catch (e: any) {
+    console.error("[custom-token] error:", e?.stack || e);
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
-
-  const uid =
-    (session as any).userId ||
-    (session as any).uid ||
-    (session.user as any)?.id ||
-    "";
-
-  if (!uid) {
-    return NextResponse.json(
-      { error: "no-uid" },
-      { status: 400, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-
-  const token = await getAdminAuth().createCustomToken(uid);
-  return NextResponse.json(
-    { token },
-    { headers: { "Cache-Control": "no-store" } }
-  );
 }
