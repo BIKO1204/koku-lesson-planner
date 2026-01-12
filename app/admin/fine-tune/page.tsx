@@ -1,172 +1,142 @@
+// app/admin/fine-tune/page.tsx
 "use client";
 
-import { useMemo, useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import React, { useEffect, useState } from "react";
+import { auth } from "@/firebaseConfig"; // 後述のfirebaseConfig.tsで統一
 
-export const dynamic = "force-dynamic";
+type Row = {
+  id: string;
+  collection: string;
+  fineTuneOptIn: boolean;
+  unitName: string;
+  grade: string;
+  genre: string;
+};
 
-export default function FineTuneAdminPage() {
-  const { data: session, status } = useSession();
+export default function AdminFineTunePage() {
+  const [token, setToken] = useState<string>("");
+  const [target, setTarget] = useState<"practice" | "lesson">("practice");
+  const [optInOnly, setOptInOnly] = useState(false);
+  const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const email = (session?.user?.email ?? "").toLowerCase();
-  const isAdmin = (session?.user as any)?.admin === true || (session?.user as any)?.role === "admin";
-
-  // クライアント側 allowlist（表示・操作ガード用）
-  const allowList = useMemo(() => {
-    const raw = (process.env.NEXT_PUBLIC_FINE_TUNE_ADMINS ?? "").trim();
-    return raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
+  useEffect(() => {
+    (async () => {
+      const u = auth.currentUser;
+      if (!u) return;
+      const t = await u.getIdToken(true);
+      setToken(t);
+    })();
   }, []);
 
-  const inAllowList = !!email && allowList.includes(email);
-  const canUse = isAdmin || inAllowList;
-
-  const getToken = async (): Promise<string | null> => {
-    if (status !== "authenticated") {
-      alert("ログインが必要です");
-      return null;
-    }
-    if (!canUse) {
-      alert("管理者権限がありません（allowlist/role どちらも該当なし）");
-      return null;
-    }
-    const t = (session as any)?.accessToken;
-    if (!t) {
-      alert("accessToken が見つかりません（NextAuth session に載っていません）");
-      return null;
-    }
-    return String(t);
-  };
-
-  const downloadJsonl = async () => {
-    const token = await getToken();
+  async function reload() {
     if (!token) return;
-
     setBusy(true);
     try {
-      const url =
-        "/api/fine-tune/export" +
-        "?target=lesson" +
-        "&scope=all" +
-        "&maxTotal=5000" +
-        "&pageSize=500" +
-        "&optInOnly=1";
-
-      const res = await fetch(url, {
-        method: "GET",
+      const qs = new URLSearchParams({
+        target,
+        optInOnly: optInOnly ? "1" : "0",
+        limit: "50",
+      });
+      const res = await fetch(`/api/admin/fine-tune/list?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        alert(`export失敗: ${res.status}\n${t}`);
-        return;
-      }
-
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-
-      const cd = res.headers.get("content-disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
-      a.download = m?.[1] || "train_lesson_all.jsonl";
-
-      a.click();
-      URL.revokeObjectURL(a.href);
+      const data = await res.json();
+      setRows(data.rows || []);
     } finally {
       setBusy(false);
     }
-  };
-
-  const startFineTune = async () => {
-    const token = await getToken();
-    if (!token) return;
-
-    setBusy(true);
-    try {
-      const expUrl =
-        "/api/fine-tune/export" +
-        "?target=lesson" +
-        "&scope=all" +
-        "&maxTotal=5000" +
-        "&pageSize=500" +
-        "&optInOnly=1";
-
-      const exp = await fetch(expUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!exp.ok) {
-        const t = await exp.text().catch(() => "");
-        alert(`export失敗: ${exp.status}\n${t}`);
-        return;
-      }
-
-      const jsonlText = await exp.text();
-      if (!jsonlText.trim()) {
-        alert("学習データが空です（同意ONの授業案が見つかりませんでした）");
-        return;
-      }
-
-      const st = await fetch("/api/fine-tune/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ jsonlText }),
-      });
-
-      const out = await st.text();
-      if (!st.ok) {
-        alert(out);
-        return;
-      }
-
-      try {
-        const data = JSON.parse(out);
-        alert(`fine-tune開始: job_id=${data.job_id} status=${data.status}`);
-      } catch {
-        alert(out);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (status === "loading") return <div style={{ padding: 16 }}>Loading...</div>;
-
-  if (status !== "authenticated") {
-    return (
-      <div style={{ padding: 16 }}>
-        <p>ログインしてください</p>
-        <button onClick={() => signIn("google", { callbackUrl: "/admin" })}>Googleでログイン</button>
-      </div>
-    );
   }
 
-  if (!canUse) return <div style={{ padding: 16 }}>管理者権限がありません</div>;
+  async function toggleOptIn(r: Row, next: boolean) {
+    if (!token) return;
+    await fetch("/api/admin/fine-tune/set-optin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ collection: r.collection, docId: r.id, fineTuneOptIn: next }),
+    });
+    setRows((prev) => prev.map((x) => (x.id === r.id && x.collection === r.collection ? { ...x, fineTuneOptIn: next } : x)));
+  }
+
+  async function download(scope: "all" | "mine") {
+    if (!token) return;
+    const qs = new URLSearchParams({
+      target,
+      scope,
+      optInOnly: optInOnly ? "1" : "0",
+      limit: "5000",
+    });
+
+    const res = await fetch(`/api/admin/fine-tune/export?${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `train_${target}_${scope}${optInOnly ? "_optin" : ""}.jsonl`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ fontSize: 20, fontWeight: "bold" }}>管理者：Fine-tune</h1>
-      <div style={{ marginTop: 8, opacity: 0.8, fontSize: 13 }}>
-        login: {email || "(no email)"} / allowlist: {String(inAllowList)} / admin: {String(isAdmin)}
+    <main style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
+      <h1>管理者：ファインチューニング</h1>
+
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 12 }}>
+        <select value={target} onChange={(e) => setTarget(e.target.value as any)}>
+          <option value="practice">実践</option>
+          <option value="lesson">授業案</option>
+        </select>
+
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={optInOnly} onChange={(e) => setOptInOnly(e.target.checked)} />
+          opt-in のみ
+        </label>
+
+        <button onClick={reload} disabled={!token || busy}>
+          {busy ? "読み込み中..." : "一覧を更新"}
+        </button>
+
+        <button onClick={() => download("all")} disabled={!token}>
+          JSONLダウンロード（all）
+        </button>
+
+        <button onClick={() => download("mine")} disabled={!token}>
+          JSONLダウンロード（mine）
+        </button>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-        <button onClick={downloadJsonl} disabled={busy}>
-          ⬇️ JSONLダウンロード
-        </button>
-        <button onClick={startFineTune} disabled={busy}>
-          🧠 fine-tune開始
-        </button>
-      </div>
+      <hr style={{ margin: "16px 0" }} />
 
-      {busy && <p style={{ marginTop: 12 }}>処理中…</p>}
-    </div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ borderBottom: "1px solid #ccc", textAlign: "left" }}>教材</th>
+            <th style={{ borderBottom: "1px solid #ccc" }}>学年</th>
+            <th style={{ borderBottom: "1px solid #ccc" }}>ジャンル</th>
+            <th style={{ borderBottom: "1px solid #ccc" }}>opt-in</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.collection}_${r.id}`}>
+              <td style={{ borderBottom: "1px solid #eee" }}>{r.unitName}</td>
+              <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>{r.grade}</td>
+              <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>{r.genre}</td>
+              <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={r.fineTuneOptIn}
+                  onChange={(e) => toggleOptIn(r, e.target.checked)}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </main>
   );
 }

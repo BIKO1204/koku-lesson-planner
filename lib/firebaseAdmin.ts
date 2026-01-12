@@ -1,45 +1,28 @@
 // lib/firebaseAdmin.ts
-import "server-only";
+import admin from "firebase-admin";
 
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
-
-/**
- * 遅延初期化（ビルド中に走らない）＋ \n / \\n の差を吸収
- * - FIREBASE_SERVICE_ACCOUNT: 一行JSON
- * - FIREBASE_STORAGE_BUCKET（任意）
- */
-
-function initIfNeeded() {
-  if (getApps().length) return getApps()[0];
-
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT is missing");
-
-  const creds: any = JSON.parse(raw);
-  if (typeof creds.private_key === "string") {
-    creds.private_key = creds.private_key.replace(/\\n/g, "\n");
-  }
-
-  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET; // ← できればこれだけにする
-
-  return initializeApp({
-    credential: cert(creds),
-    ...(storageBucket ? { storageBucket } : {}),
-  });
+function getServiceAccount() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
+  return JSON.parse(raw);
 }
 
 export function getAdminApp() {
-  return initIfNeeded();
+  if (admin.apps.length) return admin.app();
+  const serviceAccount = getServiceAccount();
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  return admin.app();
 }
+
 export function getAdminAuth() {
-  return getAuth(initIfNeeded());
+  getAdminApp();
+  return admin.auth();
 }
+
 export function getAdminDb() {
-  return getFirestore(initIfNeeded());
-}
-export function getAdminStorage() {
-  return getStorage(initIfNeeded());
+  getAdminApp();
+  return admin.firestore();
 }
