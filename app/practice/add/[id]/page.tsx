@@ -997,7 +997,7 @@ export default function PracticeAddPage() {
   };
 
   /* =========================================================
-   * ▼ NEW: 管理者用 Fine-tune（実践）ユーティリティ
+   * ▼ Fine-tune（実践）ユーティリティ（授業案作成ページと同等のボタン枠）
    * ======================================================= */
   async function downloadPracticeJsonl(scope: "mine" | "all") {
     const u = auth.currentUser;
@@ -1028,7 +1028,6 @@ export default function PracticeAddPage() {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
 
-      // content-disposition があれば本当はそれに従うが、簡易で固定名
       a.download = scope === "all" ? "train_practice_all.jsonl" : "train_practice_mine.jsonl";
       a.click();
       URL.revokeObjectURL(a.href);
@@ -1135,49 +1134,56 @@ export default function PracticeAddPage() {
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
 
-        {/* ✅ NEW: 管理者用 Fine-tune パネル */}
-        {isAdmin && (
-          <section style={{ ...boxStyle, borderColor: "#6a1b9a" }}>
-            <strong style={{ color: "#6a1b9a" }}>管理者：ファインチューニング（実践データ）</strong>
+        {/* ✅ 追加：授業案作成ページと同様の「ファインチューン」ボタン枠（実践） */}
+        <section style={{ ...boxStyle, borderColor: "#00838f", backgroundColor: "#e0f7fa" }}>
+          <strong style={{ color: "#006064" }}>🧠 ファインチューニング（実践データ）</strong>
 
-            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input
-                  type="checkbox"
-                  checked={fineTuneOptIn}
-                  onChange={(e) => updateFineTuneOptIn(e.target.checked)}
-                />
-                この実践記録を学習対象として利用してよい（fineTuneOptIn）
-              </label>
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="checkbox"
+                checked={fineTuneOptIn}
+                onChange={(e) => updateFineTuneOptIn(e.target.checked)}
+                disabled={!modelLocked}
+              />
+              この実践記録を学習対象として利用してよい（fineTuneOptIn）
+            </label>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => downloadPracticeJsonl("mine")}
-                  disabled={fineTuneBusy}
-                  style={{ ...secondaryBtnStyle, backgroundColor: "#ede7f6", color: "#4a148c" }}
-                  title="自分の実践記録のみをJSONLでダウンロード"
-                >
-                  {fineTuneBusy ? "⏳ 生成中..." : "⬇ 自分の実践をJSONLでDL"}
-                </button>
+            <div style={{ display: "grid", gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => downloadPracticeJsonl("mine")}
+                disabled={fineTuneBusy}
+                style={{ ...secondaryBtnStyle, backgroundColor: "#ffffff", color: "#006064", border: "1px solid #4dd0e1" }}
+                title="自分の実践記録のみをJSONLでダウンロード"
+              >
+                {fineTuneBusy ? "⏳ 生成中..." : "⬇ 自分の実践をJSONLでDL"}
+              </button>
 
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={() => downloadPracticeJsonl("all")}
                   disabled={fineTuneBusy}
-                  style={{ ...secondaryBtnStyle, backgroundColor: "#d1c4e9", color: "#311b92" }}
+                  style={{ ...secondaryBtnStyle, backgroundColor: "#b2ebf2", color: "#004d40" }}
                   title="fineTuneOptIn=true の実践記録のみを全件JSONLでダウンロード（管理者のみ）"
                 >
                   {fineTuneBusy ? "⏳ 生成中..." : "⬇ Opt-in実践を全件JSONLでDL"}
                 </button>
-              </div>
-
-              <small style={{ color: "#666" }}>
-                ※「全件DL」は fineTuneOptIn=true の実践のみを含みます。NetworkでAuthorization(Bearer)が付いているか確認してください。
-              </small>
+              )}
             </div>
-          </section>
-        )}
+
+            <small style={{ color: "#006064" }}>
+              ※「全件DL」は管理者のみ表示。opt-in=true の実践のみを含みます。Authorization(Bearer) が付与されているか Network で確認できます。
+            </small>
+
+            {!modelLocked && (
+              <small style={{ color: "#b71c1c" }}>
+                ※モデルタイプ確定前は opt-in の更新ができません（授業案から遷移 or 共有一覧の「編集」から開いてください）。
+              </small>
+            )}
+          </div>
+        </section>
 
         {/* 注意書き */}
         <div style={noticeBoxStyle}>
@@ -1465,7 +1471,7 @@ export default function PracticeAddPage() {
               </span>
             </label>
             <div id="confirm-help" style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-              ポリシー版：{POLICY_VERSION}／シグネチャ： sayoutStyle? {currentSignature || "-"}
+              ポリシー版：{POLICY_VERSION}／シグネチャ： {currentSignature || "-"}
             </div>
           </div>
 
