@@ -1,31 +1,36 @@
 // lib/fineTune/query.ts
 import { getAdminDb } from "@/lib/firebaseAdmin";
-import { collectionsByTarget, FineTuneTarget } from "@/lib/fineTune/collections";
+import { collectionsByTarget, type FineTuneTarget } from "@/lib/fineTune/collections";
 
-type Scope = "all" | "mine";
-
-export async function fetchFineTuneDocs(opts: {
+type Args = {
   target: FineTuneTarget;
-  scope: Scope;
-  ownerUid?: string;      // mineの場合に使う（必要なら）
+  scope: "all" | "mine";
+  ownerUid?: string;     // scope==="mine" の時だけ入れる
   optInOnly: boolean;
   limit: number;
-}) {
+};
+
+export async function fetchFineTuneDocs(args: Args) {
   const db = getAdminDb();
-  const colls = collectionsByTarget(opts.target);
+  const colls = collectionsByTarget[args.target];
 
-  const results: any[] = [];
-  for (const coll of colls) {
-    let q: FirebaseFirestore.Query = db.collection(coll);
+  const out: any[] = [];
+  for (const collName of colls) {
+    // ★ opt-in 条件や ownerUid 条件はデータ構造に合わせて調整
+    let q: FirebaseFirestore.Query = db.collection(collName);
 
-    if (opts.optInOnly) q = q.where("fineTuneOptIn", "==", true);
-    if (opts.scope === "mine" && opts.ownerUid) q = q.where("ownerUid", "==", opts.ownerUid);
+    if (args.scope === "mine" && args.ownerUid) {
+      q = q.where("ownerUid", "==", args.ownerUid);
+    }
+    if (args.optInOnly) {
+      q = q.where("fineTuneOptIn", "==", true);
+    }
 
-    q = q.orderBy("createdAt", "desc").limit(opts.limit);
+    const snap = await q.limit(args.limit).get();
+    snap.forEach((d) => out.push({ id: d.id, collection: collName, ...d.data() }));
 
-    const snap = await q.get();
-    snap.docs.forEach((d) => results.push({ id: d.id, coll, ...d.data() }));
+    if (out.length >= args.limit) break;
   }
 
-  return results;
+  return out.slice(0, args.limit);
 }

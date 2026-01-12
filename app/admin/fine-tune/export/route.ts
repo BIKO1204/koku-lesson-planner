@@ -2,6 +2,10 @@
 import { requireAdminFromRequest } from "@/lib/fineTune/auth";
 import { fetchFineTuneDocs } from "@/lib/fineTune/query";
 import { toJsonlLines } from "@/lib/fineTune/jsonl";
+import {
+  normalizeFineTuneTarget,
+  type FineTuneTarget,
+} from "@/lib/fineTune/collections";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +14,20 @@ export async function GET(req: Request) {
     const admin = await requireAdminFromRequest(req);
 
     const { searchParams } = new URL(req.url);
-    const target = (searchParams.get("target") || "practice") as "lesson" | "practice";
+
+    // ★ クエリの生値を受ける（"lesson" でもOK）
+    const targetRaw = searchParams.get("target") || "practice";
+    const target = normalizeFineTuneTarget(targetRaw);
+    if (!target) {
+      return new Response("invalid target", { status: 400 });
+    }
+
     const scope = (searchParams.get("scope") || "all") as "all" | "mine";
     const optInOnly = searchParams.get("optInOnly") === "1";
     const limit = Math.min(parseInt(searchParams.get("limit") || "2000", 10), 5000);
 
     const rows = await fetchFineTuneDocs({
-      target,
+      target, // ★ ここは FineTuneTarget（"plan"|"practice"|"model"）
       scope,
       ownerUid: scope === "mine" ? admin.uid : undefined,
       optInOnly,
@@ -28,7 +39,8 @@ export async function GET(req: Request) {
 
     return new Response(lines, {
       headers: {
-        "Content-Type": "application/jsonl; charset=utf-8",
+        // jsonl は text/plain 扱いが無難（application/jsonl でも動くが環境差が出る）
+        "Content-Type": "text/plain; charset=utf-8",
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });

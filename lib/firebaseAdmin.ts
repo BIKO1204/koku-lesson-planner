@@ -1,45 +1,38 @@
-// /lib/firebaseAdmin.ts
-import "server-only";
-import { cert, getApps, initializeApp, App } from "firebase-admin/app";
+// lib/firebaseAdmin.ts
+import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
 function getServiceAccount() {
-  // どちらでもOK：FIREBASE_SERVICE_ACCOUNT か GOOGLE_APPLICATION_CREDENTIALS_JSON
   const raw =
     process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
     process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
   if (!raw) {
-    throw new Error(
-      "Missing Firebase Admin credentials. Set FIREBASE_SERVICE_ACCOUNT (JSON string)."
-    );
+    throw new Error("Missing FIREBASE_SERVICE_ACCOUNT (or *_JSON) env");
   }
 
-  // JSON文字列をそのまま貼る運用を想定（改行エスケープにも耐える）
+  // JSON文字列がそのまま入っている想定（Vercelの環境変数）
+  // 改行やエスケープの影響がある場合もあるので、一応 trim
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw.trim());
   } catch {
-    // Vercelの環境変数で `\n` が入るケース
-    return JSON.parse(raw.replace(/\\n/g, "\n"));
+    // たまに \" や \\n が混ざるケースの救済
+    const fixed = raw
+      .trim()
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"');
+    return JSON.parse(fixed);
   }
 }
 
-function initAdmin(): App {
+export function getAdminApp(): App {
   if (getApps().length) return getApps()[0]!;
-  const sa = getServiceAccount();
-
+  const serviceAccount = getServiceAccount();
   return initializeApp({
-    credential: cert({
-      projectId: sa.project_id,
-      clientEmail: sa.client_email,
-      privateKey: sa.private_key,
-    }),
+    credential: cert(serviceAccount),
   });
-}
-
-export function getAdminApp() {
-  return initAdmin();
 }
 
 export function getAdminAuth() {
