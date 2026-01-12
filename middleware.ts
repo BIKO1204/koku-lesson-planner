@@ -1,19 +1,30 @@
 import { withAuth } from "next-auth/middleware";
 
-// JWT の token に role か admin:true が入っていれば許可
-export default withAuth(
-  {
-    callbacks: {
-      authorized: ({ token }) => {
-        if (!token) return false;
-        const isAdmin = (token as any).role === "admin" || (token as any).admin === true;
-        return !!isAdmin;
-      },
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+export default withAuth({
+  callbacks: {
+    authorized: ({ token }) => {
+      if (!token) return false;
+
+      const t: any = token;
+      const email = (t.email || "").toLowerCase();
+
+      // ① NextAuth側に role/admin が入っている
+      const byRole = t.role === "admin" || t.admin === true;
+
+      // ② もしくは allowlist に入っている（Firebase側と揃える）
+      const byAllowlist = !!email && ADMIN_EMAILS.includes(email);
+
+      return byRole || byAllowlist;
     },
-    pages: { signIn: "/welcome" },
-  }
-);
+  },
+  pages: { signIn: "/welcome" },
+});
 
 export const config = {
-  matcher: ["/admin/:path*"], // /admin 配下すべてに適用
+  matcher: ["/admin/:path*"],
 };
