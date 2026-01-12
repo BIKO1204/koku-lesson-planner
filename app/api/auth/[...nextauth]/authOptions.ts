@@ -2,24 +2,67 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import admin from "firebase-admin";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebaseAdmin";
 
 /**
- * ADMIN_EMAILS（任意）: "a@x.com,b@y.com"
- * Firebase custom claims admin:true がある場合は、こちらが無くても admin になります。
+ * ✅ 管理者判定（3段階）
+ * 1) ADMIN_UIDS（最優先・最も確実）
+ * 2) Firebase custom claims（admin:true）
+ * 3) ADMIN_EMAILS（保険）
+ *
+ * どれか1つでも true なら NextAuth token に admin/role を載せる
  */
-const isAdminEmail = (email?: string | null) => {
-  if (!email) return false;
-  const allow = (process.env.ADMIN_EMAILS || "")
+
+const parseCsv = (v?: string | null) =>
+  (v || "")
     .split(",")
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.trim())
     .filter(Boolean);
-  return allow.includes(email.toLowerCase());
-};
 
-/**
- * Google OAuth の refresh token で access token を更新
- */
+const ADMIN_UIDS = parseCsv(process.env.ADMIN_UIDS);
+const ADMIN_EMAILS = parseCsv(process.env.ADMIN_EMAILS).map((e) =>
+  e.toLowerCase()
+);
+
+const isAdminUid = (uid?: string | null) => !!uid && ADMIN_UIDS.includes(uid);
+
+const isAdminEmail = (email?: string | null) =>
+  !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+
+async function isAdminByFirebaseClaims(uid?: string | null) {
+  if (!uid) return false;
+  try {
+    const auth = getAdminAuth(); // ← server-only の初期化を必ず通す
+    const u = await auth.getUser(uid);
+    return u.customClaims?.admin === true;
+  } catch {
+    return false;
+  }
+}
+
+/** GoogleのUID（sub）を常に安定して取得 */
+function pickUid({
+  token,
+  account,
+  user,
+  profile,
+}: {
+  token: any;
+  account: any;
+  user: any;
+  profile: any;
+}) {
+  return (
+    account?.providerAccountId ?? // Google sub（最優先）
+    token?.userId ??
+    token?.sub ??
+    profile?.sub ??
+    user?.id ??
+    null
+  );
+}
+
+/** access token refresh（Google） */
 async function refreshAccessToken(token: any) {
   if (!token?.refreshToken) return { ...token, error: "NoRefreshToken" as const };
 
@@ -46,27 +89,6 @@ async function refreshAccessToken(token: any) {
   };
 }
 
-/**
- * Firebase custom claims から admin 判定（admin:true）
- * ※ getAdminDb() を呼んでおくことで admin SDK 初期化が担保されやすい
- */
-async function isAdminByFirebaseClaims(uid?: string | null) {
-  if (!uid) return false;
-
-  try {
-    // 初期化担保（プロジェクトの実装に依存）
-    getAdminDb();
-
-    const u = await admin.auth().getUser(uid);
-    return u.customClaims?.admin === true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * NextAuth
- */
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -86,18 +108,28 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV !== "production",
 
+  pages: { signIn: "/welcome" },
+
   callbacks: {
     /**
-     * ここでは user.id が無いケースがあるので、
-     * Google の providerAccountId (= profile.sub) をUIDとして採用して統一します。
+     * ✅ callbackUrl 増殖(414)を止めるためのリダイレクト制御
+     * - 相対パスのみ許可
+     * - 同一オリジンのみ許可
+     */
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      try {
+        const u = new URL(url);
+        if (u.origin === baseUrl) return url;
+      } catch {}
+      return `${baseUrl}/admin`;
+    },
+
+    /**
+     * ✅ users コレクションへの最終ログイン情報保存
      */
     async signIn({ user, account, profile }) {
-      const uid =
-        account?.providerAccountId ??
-        (profile as any)?.sub ??
-        (user as any)?.id ??
-        null;
-
+      const uid = pickUid({ token: {}, account, user, profile });
       if (!uid) return false;
 
       await getAdminDb()
@@ -117,43 +149,36 @@ export const authOptions: NextAuthOptions = {
     },
 
     /**
-     * JWTに、admin/role/userId/accessToken 等を載せる
+     * ✅ token に admin/role/userId/accessToken を載せる
      */
     async jwt({ token, account, user, profile }) {
-      // UIDを一貫させる（Firebase UID と揃えたいので Google sub を優先）
-      const uid =
-        account?.providerAccountId ??
-        (token as any)?.userId ??
-        token.sub ??
-        (profile as any)?.sub ??
-        (user as any)?.id ??
-        null;
+      const uid = pickUid({ token, account, user, profile });
+      if (uid) (token as any).userId = uid;
 
-      // 初回ログイン（account がある時）に admin 判定を確定させて token に載せる
+      // 初回ログイン時（accountあり）に判定を確定
       if (account && user) {
         const email =
-          user.email ?? (profile as any)?.email ?? token.email ?? null;
+          user.email ?? (profile as any)?.email ?? (token as any)?.email ?? null;
 
-        // ① メールallowlist（任意）
-        const byEmail = isAdminEmail(email);
+        // 優先順位：UID allowlist ＞ Firebase claims ＞ Email allowlist
+        const byUid = isAdminUid(uid);
+        const byClaims = byUid ? true : await isAdminByFirebaseClaims(uid);
+        const byEmail = byUid || byClaims ? true : isAdminEmail(email);
 
-        // ② Firebase custom claims（admin:true）
-        const byClaims = await isAdminByFirebaseClaims(uid);
+        const isAdmin = byUid || byClaims || byEmail;
 
-        const isAdmin = byEmail || byClaims;
+        (token as any).accessToken = (account as any).access_token;
+        (token as any).refreshToken = (account as any).refresh_token;
+        (token as any).accessTokenExpires =
+          ((account as any).expires_at ?? 0) * 1000;
 
-        return {
-          ...token,
-          accessToken: (account as any).access_token,
-          refreshToken: (account as any).refresh_token,
-          accessTokenExpires: ((account as any).expires_at ?? 0) * 1000,
-          userId: uid,
-          admin: isAdmin,
-          role: isAdmin ? "admin" : "user",
-        };
+        (token as any).admin = isAdmin;
+        (token as any).role = isAdmin ? "admin" : "user";
+
+        return token;
       }
 
-      // 以降は通常リクエスト：期限内ならそのまま
+      // 通常リクエスト：期限内ならそのまま
       const exp =
         typeof (token as any).accessTokenExpires === "number"
           ? (token as any).accessTokenExpires
@@ -161,18 +186,17 @@ export const authOptions: NextAuthOptions = {
 
       if (Date.now() < exp) return token;
 
-      // 期限切れなら refresh（admin/role は ...token で保持される）
+      // 期限切れなら refresh（admin/role は維持される）
       return await refreshAccessToken(token);
     },
 
     /**
-     * session に token の値を載せる（middleware が見るのは token なのでここも整える）
+     * ✅ session へ token を反映
      */
     async session({ session, token }) {
       (session as any).accessToken = (token as any).accessToken;
       (session as any).error = (token as any).error;
-
-      (session as any).userId = (token as any).userId ?? token.sub;
+      (session as any).userId = (token as any).userId ?? (token as any).sub;
 
       (session.user as any).admin = (token as any).admin === true;
       (session.user as any).role = (token as any).role ?? "user";
@@ -180,6 +204,4 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-
-  pages: { signIn: "/welcome" },
 };
