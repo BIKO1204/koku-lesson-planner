@@ -314,7 +314,7 @@ export default function ClientPlan() {
         let hasClaim = false;
         if (u) {
           try {
-            const r = await u.getIdTokenResult(true);
+            const r = await u.getIdTokenResult(true); // ✅ claim反映を確実に
             hasClaim = r?.claims?.admin === true;
           } catch {
             hasClaim = false;
@@ -1129,43 +1129,57 @@ ${languageActivities}
     router.push("/plan/history");
   };
 
-  /* ===================== ★(5) JSONLダウンロード／fine-tune開始 ===================== */
+  /* ===================== ★(5) JSONLダウンロード／fine-tune開始（403対策込み） ===================== */
   const downloadJsonl = async () => {
     try {
       if (!isFineTuneAdmin) {
         alert("この操作は管理者のみ実行できます");
         return;
       }
-      if (!auth.currentUser) {
+      const u = auth.currentUser;
+      if (!u) {
         alert("Firebaseログインが必要です");
         return;
       }
-      const token = await auth.currentUser.getIdToken();
 
-      // ✅ 新export仕様（scope=all + optInOnly=1）に対応。古い実装でも無視されるパラメータなので安全。
-      const res = await fetch("/api/fine-tune/export?scope=all&maxTotal=5000&pageSize=500&optInOnly=1&limit=5000", {
+      // ✅ admin claim 反映前トークンで403になるのを防ぐ
+      const tokenResult = await u.getIdTokenResult(true);
+      const token = tokenResult.token;
+      const isAdminClaim = tokenResult?.claims?.admin === true;
+      if (!isAdminClaim) {
+        alert("admin権限がIDトークンに反映されていません。再ログイン/再読み込みしてから再実行してください。");
+        return;
+      }
+
+      const url =
+        "/api/fine-tune/export" +
+        "?target=lesson" +
+        "&scope=all" +
+        "&maxTotal=5000" +
+        "&pageSize=500" +
+        "&optInOnly=1";
+
+      const res = await fetch(url, {
+        method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
-        alert(await res.text());
+        const t = await res.text().catch(() => "");
+        alert(`export失敗: ${res.status}\n${t}`);
         return;
       }
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = URL.createObjectURL(blob);
 
-      // 可能なら content-disposition からファイル名を拾う
       const cd = res.headers.get("content-disposition") || "";
       const m = cd.match(/filename="([^"]+)"/);
-      a.download = m?.[1] || "train.jsonl";
+      a.download = m?.[1] || "train_lesson_all.jsonl";
 
-      document.body.appendChild(a);
       a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(a.href);
     } catch (e: any) {
       alert(`ダウンロードに失敗しました：${e?.message || String(e)}`);
     }
@@ -1177,27 +1191,47 @@ ${languageActivities}
         alert("この操作は管理者のみ実行できます");
         return;
       }
-      if (!auth.currentUser) {
+      const u = auth.currentUser;
+      if (!u) {
         alert("Firebaseログインが必要です");
         return;
       }
-      const token = await auth.currentUser.getIdToken();
 
-      // 1) export（JSONL取得）
-      const exp = await fetch("/api/fine-tune/export?scope=all&maxTotal=5000&pageSize=500&optInOnly=1&limit=5000", {
+      // ✅ admin claim 反映前トークンで403になるのを防ぐ
+      const tokenResult = await u.getIdTokenResult(true);
+      const token = tokenResult.token;
+      const isAdminClaim = tokenResult?.claims?.admin === true;
+      if (!isAdminClaim) {
+        alert("admin権限がIDトークンに反映されていません。再ログイン/再読み込みしてから再実行してください。");
+        return;
+      }
+
+      // 1) export
+      const expUrl =
+        "/api/fine-tune/export" +
+        "?target=lesson" +
+        "&scope=all" +
+        "&maxTotal=5000" +
+        "&pageSize=500" +
+        "&optInOnly=1";
+
+      const exp = await fetch(expUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       if (!exp.ok) {
-        alert(await exp.text());
-        return;
-      }
-      const jsonlText = await exp.text();
-      if (!jsonlText.trim()) {
-        alert("学習データが空です（対象の授業案が見つかりませんでした）");
+        const t = await exp.text().catch(() => "");
+        alert(`export失敗: ${exp.status}\n${t}`);
         return;
       }
 
-      // 2) start（fine-tune開始）
+      const jsonlText = await exp.text();
+      if (!jsonlText.trim()) {
+        alert("学習データが空です（同意ONの授業案が見つかりませんでした）");
+        return;
+      }
+
+      // 2) start
       const st = await fetch("/api/fine-tune/start", {
         method: "POST",
         headers: {
