@@ -33,6 +33,10 @@ export default function AdminMenu() {
     <nav>
       <ul>
         <li><a href="/admin/userList">ユーザー管理</a></li>
+
+        {/* ★追加 */}
+        <li><a href="/admin/fine-tune">ファインチューニング</a></li>
+
         <li><a href="/admin/settings">システム設定</a></li>
         <li><a href="/admin/logs">アクセスログ</a></li>
         <li><a href="/admin/inquiries">問い合わせ管理</a></li>

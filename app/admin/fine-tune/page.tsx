@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { auth } from "@/app/firebaseConfig";
-import { onAuthStateChanged } from "firebase/auth";
+import { useMemo, useState } from "react";
+import { signIn, useSession } from "next-auth/react";
 
 export const dynamic = "force-dynamic";
 
 export default function FineTuneAdminPage() {
-  const [ready, setReady] = useState(false);
+  const { data: session, status } = useSession();
   const [busy, setBusy] = useState(false);
-  const [email, setEmail] = useState<string>("");
-  const [hasAdminClaim, setHasAdminClaim] = useState(false);
+
+  const email = (session?.user?.email ?? "").toLowerCase();
+  const isAdmin = (session?.user as any)?.admin === true || (session?.user as any)?.role === "admin";
 
   // クライアント側 allowlist（表示・操作ガード用）
   const allowList = useMemo(() => {
@@ -21,42 +21,24 @@ export default function FineTuneAdminPage() {
       .filter(Boolean);
   }, []);
 
-  const inAllowList = !!email && allowList.includes(email.toLowerCase());
-  const canUse = inAllowList || hasAdminClaim;
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setReady(true);
-      if (!u) {
-        setEmail("");
-        setHasAdminClaim(false);
-        return;
-      }
-      const em = (u.email ?? "").toLowerCase();
-      setEmail(em);
-      try {
-        const r = await u.getIdTokenResult(true);
-        setHasAdminClaim(r?.claims?.admin === true);
-      } catch {
-        setHasAdminClaim(false);
-      }
-    });
-    return () => unsub();
-  }, []);
+  const inAllowList = !!email && allowList.includes(email);
+  const canUse = isAdmin || inAllowList;
 
   const getToken = async (): Promise<string | null> => {
-    const u = auth.currentUser;
-    if (!u) {
-      alert("Firebaseログインが必要です");
+    if (status !== "authenticated") {
+      alert("ログインが必要です");
       return null;
     }
-    // claimがなくても allowlist なら通す（サーバーも ADMIN_EMAILS で許可される前提）
     if (!canUse) {
-      alert("管理者権限がありません（allowlist/claim どちらも該当なし）");
+      alert("管理者権限がありません（allowlist/role どちらも該当なし）");
       return null;
     }
-    const r = await u.getIdTokenResult(true);
-    return r.token;
+    const t = (session as any)?.accessToken;
+    if (!t) {
+      alert("accessToken が見つかりません（NextAuth session に載っていません）");
+      return null;
+    }
+    return String(t);
   };
 
   const downloadJsonl = async () => {
@@ -105,7 +87,6 @@ export default function FineTuneAdminPage() {
 
     setBusy(true);
     try {
-      // 1) export
       const expUrl =
         "/api/fine-tune/export" +
         "?target=lesson" +
@@ -130,7 +111,6 @@ export default function FineTuneAdminPage() {
         return;
       }
 
-      // 2) start
       const st = await fetch("/api/fine-tune/start", {
         method: "POST",
         headers: {
@@ -157,15 +137,24 @@ export default function FineTuneAdminPage() {
     }
   };
 
-  if (!ready) return <div style={{ padding: 16 }}>Loading...</div>;
-  if (!auth.currentUser) return <div style={{ padding: 16 }}>ログインしてください</div>;
+  if (status === "loading") return <div style={{ padding: 16 }}>Loading...</div>;
+
+  if (status !== "authenticated") {
+    return (
+      <div style={{ padding: 16 }}>
+        <p>ログインしてください</p>
+        <button onClick={() => signIn("google", { callbackUrl: "/admin" })}>Googleでログイン</button>
+      </div>
+    );
+  }
+
   if (!canUse) return <div style={{ padding: 16 }}>管理者権限がありません</div>;
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", padding: 16 }}>
       <h1 style={{ fontSize: 20, fontWeight: "bold" }}>管理者：Fine-tune</h1>
       <div style={{ marginTop: 8, opacity: 0.8, fontSize: 13 }}>
-        login: {email || "(no email)"} / allowlist: {String(inAllowList)} / claim: {String(hasAdminClaim)}
+        login: {email || "(no email)"} / allowlist: {String(inAllowList)} / admin: {String(isAdmin)}
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
