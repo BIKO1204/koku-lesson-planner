@@ -1,9 +1,10 @@
+// app/admin/fine-tune/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 
-type Target = "lesson" | "practice";
+type Target = "plan" | "practice"; // ★ UIも内部もこれで統一
 
 type SlimRow = {
   id: string;
@@ -62,7 +63,7 @@ export default function AdminFineTunePage() {
   }, [uid, target]);
 
   async function toggleOptIn(rowId: string, collection: string, next: boolean) {
-    setBusyId(rowId);
+    setBusyId(`${collection}:${rowId}`);
     try {
       const token = await getBearer();
       const res = await fetch(`/api/admin/fine-tune/optin?t=${Date.now()}`, {
@@ -77,9 +78,10 @@ export default function AdminFineTunePage() {
       });
       if (!res.ok) throw new Error(await res.text());
 
-      // 楽観更新
       setRows((prev) =>
-        prev.map((r) => (r.id === rowId && r.collection === collection ? { ...r, fineTuneOptIn: next } : r))
+        prev.map((r) =>
+          r.id === rowId && r.collection === collection ? { ...r, fineTuneOptIn: next } : r
+        )
       );
     } finally {
       setBusyId(null);
@@ -113,12 +115,11 @@ export default function AdminFineTunePage() {
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 22, marginBottom: 12 }}>管理者：ファインチューニング</h1>
 
-      {/* ▼ ファインチューニングボタン枠 */}
       <section style={{ border: "2px solid #00838f", borderRadius: 8, padding: 12, background: "#e0f7fa" }}>
         <strong style={{ color: "#006064" }}>🧠 ファインチューニング（管理者操作）</strong>
 
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          <button onClick={() => setTarget("lesson")} style={btn(target === "lesson")}>📋 授業（lesson）</button>
+          <button onClick={() => setTarget("plan")} style={btn(target === "plan")}>📋 授業案（plan）</button>
           <button onClick={() => setTarget("practice")} style={btn(target === "practice")}>📷 実践（practice）</button>
           <button onClick={() => loadList(target)} disabled={loading} style={btn(false)}>
             {loading ? "⏳ 更新中..." : "🔄 一覧を更新"}
@@ -145,7 +146,6 @@ export default function AdminFineTunePage() {
         </small>
       </section>
 
-      {/* ▼ 一覧 */}
       <section style={{ marginTop: 16 }}>
         <h2 style={{ fontSize: 16, marginBottom: 8 }}>一覧（{target}）</h2>
         {rows.length === 0 ? (
@@ -153,12 +153,22 @@ export default function AdminFineTunePage() {
         ) : (
           <div style={{ border: "1px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
             {rows.map((r) => (
-              <div key={`${r.collection}_${r.id}`} style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px", gap: 8, padding: 10, borderTop: "1px solid #eee", alignItems: "center" }}>
+              <div
+                key={`${r.collection}_${r.id}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "120px 1fr 160px",
+                  gap: 8,
+                  padding: 10,
+                  borderTop: "1px solid #eee",
+                  alignItems: "center",
+                }}
+              >
                 <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
                     type="checkbox"
                     checked={r.fineTuneOptIn}
-                    disabled={busyId === r.id}
+                    disabled={busyId === `${r.collection}:${r.id}`}
                     onChange={(e) => toggleOptIn(r.id, r.collection, e.target.checked)}
                   />
                   opt-in
@@ -194,6 +204,7 @@ function btn(active: boolean): React.CSSProperties {
     cursor: "pointer",
   };
 }
+
 const dlBtn: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 8,

@@ -5,18 +5,20 @@ import { collectionsByTarget, type FineTuneTarget } from "@/lib/fineTune/collect
 type Args = {
   target: FineTuneTarget;
   scope: "all" | "mine";
-  ownerUid?: string;     // scope==="mine" の時だけ入れる
+  ownerUid?: string;
   optInOnly: boolean;
   limit: number;
 };
 
 export async function fetchFineTuneDocs(args: Args) {
   const db = getAdminDb();
-  const colls = collectionsByTarget[args.target];
+  const colls = collectionsByTarget[args.target] ?? [];
+
+  console.log("[fineTune] target=", args.target, "colls=", colls);
 
   const out: any[] = [];
+
   for (const collName of colls) {
-    // ★ opt-in 条件や ownerUid 条件はデータ構造に合わせて調整
     let q: FirebaseFirestore.Query = db.collection(collName);
 
     if (args.scope === "mine" && args.ownerUid) {
@@ -26,11 +28,18 @@ export async function fetchFineTuneDocs(args: Args) {
       q = q.where("fineTuneOptIn", "==", true);
     }
 
-    const snap = await q.limit(args.limit).get();
-    snap.forEach((d) => out.push({ id: d.id, collection: collName, ...d.data() }));
+    const remaining = Math.max(args.limit - out.length, 0);
+    if (remaining === 0) break;
 
+    // ★ まずは orderBy なしで “取れるか” を優先（index問題を避ける）
+    const snap = await q.limit(remaining).get();
+
+    console.log("[fineTune] coll=", collName, "got=", snap.size);
+
+    snap.forEach((d) => out.push({ id: d.id, collection: collName, ...d.data() }));
     if (out.length >= args.limit) break;
   }
 
-  return out.slice(0, args.limit);
+  console.log("[fineTune] total=", out.length);
+  return out;
 }
