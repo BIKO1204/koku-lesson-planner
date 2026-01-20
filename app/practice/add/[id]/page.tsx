@@ -29,9 +29,6 @@ type PracticeRecord = {
   // ▼ 確認メタデータ（ローカル保持用）
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
-
-  // ▼ 学習許諾
-  fineTuneOptIn?: boolean;
 };
 
 /** ローカル下書き：圧縮画像(base64)を持ってOK */
@@ -364,19 +361,9 @@ export default function PracticeAddPage() {
   // 認証UID（クラウド下書き保存用）
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
 
-  // ▼ 管理者判定（custom claims）
-  const [isAdmin, setIsAdmin] = useState(false);
-
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUid(u?.uid ?? null);
-      if (!u) {
-        setIsAdmin(false);
-        return;
-      }
-      // ★ claims反映が遅れるので true で強制更新
-      const tokenResult = await u.getIdTokenResult(true);
-      setIsAdmin(tokenResult?.claims?.admin === true);
     });
     return () => unsub();
   }, []);
@@ -415,14 +402,10 @@ export default function PracticeAddPage() {
   const [needsReconfirm, setNeedsReconfirm] = useState<boolean>(true);
   const POLICY_VERSION = "2025-09-02";
 
-  // ▼ NEW: 見やすさ設定
+  // ▼ 見やすさ設定
   const [enhancePreview, setEnhancePreview] = useState<boolean>(true);
   const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);
   const [compressLongEdge, setCompressLongEdge] = useState<number>(1400);
-
-  // ▼ NEW: 学習許諾（fineTuneOptIn）
-  const [fineTuneOptIn, setFineTuneOptIn] = useState<boolean>(false);
-  const [fineTuneBusy, setFineTuneBusy] = useState<boolean>(false);
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
@@ -486,9 +469,6 @@ export default function PracticeAddPage() {
         setBoardImages(imgs);
         setCompressedImages(imgs);
 
-        // ▼ 学習許諾の読み込み
-        setFineTuneOptIn(!!data.fineTuneOptIn);
-
         setRecord({
           lessonId: id,
           practiceDate: data.practiceDate || "",
@@ -503,7 +483,6 @@ export default function PracticeAddPage() {
           modelType: lessonType,
           confirmedNoPersonalInfo: data.confirmedNoPersonalInfo ?? undefined,
           imagesSignature: data.imagesSignature ?? undefined,
-          fineTuneOptIn: !!data.fineTuneOptIn,
         });
 
         if (data.imagesSignature) setPreviousSignature(String(data.imagesSignature));
@@ -850,7 +829,6 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
-      fineTuneOptIn,
     });
   };
 
@@ -924,9 +902,6 @@ export default function PracticeAddPage() {
         confirmedByEmail: userEmail,
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
-
-        // ▼ 学習許諾（保存する）
-        fineTuneOptIn: !!rec.fineTuneOptIn,
       },
       { merge: true }
     );
@@ -963,7 +938,6 @@ export default function PracticeAddPage() {
         unitName: meta.unitName,
         confirmedNoPersonalInfo: true,
         imagesSignature: currentSignature,
-        fineTuneOptIn,
       };
       await saveRecordToIndexedDB(toSaveLocal);
 
@@ -995,69 +969,6 @@ export default function PracticeAddPage() {
       setUploading(false);
     }
   };
-
-  /* =========================================================
-   * ▼ Fine-tune（実践）ユーティリティ（授業案作成ページと同等のボタン枠）
-   * ======================================================= */
-  async function downloadPracticeJsonl(scope: "mine" | "all") {
-    const u = auth.currentUser;
-    if (!u) {
-      alert("ログインが必要です。");
-      return;
-    }
-    setFineTuneBusy(true);
-    try {
-      const token = await u.getIdToken(true);
-
-      const url =
-        scope === "all"
-          ? "/api/fine-tune/export?target=practice&scope=all&maxTotal=5000&pageSize=500&optInOnly=1"
-          : "/api/fine-tune/export?target=practice&scope=mine&maxTotal=5000&pageSize=500&optInOnly=0";
-
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(`${res.status} ${t}`);
-      }
-
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-
-      a.download = scope === "all" ? "train_practice_all.jsonl" : "train_practice_mine.jsonl";
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } finally {
-      setFineTuneBusy(false);
-    }
-  }
-
-  async function updateFineTuneOptIn(next: boolean) {
-    if (!modelLocked) {
-      alert("モデルタイプが確定してから操作してください（授業案から遷移してください）。");
-      return;
-    }
-    const u = auth.currentUser?.uid;
-    if (!u) {
-      alert("ログインが必要です。");
-      return;
-    }
-    const practiceCollection = toPracticeFromLesson(modelType);
-    await setDoc(
-      doc(db, practiceCollection, id),
-      {
-        fineTuneOptIn: next,
-        fineTuneOptInAt: serverTimestamp(),
-        fineTuneOptInBy: u,
-      },
-      { merge: true }
-    );
-    setFineTuneOptIn(next);
-  }
 
   /* =========================================================
    * UI
@@ -1133,57 +1044,6 @@ export default function PracticeAddPage() {
 
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
-
-        {/* ✅ 追加：授業案作成ページと同様の「ファインチューン」ボタン枠（実践） */}
-        <section style={{ ...boxStyle, borderColor: "#00838f", backgroundColor: "#e0f7fa" }}>
-          <strong style={{ color: "#006064" }}>🧠 ファインチューニング（実践データ）</strong>
-
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input
-                type="checkbox"
-                checked={fineTuneOptIn}
-                onChange={(e) => updateFineTuneOptIn(e.target.checked)}
-                disabled={!modelLocked}
-              />
-              この実践記録を学習対象として利用してよい（fineTuneOptIn）
-            </label>
-
-            <div style={{ display: "grid", gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr", gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => downloadPracticeJsonl("mine")}
-                disabled={fineTuneBusy}
-                style={{ ...secondaryBtnStyle, backgroundColor: "#ffffff", color: "#006064", border: "1px solid #4dd0e1" }}
-                title="自分の実践記録のみをJSONLでダウンロード"
-              >
-                {fineTuneBusy ? "⏳ 生成中..." : "⬇ 自分の実践をJSONLでDL"}
-              </button>
-
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => downloadPracticeJsonl("all")}
-                  disabled={fineTuneBusy}
-                  style={{ ...secondaryBtnStyle, backgroundColor: "#b2ebf2", color: "#004d40" }}
-                  title="fineTuneOptIn=true の実践記録のみを全件JSONLでダウンロード（管理者のみ）"
-                >
-                  {fineTuneBusy ? "⏳ 生成中..." : "⬇ Opt-in実践を全件JSONLでDL"}
-                </button>
-              )}
-            </div>
-
-            <small style={{ color: "#006064" }}>
-              ※「全件DL」は管理者のみ表示。opt-in=true の実践のみを含みます。Authorization(Bearer) が付与されているか Network で確認できます。
-            </small>
-
-            {!modelLocked && (
-              <small style={{ color: "#b71c1c" }}>
-                ※モデルタイプ確定前は opt-in の更新ができません（授業案から遷移 or 共有一覧の「編集」から開いてください）。
-              </small>
-            )}
-          </div>
-        </section>
 
         {/* 注意書き */}
         <div style={noticeBoxStyle}>
