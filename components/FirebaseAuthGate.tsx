@@ -12,50 +12,40 @@ export default function FirebaseAuthGate() {
     let cancelled = false;
 
     const run = async () => {
-      // NextAuthが未確定なら何もしない
-      if (status === "loading") return;
-
-      // NextAuthが未ログインならFirebaseもログアウト
-      if (status === "unauthenticated") {
-        if (auth.currentUser) {
-          try {
-            await fbSignOut(auth);
-          } catch (e) {
-            console.error("Firebase signOut failed:", e);
-          }
-        }
-        return;
-      }
-
-      // NextAuthログイン済み
-      const emailRaw = session?.user?.email;
-      const email = (emailRaw ?? "").trim().toLowerCase();
-      if (!email) return;
-
-      // Firebase側がすでに同一メールでログインしているなら何もしない
-      if (auth.currentUser?.email?.toLowerCase() === email) return;
-
       try {
+        // NextAuth 未確定の間は何もしない
+        if (status === "loading") return;
+
+        // NextAuth が未ログインなら Firebase もログアウト
+        if (status === "unauthenticated") {
+          if (auth.currentUser) await fbSignOut(auth);
+          return;
+        }
+
+        // ここから authenticated
+        const emailRaw = session?.user?.email ?? "";
+        const email = emailRaw.trim().toLowerCase();
+        if (!email) return;
+
+        // すでに Firebase ログイン済みなら基本何もしない
+        if (auth.currentUser) return;
+
+        // custom token 取得 → Firebaseサインイン
         const res = await fetch("/api/firebase/custom-token", { method: "GET" });
         if (!res.ok) throw new Error(await res.text());
 
         const json = await res.json();
+        const customToken = json?.customToken; // ★ここが重要（token ではない）
+        if (!customToken) throw new Error("customToken missing in response");
 
-        // ★ここが重要：customToken を使う
-        const customToken = json?.customToken;
-        if (!customToken) throw new Error("customToken is missing in response");
-
-        await signInWithCustomToken(auth, customToken);
         if (cancelled) return;
-
-        // console.log("Firebase signed in:", auth.currentUser?.uid, auth.currentUser?.email);
+        await signInWithCustomToken(auth, customToken);
       } catch (e) {
-        console.error("Firebase custom-token sign-in failed:", e);
+        console.error("FirebaseAuthGate failed:", e);
       }
     };
 
     run();
-
     return () => {
       cancelled = true;
     };
