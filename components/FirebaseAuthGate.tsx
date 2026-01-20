@@ -1,28 +1,21 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { signInWithCustomToken, signOut as fbSignOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
-type ApiOk = { ok: true; customToken: string; uid?: string };
-type ApiNg = { ok: false; error: string };
-type ApiRes = ApiOk | ApiNg;
-
-const STORAGE_KEY = "firebaseAuthGate:lastEmail";
-
 export default function FirebaseAuthGate() {
   const { data: session, status } = useSession();
-  const runningRef = useRef(false);
 
   useEffect(() => {
-    const email = (session?.user?.email ?? "").trim().toLowerCase();
+    let cancelled = false;
 
     const run = async () => {
-      // 未確定なら何もしない
+      // NextAuthが未確定なら何もしない
       if (status === "loading") return;
 
-      // 未ログインになったら Firebase もログアウト
+      // NextAuthが未ログインならFirebaseもログアウト
       if (status === "unauthenticated") {
         if (auth.currentUser) {
           try {
@@ -34,49 +27,38 @@ export default function FirebaseAuthGate() {
         return;
       }
 
-      // authenticated だが email が無いケースは何もしない
-      if (status !== "authenticated" || !email) return;
+      // NextAuthログイン済み
+      const emailRaw = session?.user?.email;
+      const email = (emailRaw ?? "").trim().toLowerCase();
+      if (!email) return;
 
-      // 二重実行防止
-      if (runningRef.current) return;
-
-      // Firebase 側がすでに同じ email でログイン済みなら何もしない
-      const currentEmail = (auth.currentUser?.email ?? "").trim().toLowerCase();
-      if (auth.currentUser && currentEmail === email) {
-        // 念のためトークン更新（ルール評価の遅延対策）
-        auth.currentUser.getIdToken(true).catch(() => {});
-        return;
-      }
-
-      // 同一メールでの連打防止（レンダー連鎖対策）
-      const last = typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
-      if (last === email && currentEmail !== email) {
-        return;
-      }
-
-      runningRef.current = true;
+      // Firebase側がすでに同一メールでログインしているなら何もしない
+      if (auth.currentUser?.email?.toLowerCase() === email) return;
 
       try {
-        if (typeof window !== "undefined") sessionStorage.setItem(STORAGE_KEY, email);
+        const res = await fetch("/api/firebase/custom-token", { method: "GET" });
+        if (!res.ok) throw new Error(await res.text());
 
-        const res = await fetch("/api/firebase/custom-token", { method: "GET", cache: "no-store" });
-        const json = (await res.json()) as ApiRes;
+        const json = await res.json();
 
-        if (!res.ok || !json.ok) {
-          const msg = !json.ok ? json.error : `custom-token api error (${res.status})`;
-          throw new Error(msg);
-        }
+        // ★ここが重要：customToken を使う
+        const customToken = json?.customToken;
+        if (!customToken) throw new Error("customToken is missing in response");
 
-        const cred = await signInWithCustomToken(auth, json.customToken);
-        await cred.user.getIdToken(true); // ★ 重要：直後の Firestore 権限判定を安定させる
+        await signInWithCustomToken(auth, customToken);
+        if (cancelled) return;
+
+        // console.log("Firebase signed in:", auth.currentUser?.uid, auth.currentUser?.email);
       } catch (e) {
         console.error("Firebase custom-token sign-in failed:", e);
-      } finally {
-        runningRef.current = false;
       }
     };
 
     run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [status, session?.user?.email]);
 
   return null;
