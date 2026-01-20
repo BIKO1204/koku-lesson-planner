@@ -2,10 +2,14 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
-import { getAdminAuth } from "@/lib/firebaseAdmin";
+import { getAdminAuth, getAdminProjectId } from "@/lib/firebaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function isUserNotFound(e: any) {
+  return e?.code === "auth/user-not-found";
+}
 
 export async function GET() {
   try {
@@ -30,28 +34,39 @@ export async function GET() {
       await adminAuth.getUser(preferredUid);
       uidToUse = preferredUid;
     } catch (e: any) {
-      // 2) preferredUid が無いなら、email で既存ユーザーを探す（←これが重要）
+      // not-found のときだけ次へ（それ以外は異常系として上げる）
+      if (!isUserNotFound(e)) throw e;
+
+      // 2) preferredUid が無いなら email で既存ユーザーを探す（email重複回避）
       try {
         const byEmail = await adminAuth.getUserByEmail(email);
-        uidToUse = byEmail.uid; // 既存UIDを採用（email重複エラー回避）
+        uidToUse = byEmail.uid;
       } catch (e2: any) {
-        // 3) email も無いなら、新規作成（preferredUid で作る）
-        if (e2?.code === "auth/user-not-found") {
-          await adminAuth.createUser({ uid: preferredUid, email });
-          uidToUse = preferredUid;
-        } else {
-          throw e2;
-        }
+        if (!isUserNotFound(e2)) throw e2;
+
+        // 3) email も無いなら新規作成（preferredUid で作る）
+        await adminAuth.createUser({ uid: preferredUid, email });
+        uidToUse = preferredUid;
       }
     }
 
-    // 必要なら claim もここで付与（例：adminなど）
+    // 必要ならここで claims を付ける（例：admin）
     // await adminAuth.setCustomUserClaims(uidToUse, { admin: true });
 
     const customToken = await adminAuth.createCustomToken(uidToUse);
-    return NextResponse.json({ ok: true, customToken, uid: uidToUse });
+
+    return NextResponse.json({
+      ok: true,
+      customToken,
+      uid: uidToUse,
+      // デバッグ用（本番で消してもOK）
+      adminProjectId: getAdminProjectId?.(),
+    });
   } catch (e: any) {
     console.error("[custom-token] error:", e?.stack || e);
-    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: String(e?.message || e) },
+      { status: 500 }
+    );
   }
 }
