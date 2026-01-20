@@ -1,19 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, CSSProperties, FormEvent } from "react";
+import { useState, useEffect, useRef, CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { db, auth } from "../firebaseConfig";
-import {
-  doc,
-  setDoc,
-  collection,
-  getDocs,
-  serverTimestamp,
-  getDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { doc, setDoc, collection, getDocs, serverTimestamp, getDoc, updateDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSession } from "next-auth/react";
 
@@ -26,7 +18,9 @@ const authors = [
   { label: "話し合い", id: "discussion-model-id", collection: "lesson_plans_discussion" },
   { label: "作文", id: "writing-model-id", collection: "lesson_plans_writing" },
   { label: "言語活動", id: "language-activity-model-id", collection: "lesson_plans_language_activity" },
-];
+] as const;
+
+type AuthorId = (typeof authors)[number]["id"];
 
 type StyleModel = {
   id: string;
@@ -66,10 +60,15 @@ type LessonPlanStored = {
   childVision: string;
   lessonPlanList: string[];
   languageActivities: string;
-  selectedStyleId: string;
+
+  /** 互換のため残す（= 教育観モデルID） */
+  selectedStyleId: string; // 教育観モデルID（任意）
+  usedStyleName?: string | null; // 画面で見せる用（教育観モデル名 or 作成モデル名）
+  /** 保存先カテゴリ（必須） */
+  selectedAuthorId?: string | null;
+
   result: ParsedResult;
   timestamp: string;
-  usedStyleName?: string | null;
 
   // ★本人同意フラグ（学習提供）
   allowTrain?: boolean;
@@ -89,9 +88,13 @@ type LessonPlanDraft = {
   childVision: string;
   languageActivities: string;
   lessonPlanList: string[];
-  selectedStyleId: string;
-  selectedStyleName?: string;
+
+  /** 互換のため残す（= 教育観モデルID） */
+  selectedStyleId: string; // 教育観モデルID（任意）
+  selectedStyleName?: string; // 教育観モデル名（任意）
+  /** 保存先カテゴリ（必須） */
   selectedAuthorId?: string | null;
+
   result?: ParsedResult | null;
   timestamp: string;
   isDraft: true;
@@ -133,9 +136,43 @@ function toAssistantPlanMarkdown(r: ParsedResult): string {
   return parts.join("\n\n").trim();
 }
 
+/* ===================== 4モデル別 方針テキスト ===================== */
+function getAuthorGuidance(label: string): string {
+  switch (label) {
+    case "読解":
+      return [
+        "・本文の叙述（ことば）を根拠にして考える活動を中心にする。",
+        "・『読み取る→確かめる→深める（解釈）→表現する』の流れが自然になるようにする。",
+        "・発問は『どこからそう言える？』が成立する形にする。",
+        "・評価は、根拠の示し方／読みの更新／言葉への着目が見えるようにする。",
+      ].join("\n");
+    case "話し合い":
+      return [
+        "・目的（何を決める/深める/共有するか）を明確にし、対話の型（聞く→つなぐ→深める）を入れる。",
+        "・論点（比べる視点、理由、根拠）を用意し、役割やルール（相づち/質問/言い換え）を具体化する。",
+        "・評価は、根拠のある発言／他者の意見の受け止め／話し合いの進め方が見えるようにする。",
+      ].join("\n");
+    case "作文":
+      return [
+        "・『目的/相手/内容』をはっきりさせ、構成（はじめ/中/おわり）や段落の見通しを持たせる。",
+        "・モデル文や観点付きの推敲（分かりやすさ/具体さ/順序）を入れ、書く→直す→伝えるの往還をつくる。",
+        "・評価は、内容のまとまり／表現の工夫／推敲による改善が見えるようにする。",
+      ].join("\n");
+    case "言語活動":
+      return [
+        "・語彙・表現・文の形（言葉の使い方）に焦点を当て、短い練習→活用場面（使ってみる）を入れる。",
+        "・ゲーム性や操作活動（並べ替え/置き換え/付け足し）などで、言葉の働きを実感できるようにする。",
+        "・評価は、学んだ表現を使えているか／使い分け・気づきがあるかが見えるようにする。",
+      ].join("\n");
+    default:
+      return "";
+  }
+}
+
 /* ===================== 入力→プロンプト整形 ===================== */
 function buildUserPromptFromInputs(args: {
-  styleName: string;
+  authorLabel: string;
+  educationModelName?: string;
   subject: string;
   grade: string;
   genre: string;
@@ -148,7 +185,8 @@ function buildUserPromptFromInputs(args: {
   lessonPlanList: string[];
 }): string {
   const {
-    styleName,
+    authorLabel,
+    educationModelName,
     subject,
     grade,
     genre,
@@ -168,7 +206,8 @@ function buildUserPromptFromInputs(args: {
 
   return [
     "あなたは小学校の国語授業プランナーのアシスタントです。",
-    styleName ? `モデル:${styleName}` : "",
+    `【作成モデル】${authorLabel}`,
+    educationModelName ? `【教育観モデル】${educationModelName}` : "【教育観モデル】（未選択）",
     `【教科書名】${subject}`,
     `【学年】${grade}`,
     `【ジャンル】${genre}`,
@@ -178,7 +217,7 @@ function buildUserPromptFromInputs(args: {
     "■ 単元の目標:",
     unitGoal,
     "",
-    "■ 評価の観点 (JSON 配列形式):",
+    "■ 評価の観点:",
     `知識・技能=${evaluationPoints.knowledge.join("、")};`,
     `思考・判断・表現=${evaluationPoints.thinking.join("、")};`,
     `主体的に学習に取り組む態度=${evaluationPoints.attitude.join("、")}`,
@@ -266,16 +305,16 @@ function applyParsedResultToInputs(
   const finalHours = hours || flowList.length || 0;
   const paddedFlow = Array.from({ length: finalHours }, (_, i) => flowList[i] ?? "");
 
-  if (subject) setters.setSubject(subject);
-  if (grade) setters.setGrade(grade);
-  if (genre) setters.setGenre(genre);
-  if (unit) setters.setUnit(unit);
-  if (finalHours >= 0) setters.setHours(String(finalHours));
-  setters.setUnitGoal(unitGoal);
-  setters.setChildVision(childVision);
-  setters.setLanguageActivities(languageActivities);
-  setters.setEvaluationPoints({ knowledge, thinking, attitude });
-  setters.setLessonPlanList(paddedFlow);
+  if (subject) setSubject(subject);
+  if (grade) setGrade(grade);
+  if (genre) setGenre(genre);
+  if (unit) setUnit(unit);
+  if (finalHours >= 0) setHours(String(finalHours));
+  setUnitGoal(unitGoal);
+  setChildVision(childVision);
+  setLanguageActivities(languageActivities);
+  setEvaluationPoints({ knowledge, thinking, attitude });
+  setLessonPlanList(paddedFlow);
 }
 
 /* ===================== メイン ===================== */
@@ -291,47 +330,6 @@ export default function ClientPlan() {
     return () => unsub();
   }, []);
 
-  /* ===================== ★ 管理者判定（UIでボタンを出すか） ===================== */
-  const adminAllowList = useMemo(() => {
-    const raw = (process.env.NEXT_PUBLIC_FINE_TUNE_ADMINS ?? "").trim();
-    return raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
-  }, []);
-
-  const [isFineTuneAdmin, setIsFineTuneAdmin] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const u = auth.currentUser;
-        const email = (u?.email ?? session?.user?.email ?? "").toLowerCase();
-        const inAllow = !!email && adminAllowList.includes(email);
-
-        let hasClaim = false;
-        if (u) {
-          try {
-            const r = await u.getIdTokenResult(true); // ✅ claim反映を確実に
-            hasClaim = r?.claims?.admin === true;
-          } catch {
-            hasClaim = false;
-          }
-        }
-
-        if (!cancelled) setIsFineTuneAdmin(inAllow || hasClaim);
-      } catch {
-        if (!cancelled) setIsFineTuneAdmin(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [adminAllowList, session?.user?.email, uid]);
-
   /** 復元→自動保存の競合を抑止するためのフラグ */
   const restoringRef = useRef(true);
   /** クリア直後に自動保存で空状態を書き戻さないための1回スキップ */
@@ -340,9 +338,11 @@ export default function ClientPlan() {
   const [mode, setMode] = useState<"ai" | "manual">("ai");
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
 
-  const [selectedStyleId, setSelectedStyleId] = useState<string>("");
-  const [selectedStyleName, setSelectedStyleName] = useState<string>("");
+  /** 教育観モデル（任意） */
+  const [selectedEducationModelId, setSelectedEducationModelId] = useState<string>("");
+  const [selectedEducationModelName, setSelectedEducationModelName] = useState<string>("");
 
+  /** 作成モデル（保存先カテゴリ／必須） */
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
 
   const [subject, setSubject] = useState("東京書籍");
@@ -417,7 +417,9 @@ export default function ClientPlan() {
   /* ===== draft適用ヘルパ ===== */
   const applyDraftToState = (plan: Partial<LessonPlanDraft | LessonPlanStored>) => {
     if (!plan) return;
+
     setEditId((plan as any).id ?? null);
+
     if (plan.subject != null) setSubject(plan.subject as string);
     if (plan.grade != null) setGrade(plan.grade as string);
     if (plan.genre != null) setGenre(plan.genre as string);
@@ -428,11 +430,16 @@ export default function ClientPlan() {
     if (plan.childVision != null) setChildVision(plan.childVision as string);
     if (plan.languageActivities != null) setLanguageActivities(plan.languageActivities as string);
     if (plan.lessonPlanList != null) setLessonPlanList(plan.lessonPlanList as string[]);
-    if ((plan as any).selectedStyleId != null) setSelectedStyleId((plan as any).selectedStyleId as string);
-    if ((plan as any).selectedStyleName != null) setSelectedStyleName((plan as any).selectedStyleName as string);
-    if ((plan as any).selectedAuthorId !== undefined) setSelectedAuthorId((plan as any).selectedAuthorId ?? null);
     if ((plan as any).result) setParsedResult((plan as any).result as ParsedResult);
     if ((plan as any).mode) setMode((plan as any).mode as "ai" | "manual");
+
+    // 互換: 旧キー selectedStyleId/Name を「教育観モデル」として復元
+    const legacyEduId = (plan as any).selectedStyleId;
+    const legacyEduName = (plan as any).selectedStyleName;
+    if (legacyEduId != null) setSelectedEducationModelId(String(legacyEduId));
+    if (legacyEduName != null) setSelectedEducationModelName(String(legacyEduName));
+
+    if ((plan as any).selectedAuthorId !== undefined) setSelectedAuthorId((plan as any).selectedAuthorId ?? null);
 
     // ★同意状態も復元
     if ((plan as any).allowTrain != null) setConsentTrain(Boolean((plan as any).allowTrain));
@@ -477,9 +484,12 @@ export default function ClientPlan() {
         applyDraftToState(chosen);
       }
 
+      // URL param styleId は「教育観モデルID」として扱う
       const styleIdParam = searchParams?.get?.("styleId");
       if (styleIdParam) {
-        setSelectedStyleId(styleIdParam);
+        const found = styleModels.find((m) => m.id === styleIdParam);
+        setSelectedEducationModelId(styleIdParam);
+        setSelectedEducationModelName(found ? found.name : "");
       }
 
       restoringRef.current = false;
@@ -536,8 +546,11 @@ export default function ClientPlan() {
     childVision,
     languageActivities,
     lessonPlanList,
-    selectedStyleId,
-    selectedStyleName,
+
+    // 互換のため旧キー名を維持（=教育観モデル）
+    selectedStyleId: selectedEducationModelId,
+    selectedStyleName: selectedEducationModelName,
+
     selectedAuthorId,
     result: parsedResult ?? null,
     timestamp: new Date().toISOString(),
@@ -558,11 +571,7 @@ export default function ClientPlan() {
   const saveDraftCloud = async (draft: LessonPlanDraft) => {
     if (!uid) return;
     try {
-      await setDoc(
-        doc(db, "lesson_plan_drafts", uid),
-        { ownerUid: uid, payload: draft, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
+      await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: draft, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
       console.warn("クラウド下書き保存失敗:", e);
     }
@@ -596,16 +605,15 @@ export default function ClientPlan() {
     childVision,
     languageActivities,
     lessonPlanList,
-    selectedStyleId,
-    selectedStyleName,
+    selectedEducationModelId,
+    selectedEducationModelName,
     selectedAuthorId,
     parsedResult,
     consentTrain,
   ]);
 
   /* ===== 入力ハンドラ ===== */
-  const handleAddPoint = (f: keyof EvaluationPoints) =>
-    setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
+  const handleAddPoint = (f: keyof EvaluationPoints) => setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
   const handleRemovePoint = (f: keyof EvaluationPoints, i: number) =>
     setEvaluationPoints((p) => ({ ...p, [f]: p[f].filter((_, idx) => idx !== i) }));
   const handleChangePoint = (f: keyof EvaluationPoints, i: number, v: string) => {
@@ -623,8 +631,9 @@ export default function ClientPlan() {
   const resetAll = () => {
     setEditId(null);
     setMode("ai");
-    setSelectedStyleId("");
-    setSelectedStyleName("");
+
+    setSelectedEducationModelId("");
+    setSelectedEducationModelName("");
     setSelectedAuthorId(null);
 
     setSubject("東京書籍");
@@ -778,8 +787,12 @@ export default function ClientPlan() {
     const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
     setLessonPlanList(newList);
 
+    const author = authors.find((a) => a.id === selectedAuthorId);
+    const authorLabel = author?.label ?? "";
+
     const userPromptFromInputs = buildUserPromptFromInputs({
-      styleName: selectedStyleName,
+      authorLabel,
+      educationModelName: selectedEducationModelName || undefined,
       subject,
       grade,
       genre,
@@ -792,6 +805,7 @@ export default function ClientPlan() {
       lessonPlanList: newList,
     });
 
+    // 手動モード：入力をそのまま構造化
     if (mode === "manual") {
       const manualFlow: Record<string, string> = {};
       newList.forEach((step, idx) => {
@@ -836,20 +850,25 @@ export default function ClientPlan() {
       return;
     }
 
+    // AIモード
     try {
-      const selectedModel = styleModels.find((m) => m.id === selectedStyleId);
+      const selectedEduModel = selectedEducationModelId
+        ? styleModels.find((m) => m.id === selectedEducationModelId)
+        : undefined;
 
-      const modelExtras = selectedModel
+      const educationModelExtras = selectedEduModel
         ? [
-            `【モデル名】${selectedModel.name}`,
-            `【教育観】${selectedModel.content}`,
-            selectedModel.evaluationFocus ? `【評価観点の重視点】${selectedModel.evaluationFocus}` : "",
-            selectedModel.languageFocus ? `【言語活動の重視点】${selectedModel.languageFocus}` : "",
-            selectedModel.childFocus ? `【育てたい子どもの姿】${selectedModel.childFocus}` : "",
+            `【教育観モデル名】${selectedEduModel.name}`,
+            `【教育観】${selectedEduModel.content}`,
+            selectedEduModel.evaluationFocus ? `【評価観点の重視点】${selectedEduModel.evaluationFocus}` : "",
+            selectedEduModel.languageFocus ? `【言語活動の重視点】${selectedEduModel.languageFocus}` : "",
+            selectedEduModel.childFocus ? `【育てたい子どもの姿】${selectedEduModel.childFocus}` : "",
           ]
             .filter(Boolean)
             .join("\n")
         : "";
+
+      const authorGuidance = authorLabel ? getAuthorGuidance(authorLabel) : "";
 
       const flowLines = newList
         .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
@@ -857,7 +876,17 @@ export default function ClientPlan() {
 
       const prompt = `
 あなたは小学校の国語の授業プランナーです。
-${modelExtras ? `— この授業で反映してほしいモデル情報 —\n${modelExtras}\n` : ""}
+
+【重要（必ず守る）】
+1. 入力済みの内容（単元の目標、評価観点、授業の流れの記入済み行）は勝手に改変しない。空欄のみ補完する。
+2. 作成モデルの方針と教育観モデルがある場合は、最優先で尊重し、矛盾する活動・評価は入れない。
+3. 出力は必ずJSONのみ。前置きや解説は禁止。
+
+【作成モデル（必須）】
+${authorLabel}
+${authorGuidance ? `【作成モデル方針】\n${authorGuidance}` : ""}
+
+${educationModelExtras ? `【教育観モデル（任意）】\n${educationModelExtras}\n` : "【教育観モデル（任意）】未選択\n"}
 
 【教科書名】${subject}
 【学年】${grade}
@@ -868,7 +897,7 @@ ${modelExtras ? `— この授業で反映してほしいモデル情報 —\n${
 ■ 単元の目標:
 ${unitGoal}
 
-■ 評価の観点 (JSON 配列形式):
+■ 評価の観点:
 知識・技能=${evaluationPoints.knowledge.join("、")};
 思考・判断・表現=${evaluationPoints.thinking.join("、")};
 主体的に学習に取り組む態度=${evaluationPoints.attitude.join("、")}
@@ -879,12 +908,12 @@ ${childVision}
 ■ 授業の流れ:
 ${flowLines}
 
-※上記で「n時間目: 」だけ書かれている箇所は、AI が自動生成してください。
+※上記で「n時間目: 」だけの箇所は、空欄のみを自然に補完してください（記入済み行は改変禁止）。
 
 ■ 言語活動の工夫:
 ${languageActivities}
 
-—返却フォーマット—
+—返却フォーマット（JSONのみ）—
 {
   "教科書名": string,
   "学年": string,
@@ -906,8 +935,6 @@ ${languageActivities}
   "言語活動の工夫": string,
   "結果": string
 }
-
-// 互換注意: 既存実装が「単元名」を期待している場合は、同じ値を重複で返してもOKです。
       `.trim();
 
       setLastPrompt(prompt);
@@ -927,6 +954,7 @@ ${languageActivities}
       } catch {
         throw new Error("サーバーから無効なJSONが返ってきました");
       }
+
       setParsedResult(data);
 
       applyParsedResultToInputs(data, {
@@ -992,7 +1020,6 @@ ${languageActivities}
       alert("作成モデルを選択してください");
       return;
     }
-
     if (!uid) {
       alert("ログイン状態を確認できません。再読み込み後にお試しください。");
       return;
@@ -1010,9 +1037,13 @@ ${languageActivities}
 
     const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
 
+    // 表示用のモデル名：教育観モデルがあればそれを優先、なければ作成モデル名
+    const usedStyleName = selectedEducationModelName || author.label;
+
     const existingArr: LessonPlanStored[] = JSON.parse(
       typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
     );
+
     if (isEdit) {
       const newArr = existingArr.map((p) =>
         p.id === idToUse
@@ -1028,10 +1059,13 @@ ${languageActivities}
               childVision,
               lessonPlanList,
               languageActivities,
-              selectedStyleId,
+
+              selectedStyleId: selectedEducationModelId, // 教育観モデルID（任意）
+              usedStyleName,
+              selectedAuthorId,
+
               result: parsedResult,
               timestamp: new Date().toISOString(),
-              usedStyleName: selectedStyleName || author.label,
               allowTrain: consentTrain,
               allowTrainVersion: "v1",
             }
@@ -1051,10 +1085,13 @@ ${languageActivities}
         childVision,
         lessonPlanList,
         languageActivities,
-        selectedStyleId,
+
+        selectedStyleId: selectedEducationModelId, // 教育観モデルID（任意）
+        usedStyleName,
+        selectedAuthorId,
+
         result: parsedResult,
         timestamp: new Date().toISOString(),
-        usedStyleName: selectedStyleName || author.label,
         allowTrain: consentTrain,
         allowTrainVersion: "v1",
       };
@@ -1063,7 +1100,7 @@ ${languageActivities}
     }
 
     try {
-      const model = selectedStyleId ? styleModels.find((m) => m.id === selectedStyleId) : null;
+      const eduModel = selectedEducationModelId ? styleModels.find((m) => m.id === selectedEducationModelId) : null;
 
       await setDoc(
         doc(db, collectionName, idToUse),
@@ -1079,21 +1116,25 @@ ${languageActivities}
           childVision,
           lessonPlanList,
           languageActivities,
-          selectedStyleId,
+
+          // 互換：既存の参照が selectedStyleId にある場合を想定して残す（教育観モデルID）
+          selectedStyleId: selectedEducationModelId || "",
+          usedStyleName,
+          selectedAuthorId,
+
           result: parsedResult,
           assistantPlanMarkdown,
           userPromptText: lastPrompt,
           timestamp: serverTimestamp(),
-          usedStyleName: selectedStyleName || author.label,
+
           author: session?.user?.email || "",
-          modelId: selectedStyleId || null,
-          modelName: selectedStyleName || null,
-          modelNameCanonical: (selectedStyleName || "").toLowerCase().replace(/\s+/g, "-") || null,
-          modelSnapshot: model
+
+          // 教育観モデルスナップショット（任意）
+          modelSnapshot: eduModel
             ? {
                 kind: "user-model" as const,
-                id: model.id,
-                name: model.name,
+                id: eduModel.id,
+                name: eduModel.name,
                 at: new Date().toISOString(),
               }
             : null,
@@ -1117,145 +1158,12 @@ ${languageActivities}
     try {
       localStorage.removeItem(EDIT_KEY);
       if (uid) {
-        await setDoc(
-          doc(db, "lesson_plan_drafts", uid),
-          { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
+        await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: null, updatedAt: serverTimestamp() }, { merge: true });
       }
     } catch {}
 
     alert("一括保存しました（ローカル・Firestore）");
     router.push("/plan/history");
-  };
-
-  /* ===================== ★(5) JSONLダウンロード／fine-tune開始（403対策込み） ===================== */
-  const downloadJsonl = async () => {
-    try {
-      if (!isFineTuneAdmin) {
-        alert("この操作は管理者のみ実行できます");
-        return;
-      }
-      const u = auth.currentUser;
-      if (!u) {
-        alert("Firebaseログインが必要です");
-        return;
-      }
-
-      // ✅ admin claim 反映前トークンで403になるのを防ぐ
-      const tokenResult = await u.getIdTokenResult(true);
-      const token = tokenResult.token;
-      const isAdminClaim = tokenResult?.claims?.admin === true;
-      if (!isAdminClaim) {
-        alert("admin権限がIDトークンに反映されていません。再ログイン/再読み込みしてから再実行してください。");
-        return;
-      }
-
-      const url =
-        "/api/fine-tune/export" +
-        "?target=lesson" +
-        "&scope=all" +
-        "&maxTotal=5000" +
-        "&pageSize=500" +
-        "&optInOnly=1";
-
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        alert(`export失敗: ${res.status}\n${t}`);
-        return;
-      }
-
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-
-      const cd = res.headers.get("content-disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
-      a.download = m?.[1] || "train_lesson_all.jsonl";
-
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (e: any) {
-      alert(`ダウンロードに失敗しました：${e?.message || String(e)}`);
-    }
-  };
-
-  const startFineTune = async () => {
-    try {
-      if (!isFineTuneAdmin) {
-        alert("この操作は管理者のみ実行できます");
-        return;
-      }
-      const u = auth.currentUser;
-      if (!u) {
-        alert("Firebaseログインが必要です");
-        return;
-      }
-
-      // ✅ admin claim 反映前トークンで403になるのを防ぐ
-      const tokenResult = await u.getIdTokenResult(true);
-      const token = tokenResult.token;
-      const isAdminClaim = tokenResult?.claims?.admin === true;
-      if (!isAdminClaim) {
-        alert("admin権限がIDトークンに反映されていません。再ログイン/再読み込みしてから再実行してください。");
-        return;
-      }
-
-      // 1) export
-      const expUrl =
-        "/api/fine-tune/export" +
-        "?target=lesson" +
-        "&scope=all" +
-        "&maxTotal=5000" +
-        "&pageSize=500" +
-        "&optInOnly=1";
-
-      const exp = await fetch(expUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!exp.ok) {
-        const t = await exp.text().catch(() => "");
-        alert(`export失敗: ${exp.status}\n${t}`);
-        return;
-      }
-
-      const jsonlText = await exp.text();
-      if (!jsonlText.trim()) {
-        alert("学習データが空です（同意ONの授業案が見つかりませんでした）");
-        return;
-      }
-
-      // 2) start
-      const st = await fetch("/api/fine-tune/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ jsonlText }),
-      });
-
-      const out = await st.text();
-      if (!st.ok) {
-        alert(out);
-        return;
-      }
-
-      try {
-        const data = JSON.parse(out);
-        alert(`fine-tune開始: job_id=${data.job_id} status=${data.status}`);
-      } catch {
-        alert(`fine-tune開始（レスポンス）: ${out}`);
-      }
-    } catch (e: any) {
-      alert(`fine-tune開始に失敗しました：${e?.message || String(e)}`);
-    }
   };
 
   /* ===================== JSX ===================== */
@@ -1320,16 +1228,10 @@ ${languageActivities}
       <main style={{ ...containerStyle, paddingTop: 56 }}>
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
-            授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても
-            <strong>理想となる授業案は作成されません</strong>。
+            授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。
           </p>
           <p style={{ margin: "6px 0 0" }}>
-            みなさんの作成した授業案、後に作成する授業実践案をAIに学習させることで、AIモードで
-            <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができます。
-          </p>
-          <p style={{ margin: "6px 0 0" }}>
-            まずは、<strong>手動モード</strong>で授業案を生成していきましょう。
-            作成モデルは<strong>自分の授業に近いモデル</strong>を<strong>4つ</strong>の中から選択してください。
+            <strong>作成モデル（4分類）は保存先カテゴリであり必須</strong>です。必要に応じて<strong>教育観モデル</strong>（任意）を選ぶと、授業案の方針に反映されます。
           </p>
           <p style={{ margin: "6px 0 0" }}>
             <strong>下書きを保存する際は、必ず📝下書きを保存ボタンを押してください。</strong>
@@ -1346,42 +1248,25 @@ ${languageActivities}
             </label>
           </div>
 
+          {/* 教育観モデル（任意） */}
           <label>
-            モデル選択：<br />
+            教育観モデル（任意）：<br />
             <select
-              value={selectedStyleId}
+              value={selectedEducationModelId}
               onChange={(e) => {
                 const val = e.target.value;
-                setSelectedStyleId(val);
-
-                const foundAuthor = authors.find((a) => a.id === val);
-                if (foundAuthor) {
-                  setSelectedStyleName(foundAuthor.label);
-                  setSelectedAuthorId(val);
-                } else {
-                  const foundStyle = styleModels.find((m) => m.id === val);
-                  setSelectedStyleName(foundStyle ? foundStyle.name : "");
-                  // 教育観モデルを選んでも、保存先（4分類）は別で必須のまま
-                  // ここでは selectedAuthorId は触らない（ユーザーが下の4ボタンで選択）
-                }
+                setSelectedEducationModelId(val);
+                const found = styleModels.find((m) => m.id === val);
+                setSelectedEducationModelName(found ? found.name : "");
               }}
               style={inputStyle}
             >
               <option value="">（未選択）</option>
-              <optgroup label="固定モデル">
-                {authors.map((author) => (
-                  <option key={author.id} value={author.id}>
-                    {author.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="教育観モデル一覧">
-                {styleModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </optgroup>
+              {styleModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -1434,29 +1319,17 @@ ${languageActivities}
           {(["knowledge", "thinking", "attitude"] as const).map((f) => (
             <div key={f} style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                {f === "knowledge"
-                  ? "① 知識・技能："
-                  : f === "thinking"
-                  ? "② 思考・判断・表現："
-                  : "③ 主体的に学習に取り組む態度："}
+                {f === "knowledge" ? "① 知識・技能：" : f === "thinking" ? "② 思考・判断・表現：" : "③ 主体的に学習に取り組む態度："}
               </label>
               {evaluationPoints[f].map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <textarea
-                    value={v}
-                    onChange={(e) => handleChangePoint(f, i, e.target.value)}
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
+                  <textarea value={v} onChange={(e) => handleChangePoint(f, i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
                   <button type="button" onClick={() => handleRemovePoint(f, i)}>
                     🗑
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => handleAddPoint(f)}
-                style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}
-              >
+              <button type="button" onClick={() => handleAddPoint(f)} style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}>
                 ＋ 追加
               </button>
             </div>
@@ -1469,12 +1342,7 @@ ${languageActivities}
 
           <label>
             ■ 言語活動の工夫：<br />
-            <textarea
-              value={languageActivities}
-              onChange={(e) => setLanguageActivities(e.target.value)}
-              rows={2}
-              style={inputStyle}
-            />
+            <textarea value={languageActivities} onChange={(e) => setLanguageActivities(e.target.value)} rows={2} style={inputStyle} />
           </label>
 
           {hours && (
@@ -1483,27 +1351,21 @@ ${languageActivities}
               {Array.from({ length: Number(hours) }, (_, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <span style={{ width: "4rem", lineHeight: "2rem" }}>{i + 1}時間目:</span>
-                  <textarea
-                    value={lessonPlanList[i] || ""}
-                    onChange={(e) => handleLessonChange(i, e.target.value)}
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
+                  <textarea value={lessonPlanList[i] || ""} onChange={(e) => handleLessonChange(i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
                 </div>
               ))}
             </div>
           )}
 
+          {/* 作成モデル（必須） */}
           <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
-            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>作成モデルを選択してください（必須）</div>
+            <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>作成モデル（保存先カテゴリ）を選択してください（必須）</div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               {authors.map((author) => (
                 <button
                   key={author.id}
                   type="button"
-                  onClick={() => {
-                    setSelectedAuthorId(author.id);
-                    setSelectedStyleName(author.label);
-                  }}
+                  onClick={() => setSelectedAuthorId(author.id)}
                   style={{
                     flex: 1,
                     padding: "0.8rem 1rem",
@@ -1519,6 +1381,16 @@ ${languageActivities}
                 </button>
               ))}
             </div>
+
+            {/* 選択中の方針メモ（見える化） */}
+            {selectedAuthorId && (
+              <div style={{ marginTop: 10, fontSize: "0.92rem", opacity: 0.9 }}>
+                <div style={{ fontWeight: "bold", marginBottom: 4 }}>作成モデル方針メモ</div>
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0, background: "#f7f7f7", padding: 10, borderRadius: 8, border: "1px solid #eee" }}>
+                  {getAuthorGuidance(authors.find((a) => a.id === selectedAuthorId)?.label ?? "")}
+                </pre>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -1562,11 +1434,7 @@ ${languageActivities}
                 } catch {}
                 if (uid) {
                   try {
-                    await setDoc(
-                      doc(db, "lesson_plan_drafts", uid),
-                      { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
-                      { merge: true }
-                    );
+                    await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: null, updatedAt: serverTimestamp() }, { merge: true });
                   } catch {}
                 }
 
@@ -1585,37 +1453,6 @@ ${languageActivities}
             >
               🧹 下書きと入力をクリア
             </button>
-
-            {/* ★ JSONLダウンロード／fine-tune開始（管理者だけ表示） */}
-            {isFineTuneAdmin && (
-              <>
-                <button
-                  type="button"
-                  onClick={downloadJsonl}
-                  style={{
-                    ...inputStyle,
-                    backgroundColor: "#455A64",
-                    color: "white",
-                    marginBottom: 0,
-                  }}
-                >
-                  ⬇️ JSONLダウンロード
-                </button>
-
-                <button
-                  type="button"
-                  onClick={startFineTune}
-                  style={{
-                    ...inputStyle,
-                    backgroundColor: "#2E7D32",
-                    color: "white",
-                    marginBottom: 0,
-                  }}
-                >
-                  🧠 fine-tune開始
-                </button>
-              </>
-            )}
           </div>
         </form>
 
@@ -1628,11 +1465,7 @@ ${languageActivities}
               <div style={{ fontWeight: "bold", marginBottom: 8 }}>学習への提供（本人同意）</div>
 
               <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="checkbox"
-                  checked={consentTrain}
-                  onChange={(e) => setConsentTrain(e.target.checked)}
-                />
+                <input type="checkbox" checked={consentTrain} onChange={(e) => setConsentTrain(e.target.checked)} />
                 この授業案を、AIの改善（fine-tune等）の学習データとして提供することに同意します。
               </label>
 
@@ -1690,10 +1523,7 @@ ${languageActivities}
               </button>
             </div>
 
-            <div
-              id="result-content"
-              style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}
-            >
+            <div id="result-content" style={{ ...cardStyle, backgroundColor: "white", minHeight: "500px", padding: "16px" }}>
               <div style={titleStyle}>授業の概要</div>
               <p>教科書名：{parsedResult["教科書名"]}</p>
               <p>学年：{parsedResult["学年"]}</p>
@@ -1713,8 +1543,7 @@ ${languageActivities}
                 <strong>知識・技能</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) ||
-                    typeof parsedResult["評価の観点"]?.["知識・技能"] === "string"
+                    Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) || typeof parsedResult["評価の観点"]?.["知識・技能"] === "string"
                       ? Array.isArray(parsedResult["評価の観点"]?.["知識・技能"])
                         ? parsedResult["評価の観点"]["知識・技能"]
                         : [parsedResult["評価の観点"]?.["知識・技能"]]
@@ -1727,8 +1556,7 @@ ${languageActivities}
                 <strong>思考・判断・表現</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) ||
-                    typeof parsedResult["評価の観点"]?.["思考・判断・表現"] === "string"
+                    Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) || typeof parsedResult["評価の観点"]?.["思考・判断・表現"] === "string"
                       ? Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"])
                         ? parsedResult["評価の観点"]["思考・判断・表現"]
                         : [parsedResult["評価の観点"]?.["思考・判断・表現"]]
@@ -1741,8 +1569,7 @@ ${languageActivities}
                 <strong>主体的に学習に取り組む態度</strong>
                 <ul style={listStyle}>
                   {(
-                    Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) ||
-                    typeof parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"] === "string"
+                    Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) || typeof parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"] === "string"
                       ? Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"])
                         ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"]
                         : [parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]]
