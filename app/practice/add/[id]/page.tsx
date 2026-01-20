@@ -29,6 +29,9 @@ type PracticeRecord = {
   // ▼ 確認メタデータ（ローカル保持用）
   confirmedNoPersonalInfo?: boolean;
   imagesSignature?: string;
+
+  // ▼ 学習許諾（チェック項目として残す）
+  fineTuneOptIn?: boolean;
 };
 
 /** ローカル下書き：圧縮画像(base64)を持ってOK */
@@ -407,6 +410,9 @@ export default function PracticeAddPage() {
   const [enhanceUpload, setEnhanceUpload] = useState<boolean>(true);
   const [compressLongEdge, setCompressLongEdge] = useState<number>(1400);
 
+  // ▼ 学習許諾（授業案と同様に「提供OK」チェックとして残す）
+  const [fineTuneOptIn, setFineTuneOptIn] = useState<boolean>(false);
+
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   /* ---- 授業案（ローカル）＆ローカル下書き（起動時） ---- */
@@ -469,6 +475,9 @@ export default function PracticeAddPage() {
         setBoardImages(imgs);
         setCompressedImages(imgs);
 
+        // ▼ 学習許諾の読み込み
+        setFineTuneOptIn(!!data.fineTuneOptIn);
+
         setRecord({
           lessonId: id,
           practiceDate: data.practiceDate || "",
@@ -483,6 +492,7 @@ export default function PracticeAddPage() {
           modelType: lessonType,
           confirmedNoPersonalInfo: data.confirmedNoPersonalInfo ?? undefined,
           imagesSignature: data.imagesSignature ?? undefined,
+          fineTuneOptIn: !!data.fineTuneOptIn,
         });
 
         if (data.imagesSignature) setPreviousSignature(String(data.imagesSignature));
@@ -829,6 +839,7 @@ export default function PracticeAddPage() {
       modelType,
       confirmedNoPersonalInfo: confirmNoPersonalInfo,
       imagesSignature: currentSignature,
+      fineTuneOptIn,
     });
   };
 
@@ -902,6 +913,9 @@ export default function PracticeAddPage() {
         confirmedByEmail: userEmail,
         policyVersion: POLICY_VERSION,
         imagesSignature: finalSignature,
+
+        // ▼ 学習許諾（保存する）
+        fineTuneOptIn: !!rec.fineTuneOptIn,
       },
       { merge: true }
     );
@@ -938,6 +952,7 @@ export default function PracticeAddPage() {
         unitName: meta.unitName,
         confirmedNoPersonalInfo: true,
         imagesSignature: currentSignature,
+        fineTuneOptIn,
       };
       await saveRecordToIndexedDB(toSaveLocal);
 
@@ -1044,6 +1059,24 @@ export default function PracticeAddPage() {
 
       <main style={containerStyle}>
         <h2>実践記録作成・編集</h2>
+
+        {/* ✅ 学習への提供OK（チェックのみ残す） */}
+        <section style={{ ...boxStyle, borderColor: "#00838f", backgroundColor: "#e0f7fa" }}>
+          <strong style={{ color: "#006064" }}>🧠 学習への提供（任意）</strong>
+          <div style={{ marginTop: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="checkbox"
+                checked={fineTuneOptIn}
+                onChange={(e) => setFineTuneOptIn(e.target.checked)}
+              />
+              この実践記録を学習対象として利用してよい
+            </label>
+            <small style={{ color: "#006064", display: "block", marginTop: 6 }}>
+              ※チェックの変更は<strong>保存時</strong>に反映されます。
+            </small>
+          </div>
+        </section>
 
         {/* 注意書き */}
         <div style={noticeBoxStyle}>
