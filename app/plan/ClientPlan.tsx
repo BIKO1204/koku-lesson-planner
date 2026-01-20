@@ -279,7 +279,6 @@ function buildEducationModelBlock(model?: StyleModel | null): string {
     "※上の教育観モデルを最優先の判断基準として授業案を作成せよ。4分類モデルは指導要領に沿うための最低要件として満たし、衝突した場合は教育観モデルを優先しつつ最低要件が失われないよう形を調整する。",
   ].filter(Boolean);
 
-  // 長すぎる場合の安全策（必要なら調整）
   const block = lines.join("\n");
   return block.length > 2000 ? block.slice(0, 2000) + "\n（…以下省略）" : block;
 }
@@ -411,7 +410,8 @@ export default function ClientPlan() {
   /** クリア直後に自動保存で空状態を書き戻さないための1回スキップ */
   const skipAutoSaveOnceRef = useRef(false);
 
-  const [mode, setMode] = useState<"ai" | "manual">("ai");
+  // ★ 初期は手動モード（文言に合わせる）
+  const [mode, setMode] = useState<"ai" | "manual">("manual");
 
   /** 教育観モデル一覧 */
   const [styleModels, setStyleModels] = useState<StyleModel[]>([]);
@@ -716,7 +716,8 @@ export default function ClientPlan() {
   /* ===== 画面の全入力＆生成結果を初期化（クリア用） ===== */
   const resetAll = () => {
     setEditId(null);
-    setMode("ai");
+    // ★ クリア後も手動に戻す（文言に合わせる）
+    setMode("manual");
 
     setSelectedAuthorId(null);
     setSelectedEducationModelId("");
@@ -1195,12 +1196,25 @@ export default function ClientPlan() {
       </div>
 
       <main style={{ ...containerStyle, paddingTop: 56 }}>
+        {/* ★ ここが「最初の文言」：元に戻した版 */}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
-            このページは、<strong>教育観モデル（任意）を最優先</strong>しつつ、<strong>作成モデル（4分類）を指導要領に沿う最低要件</strong>として満たす形で授業案を作成します。
+            授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても{" "}
+            <strong>理想となる授業案は作成されません</strong>。
           </p>
           <p style={{ margin: "6px 0 0" }}>
-            <strong>作成モデル（4分類）は必須</strong>です。教育観モデルは選ばなくても作成できます。
+            みなさんの作成した授業案、後に作成する授業実践案をAIに学習させることで、AIモードで{" "}
+            <strong>面白く・活動が具体的な国語の授業案</strong>を一緒に考えることができます。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            まずは、<strong>手動モード</strong>で授業案を生成していきましょう。 作成モデルは<strong>自分の授業に近いモデル</strong>を
+            <strong>4つ</strong>の中から選択してください。
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            <strong>下書きを保存する際は、必ず📝下書きを保存ボタンを押してください。</strong>
+          </p>
+          <p style={{ margin: "6px 0 0" }}>
+            ※必要に応じて<strong>教育観モデル（任意）</strong>も選ぶと、授業の方針（評価・言語活動・育てたい姿）をそろえたまま作成できます。
           </p>
         </section>
 
