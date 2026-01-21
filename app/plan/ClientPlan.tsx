@@ -40,6 +40,8 @@ type ParsedResult = {
     "主体的に学習に取り組む態度": string[] | string;
     態度?: string[] | string;
   };
+  /** 互換：object/array/string を許容 */
+  授業の流れ?: Record<string, string> | string[] | string;
 };
 
 type EvaluationPoints = {
@@ -115,21 +117,37 @@ type LessonPlanDraft = {
 function toAssistantPlanMarkdown(r: ParsedResult): string {
   const toArr = (x: any): string[] => (Array.isArray(x) ? x : x != null ? [String(x)] : []);
   const goal = (r["単元の目標"] ?? "").toString().trim();
+
   const evalObj = r["評価の観点"] ?? {};
   const evalKnow = toArr(evalObj["知識・技能"]);
   const evalThink = toArr(evalObj["思考・判断・表現"]);
   const evalAtt = toArr(evalObj["主体的に学習に取り組む態度"]);
+
   const langAct = (r["言語活動の工夫"] ?? "").toString().trim();
-  const flow = r["授業の流れ"] ?? {};
-  const flowLines = Object.keys(flow)
-    .sort((a, b) => {
-      const na = parseInt(a, 10);
-      const nb = parseInt(b, 10);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return a.localeCompare(b, "ja");
-    })
-    .map((k) => `- ${k}：\n${String(flow[k] ?? "").trim()}`)
-    .join("\n");
+
+  const flow = r["授業の流れ"];
+  let flowLines = "";
+  if (Array.isArray(flow)) {
+    flowLines = flow
+      .map((v, i) => `- ${i + 1}時間目：\n${String(v ?? "").trim()}`)
+      .join("\n");
+  } else if (typeof flow === "object" && flow) {
+    flowLines = Object.keys(flow)
+      .sort((a, b) => {
+        const na = parseInt(a, 10);
+        const nb = parseInt(b, 10);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b, "ja");
+      })
+      .map((k) => `- ${k}：\n${String((flow as any)[k] ?? "").trim()}`)
+      .join("\n");
+  } else if (typeof flow === "string") {
+    const lines = flow
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    flowLines = lines.map((v, i) => `- ${i + 1}時間目：\n${v}`).join("\n");
+  }
 
   const parts: string[] = [];
   parts.push("## 授業案");
@@ -149,11 +167,15 @@ function toAssistantPlanMarkdown(r: ParsedResult): string {
 const toStrArray = (v: any): string[] =>
   Array.isArray(v) ? v.map((x) => String(x)) : v != null && String(v).trim() ? [String(v)] : [];
 
+/** 授業の流れの受け取りを（array/object/string）で正規化 */
 const sortedFlowEntries = (flow: any): string[] => {
   if (!flow) return [];
   if (Array.isArray(flow)) return flow.map((x) => String(x));
   if (typeof flow === "string") {
-    return flow.split(/\r?\n/).map((s) => s.replace(/^\s*\d+\s*時間目[:：]?\s*/, "").trim());
+    return flow
+      .split(/\r?\n/)
+      .map((s) => s.replace(/^\s*\d+\s*時間目[:：]?\s*/, "").trim())
+      .filter((s) => s.length > 0);
   }
   if (typeof flow === "object") {
     return Object.entries(flow)
@@ -186,7 +208,8 @@ function applyParsedResultToInputs(
   const grade = String(data["学年"] ?? "").trim();
   const genre = String(data["ジャンル"] ?? "").trim();
   const unit = String(data["教材名"] ?? data["単元名"] ?? "").trim();
-  const hours = Number(data["授業時間数"] ?? 0);
+
+  const hoursNum = Number(data["授業時間数"] ?? 0);
   const unitGoal = String(data["単元の目標"] ?? "").trim();
   const childVision = String(data["育てたい子どもの姿"] ?? "").trim();
   const languageActivities = String(data["言語活動の工夫"] ?? "").trim();
@@ -197,7 +220,9 @@ function applyParsedResultToInputs(
   const attitude = toStrArray(evalObj?.["主体的に学習に取り組む態度"] ?? evalObj?.["態度"]);
 
   const flowList = sortedFlowEntries(data["授業の流れ"]);
-  const finalHours = hours || flowList.length || 0;
+  const finalHours = hoursNum || flowList.length || 0;
+
+  // ★ここが重要：時間数ぶん必ず配列を用意（不足は空文字で埋める）
   const paddedFlow = Array.from({ length: finalHours }, (_, i) => flowList[i] ?? "");
 
   if (subject) setters.setSubject(subject);
@@ -205,6 +230,7 @@ function applyParsedResultToInputs(
   if (genre) setters.setGenre(genre);
   if (unit) setters.setUnit(unit);
   if (finalHours >= 0) setters.setHours(String(finalHours));
+
   setters.setUnitGoal(unitGoal);
   setters.setChildVision(childVision);
   setters.setLanguageActivities(languageActivities);
@@ -216,8 +242,8 @@ function applyParsedResultToInputs(
 function getAuthorGuidelines(authorId: AuthorId, grade: string): string {
   const common = [
     "・学習指導要領に照らして、3観点（知識・技能／思考・判断・表現／主体的に学習に取り組む態度）の整合をとる。",
-    "・各時間の『授業の流れ』は、次の要素を必ず含める：①教師の手立て（発問・提示・板書・ICT）②子どもの活動（個→ペア→全体等）③教材の根拠（本文の叙述・資料・例文等）④見取る評価（どの観点をどこで）。",
-    "・各時間は120〜200字程度を目安に具体化する（短すぎる一般論は禁止）。",
+    "・各時間の『授業の流れ』は、次の4要素を必ず含める：①教師の手立て（発問・提示・板書・ICT）②子どもの活動（個→ペア→全体等）③教材の根拠（本文の叙述・資料・例文等）④見取る評価（どの観点をどこで）。",
+    "・1時間目あたり120〜200字程度を目安に具体化する（短すぎる一般論は禁止）。",
     "・時間配分は、導入→探究→統合→振り返りの積み上がりが分かるようにする。",
     "・教師の言葉（問い）と、子どものアウトプット（発言・ノート・ワークシート等）が見える形で書く。",
   ].join("\n");
@@ -275,48 +301,6 @@ function buildEducationModelBlock(model?: StyleModel | null): string {
   return block.length > 2000 ? block.slice(0, 2000) + "\n（…以下省略）" : block;
 }
 
-/* ===================== 逆算設計（言語活動→単元の流れ） ===================== */
-function buildBackwardDesignBlock(): string {
-  return [
-    "【逆算設計（必須）】",
-    "あなたは「言語活動の工夫」に書かれた言語活動を、この単元の最終成果物（ゴール）として扱う。",
-    "まず最終成果物を1つに定義し、次にその達成に必要な工程（フェーズ）を逆算して設計すること。",
-    "",
-    "■ ゴール定義（内部方針）",
-    "- 最終成果物（ゴール）を1文で定義する（例：◯◯を作って発表する／◯◯を書いて共有する等）",
-    "- 成功条件を3〜5個定義する（学年相当の達成可能な条件）",
-    "- 失敗しやすい点を2〜3個想定し、授業内の支援に組み込む",
-    "",
-    "■ 逆算フェーズ（内部方針）",
-    "次の6フェーズを基準に、入力された言語活動に合う形で内容を当てはめること：",
-    "A 理解・材料集め（題材理解／根拠集め／語彙・表現集め）",
-    "B 目的・評価の共有（何ができればよいか／基準の共有）",
-    "C 設計（構成・役割・観点・下書き・計画）",
-    "D 生成（書く／作る／話す／試す）＋中間アウトプット",
-    "E 改善（推敲・練習・相互助言・修正）",
-    "F 共有（発表・提出・交流）＋振り返り",
-    "",
-    "■ 時間数N（授業時間数）への割り当てルール",
-    "- 最終時（N時）は必ず「共有（F）＋振り返り」を入れる",
-    "- N-1時は必ず「改善（E）」を入れる（推敲／練習／修正）",
-    "- 1〜N-2時でA〜Dを無理なく配分する",
-    "- すべての時間がゴールに直接つながる（単発の感想で終わらせない）",
-    "",
-    "■ 各時間の必須要素（出力に必ず明記）",
-    "各時間の文章に、必ず以下を含める：",
-    "1) 教師の問い（具体的発問を最低1つ）",
-    "2) 子どもの活動形態（個／ペア／全体／グループ）",
-    "3) 教材根拠（本文叙述・資料・例文など、根拠の置き場）",
-    "4) 見取る評価（3観点のどれをどこで見るか）",
-    "5) 成果物（次時で使うアウトプット）",
-    "6) 次時への接続（次に何を改善／発展するか1文）",
-    "",
-    "■ 記述テンプレ（必須）",
-    "各時間の文章は、次の見出しを必ず含む：",
-    "【ねらい】【教師の問い】【活動形態】【教材根拠】【評価】【成果物】【次時】",
-  ].join("\n");
-}
-
 /* ===================== 入力→プロンプト整形 ===================== */
 function buildPrompt(args: {
   authorId: AuthorId;
@@ -361,8 +345,22 @@ function buildPrompt(args: {
     getAuthorGuidelines(authorId, grade),
   ].join("\n");
 
-  const backwardDesign = buildBackwardDesignBlock();
+  // ★追加：言語活動をゴールにした逆算設計を強制（ここが②）
+  const backwardDesignBlock = `
+【逆算設計（必須）】
+- この単元のゴール（最終成果物）を「言語活動（入力欄）」で定義し、最終時（${hours}時間目）で必ず達成させること。
+- 1〜${hours}時間目は、最終成果に向けた段階（目的共有→本文理解/材料集め→技能練習→構想→試作/リハ→改善→本番→振り返り等）として“意味のある積み上がり”にすること。
+- 「授業の流れ」は、必ず ${hours} 個の要素を持つ配列（string[]）で返すこと。欠けてはいけない。
+- 各時間目（配列の各要素）は、読みやすい日本語の“文”で120〜200字程度を目安に書くこと（箇条書き羅列は避ける）。
+- 各時間目の文に、次の4点を必ず入れる：
+  ①教師の手立て（発問・提示・板書・ICT）
+  ②子どもの活動（個/ペア/全体/グループ）
+  ③教材の根拠（本文の叙述・語句・段落等）
+  ④見取る評価（3観点のどれをどこで）
+- 最終時（${hours}時間目）は「言語活動の成果を発表/提出し、評価と振り返りを行う」文にすること。
+`.trim();
 
+  // ★重要：返却フォーマットで「1,2,${hours}だけ」の例をやめ、全時間の配列で返させる（ここが①）
   return `
 あなたは小学校の国語授業プランナーです。
 必ず学習指導要領に沿い、入力情報と3観点評価の整合をとり、実行可能で具体的な授業案を作成してください。
@@ -371,7 +369,7 @@ ${eduBlock ? `${eduBlock}\n` : ""}
 
 ${authorBlock}
 
-${backwardDesign}
+${backwardDesignBlock}
 
 【教科書名】${subject}
 【学年】${grade}
@@ -390,13 +388,10 @@ ${unitGoal}
 ■ 育てたい子どもの姿:
 ${childVision}
 
-■ 授業の流れ:
+■ 授業の流れ（入力が空欄の時間はAIが埋める。先生が書いた内容は上書きしない）:
 ${flowLines}
 
-※上記で「n時間目: 」だけ書かれている箇所は、AI が自動生成してください。
-※先生が書いた内容は上書きせず、矛盾がある場合のみ整合する範囲で最小修正してください。
-
-■ 言語活動の工夫:
+■ 言語活動（ゴール/最終成果物の定義）:
 ${languageActivities}
 
 —返却フォーマット（必ずJSONのみ。前後に文章を付けない）—
@@ -413,109 +408,21 @@ ${languageActivities}
     "主体的に学習に取り組む態度": string[]
   },
   "育てたい子どもの姿": string,
-  "授業の流れ": {
-    "1時間目": string,
-    "2時間目": string,
-    "${hours}時間目": string
-  },
+  "授業の流れ": string[],
   "言語活動の工夫": string,
   "結果": string
 }
 
 制約：
-- 授業時間数がNなら、「授業の流れ」は必ず1時間目〜N時間目まで欠けなく全て出力する（キー欠落は禁止）。
-- もし不足が生じる場合は、内容を短くしてでもN個すべて埋めてからJSONを完成させる。
-- 各時間目の文字数は120〜200字程度を目安に、教師の手立て・子どもの活動・教材根拠・評価の見取りが必ず含まれること。
+- "授業の流れ" は必ず長さ ${hours} の配列（string[]）にする（1時間目=配列[0]、${hours}時間目=配列[${Math.max(
+    0,
+    hours - 1
+  )}]）。
+- 配列要素の欠落は禁止。空文字は禁止。
+- 各時間目は120〜200字程度を目安に、教師の手立て・子どもの活動・教材根拠・評価の見取りが必ず含まれること。
 - 具体的な発問（教師の問い）を各時間に最低1つは含めること。
 - 活動形態（個人/ペア/全体/グループ）を各時間に明記すること。
-- 「授業の流れ」の各時間は、【ねらい】【教師の問い】【活動形態】【教材根拠】【評価】【成果物】【次時】の見出しを必ず含むこと。
 - 学年に合わない過度に抽象的・専門的な表現は避けること。
-  `.trim();
-}
-
-/* ===================== 授業の流れを1..Nで正規化 ===================== */
-function normalizeFlowObject(flow: any, hours: number): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (let i = 1; i <= hours; i++) out[`${i}時間目`] = "";
-
-  if (!flow) return out;
-
-  // object想定（"1時間目": "...", ...）
-  if (typeof flow === "object" && !Array.isArray(flow)) {
-    for (const [k, v] of Object.entries(flow)) {
-      const m = String(k).match(/\d+/);
-      if (!m) continue;
-      const n = parseInt(m[0], 10);
-      if (n >= 1 && n <= hours) out[`${n}時間目`] = String(v ?? "");
-    }
-    return out;
-  }
-
-  // array想定（順番に入ってる場合）
-  if (Array.isArray(flow)) {
-    for (let i = 0; i < Math.min(hours, flow.length); i++) {
-      out[`${i + 1}時間目`] = String(flow[i] ?? "");
-    }
-    return out;
-  }
-
-  // string想定（改行区切り）
-  if (typeof flow === "string") {
-    const lines = flow.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    for (let i = 0; i < Math.min(hours, lines.length); i++) {
-      out[`${i + 1}時間目`] = lines[i];
-    }
-    return out;
-  }
-
-  return out;
-}
-
-function getMissingFlowHours(flowObj: Record<string, string>, hours: number): number[] {
-  const missing: number[] = [];
-  for (let i = 1; i <= hours; i++) {
-    const v = (flowObj?.[`${i}時間目`] ?? "").trim();
-    if (!v) missing.push(i);
-  }
-  return missing;
-}
-
-/* ===================== 不足時間のみ補完する「修復プロンプト」 ===================== */
-function buildFlowRepairPrompt(params: {
-  hours: number;
-  missingHours: number[];
-  originalPrompt: string;
-  parsed: ParsedResult;
-}): string {
-  const { hours, missingHours, originalPrompt, parsed } = params;
-
-  // 欠けている時間だけを埋めさせる（長文化しにくいよう、返却を授業の流れのみに限定）
-  return `
-あなたは小学校国語の授業プランナーです。
-次の授業案JSONのうち、「授業の流れ」が一部未生成（空、または欠落）です。
-授業時間数は ${hours} で固定し、欠けている時間目（${missingHours.join("、")}）のみを、逆算設計に沿って補完してください。
-
-重要：
-- 返却はJSONのみ
-- 返却するキーは「授業の流れ」だけ
-- 「授業の流れ」は1時間目〜${hours}時間目まで全てのキーを必ず含む
-- 既に内容がある時間目は、元の内容をそのまま入れて変更しない
-- 各時間は【ねらい】【教師の問い】【活動形態】【教材根拠】【評価】【成果物】【次時】の見出しを必ず含む
-
-■ 元のプロンプト（参考。変更禁止）：
-${originalPrompt}
-
-■ 現在の授業案JSON（参考。変更禁止）：
-${JSON.stringify(parsed).slice(0, 12000)}
-
-—返却フォーマット—
-{
-  "授業の流れ": {
-    "1時間目": string,
-    "2時間目": string,
-    "${hours}時間目": string
-  }
-}
   `.trim();
 }
 
@@ -1000,11 +907,6 @@ export default function ClientPlan() {
 
     // 手動モードは「表示」用に整形して即時反映
     if (mode === "manual") {
-      const manualFlow: Record<string, string> = {};
-      newList.forEach((step, idx) => {
-        manualFlow[`${idx + 1}時間目`] = step;
-      });
-
       const manualResult: ParsedResult = {
         教科書名: subject,
         学年: grade,
@@ -1018,7 +920,8 @@ export default function ClientPlan() {
           "主体的に学習に取り組む態度": evaluationPoints.attitude,
         },
         育てたい子どもの姿: childVision,
-        授業の流れ: manualFlow,
+        // ★統一：配列で保持（表示・保存の互換は下で対応）
+        授業の流れ: newList,
         言語活動の工夫: languageActivities,
         結果: "",
       };
@@ -1093,46 +996,6 @@ export default function ClientPlan() {
         data = JSON.parse(text);
       } catch {
         throw new Error("サーバーから無効なJSONが返ってきました");
-      }
-
-      // ★★★ ここで「授業の流れ」を必ず1..Nに正規化（欠落キー対策）
-      const normalizedFlow = normalizeFlowObject(data["授業の流れ"], count);
-      data["授業の流れ"] = normalizedFlow;
-
-      // ★★★ さらに「空の時間」が多い場合は、不足時間のみ再問い合わせして補完（最大1回）
-      const missing = getMissingFlowHours(normalizedFlow, count);
-      if (count > 0 && missing.length > 0 && missing.length < count) {
-        try {
-          const repairPrompt = buildFlowRepairPrompt({
-            hours: count,
-            missingHours: missing,
-            originalPrompt: prompt,
-            parsed: data,
-          });
-
-          const repairRes = await fetch("/api/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: repairPrompt }),
-          });
-
-          const repairText = await repairRes.text();
-          if (repairRes.ok) {
-            const repairJson = JSON.parse(repairText) as any;
-            const repairedFlow = normalizeFlowObject(repairJson?.["授業の流れ"], count);
-
-            // 既存を優先しつつ、空の時間だけ埋める
-            const merged: Record<string, string> = { ...normalizedFlow };
-            for (let i = 1; i <= count; i++) {
-              const k = `${i}時間目`;
-              if (!merged[k]?.trim() && repairedFlow[k]?.trim()) merged[k] = repairedFlow[k];
-            }
-            data["授業の流れ"] = merged;
-          }
-        } catch (repairErr) {
-          console.warn("授業の流れ補完（再問い合わせ）に失敗:", repairErr);
-          // 失敗しても、正規化済みのまま進める
-        }
       }
 
       setParsedResult(data);
@@ -1521,7 +1384,7 @@ export default function ClientPlan() {
           </label>
 
           <label>
-            ■ 言語活動の工夫：<br />
+            ■ 言語活動（ゴール/最終成果物）：<br />
             <textarea
               value={languageActivities}
               onChange={(e) => setLanguageActivities(e.target.value)}
@@ -1714,15 +1577,27 @@ export default function ClientPlan() {
 
               <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>授業の流れ</div>
-                <ul style={listStyle}>
-                  {parsedResult["授業の流れ"] &&
-                    typeof parsedResult["授業の流れ"] === "object" &&
-                    Object.entries(parsedResult["授業の流れ"]).map(([key, val], i) => (
-                      <li key={`flow-${i}`}>
+
+                {/* ★ array/object 両対応で表示（生成側は配列を強制） */}
+                {Array.isArray(parsedResult["授業の流れ"]) ? (
+                  <ul style={listStyle}>
+                    {(parsedResult["授業の流れ"] as string[]).map((val, i) => (
+                      <li key={`flow-arr-${i}`}>
+                        <strong>{i + 1}時間目：</strong> {String(val)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : parsedResult["授業の流れ"] && typeof parsedResult["授業の流れ"] === "object" ? (
+                  <ul style={listStyle}>
+                    {Object.entries(parsedResult["授業の流れ"] as Record<string, any>).map(([key, val], i) => (
+                      <li key={`flow-obj-${i}`}>
                         <strong>{key}：</strong> {String(val)}
                       </li>
                     ))}
-                </ul>
+                  </ul>
+                ) : (
+                  <p style={{ opacity: 0.8 }}>（授業の流れがありません）</p>
+                )}
               </div>
             </div>
           </>
