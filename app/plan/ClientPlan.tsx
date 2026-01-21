@@ -33,10 +33,10 @@ type StyleModel = {
   id: string;
   name: string;
   content: string; // philosophy（教育観）
-  evaluationFocus?: string; // 評価観点の重視点
-  languageFocus?: string; // 言語活動の重視点
-  childFocus?: string; // 育てたい子どもの姿
-  creatorName?: string; // 作成者名（任意）
+  evaluationFocus?: string;
+  languageFocus?: string;
+  childFocus?: string;
+  creatorName?: string;
 };
 
 type ParsedResult = {
@@ -60,7 +60,7 @@ type LessonPlanStored = {
   subject: string;
   grade: string;
   genre: string;
-  unit: string; // 内部名は維持（教材名の実体）
+  unit: string;
   hours: string | number;
   unitGoal: string;
   evaluationPoints: EvaluationPoints;
@@ -68,7 +68,7 @@ type LessonPlanStored = {
   lessonPlanList: string[];
   languageActivities: string;
 
-  /** 互換用：既存ページが参照している可能性があるキー（中身は教育観モデルIDに統一） */
+  /** 互換用 */
   selectedStyleId: string;
 
   /** 新：4分類 */
@@ -78,6 +78,22 @@ type LessonPlanStored = {
   /** 新：教育観モデル（任意） */
   educationModelId?: string | null;
   educationModelName?: string | null;
+
+  /** ★ 新：ジャンル別素材（任意） */
+  storyMain?: string | null;
+  storyCounter?: string | null;
+  storySetting?: string | null;
+  storyClimax?: string | null;
+
+  exTopic?: string | null;
+  exPurpose?: string | null;
+  exStructure?: string | null;
+  exKeywords?: string | null;
+
+  poemSpeaker?: string | null;
+  poemFeelings?: string | null;
+  poemImagery?: string | null;
+  poemRepetition?: string | null;
 
   result: ParsedResult;
   timestamp: string;
@@ -108,8 +124,24 @@ type LessonPlanDraft = {
   /** 新：教育観モデル（任意） */
   educationModelId?: string | null;
 
-  /** 互換用（保存時も維持したい場合用） */
+  /** 互換用 */
   selectedStyleId?: string;
+
+  /** ★ 新：ジャンル別素材（任意） */
+  storyMain?: string | null;
+  storyCounter?: string | null;
+  storySetting?: string | null;
+  storyClimax?: string | null;
+
+  exTopic?: string | null;
+  exPurpose?: string | null;
+  exStructure?: string | null;
+  exKeywords?: string | null;
+
+  poemSpeaker?: string | null;
+  poemFeelings?: string | null;
+  poemImagery?: string | null;
+  poemRepetition?: string | null;
 
   result?: ParsedResult | null;
   timestamp: string;
@@ -221,22 +253,28 @@ function applyParsedResultToInputs(
 
 /* ===================== 4分類の方針（指導要領に沿うための最低要件） ===================== */
 function getAuthorGuidelines(authorId: AuthorId, grade: string): string {
+  const isLower = /^1年|^2年/.test(String(grade));
+
   const common = [
     "・学習指導要領に照らして、3観点（知識・技能／思考・判断・表現／主体的に学習に取り組む態度）の整合をとる。",
     "・各時間の『授業の流れ』は、次の4要素を必ず含める：①教師の手立て（発問・提示・板書・ICT）②子どもの活動（個→ペア→全体等）③教材の根拠（本文の叙述・資料・例文等）④見取る評価（どの観点をどこで）。",
     "・1時間目あたり120〜200字程度を目安に具体化する（短すぎる一般論は禁止）。",
     "・時間配分は、導入→探究→統合→振り返りの積み上がりが分かるようにする。",
     "・教師の言葉（問い）と、子どものアウトプット（発言・ノート・ワークシート等）が見える形で書く。",
-  ].join("\n");
+    isLower
+      ? "・低学年では『テーマ』など抽象度が高い語は避け、人物の行動・気持ち・ことば、読み取ったことの共有など、具体で扱う。"
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const byType: Record<AuthorId, string> = {
     "reading-model-id": [
       "【読解（読むこと中心）としての最低要件】",
       "・本文の叙述に必ず戻り、根拠（言葉・文・段落）を押さえて解釈が進む構造にする。",
       "・発問は『叙述→解釈→交流→再解釈』の循環になるように設計する。",
-      "・学年（" + grade + "）に応じて、本文理解の支援（音読・挿絵・場面分け・人物表等）を入れる。",
+      "・学年に応じて、本文理解の支援（音読・挿絵・場面分け・人物表等）を入れる。",
       "・交流は“根拠付きで説明”を促す（理由の言語化）。",
-      "・※低学年（特に1年）は『テーマ／主題』を中心課題にせず、出来事の順序・気持ち・くり返しの言葉・音読の工夫など具体に寄せる。",
     ].join("\n"),
     "discussion-model-id": [
       "【話し合い（話す・聞く中心）としての最低要件】",
@@ -283,21 +321,67 @@ function buildEducationModelBlock(model?: StyleModel | null): string {
   return block.length > 2000 ? block.slice(0, 2000) + "\n（…以下省略）" : block;
 }
 
-/* ===================== 返却フォーマット用：授業の流れキーを全部列挙 ===================== */
-function buildFlowJsonTemplate(hours: number): string {
-  const h = Math.max(0, Math.floor(hours));
-  const entries = Array.from({ length: h }, (_, i) => {
-    const k = `${i + 1}時間目`;
-    return `    "${k}": string`;
-  }).join(",\n");
-  return `{\n${entries}\n  }`;
+/* ===================== ジャンル別素材ブロック ===================== */
+function buildGenreMaterialBlock(args: {
+  genre: string;
+  storyMain: string;
+  storyCounter: string;
+  storySetting: string;
+  storyClimax: string;
+  exTopic: string;
+  exPurpose: string;
+  exStructure: string;
+  exKeywords: string;
+  poemSpeaker: string;
+  poemFeelings: string;
+  poemImagery: string;
+  poemRepetition: string;
+}): string {
+  const g = (args.genre || "").trim();
+
+  if (g === "物語文") {
+    const lines = [
+      "【物語文の素材（本文に具体化して反映）】",
+      args.storyMain ? `・中心人物：${args.storyMain}` : "・中心人物：",
+      args.storyCounter ? `・対人物（中心人物と対になる人物）：${args.storyCounter}` : "・対人物：",
+      args.storySetting ? `・舞台（いつ／どこ）：${args.storySetting}` : "・舞台：",
+      args.storyClimax ? `・山場（大事な場面）：${args.storyClimax}` : "・山場：",
+      "※授業の流れには、上の人物名・場面語を自然に必ず含め、本文の叙述（言葉・文）に戻って話し合えるようにする。",
+    ];
+    return lines.join("\n").trim();
+  }
+
+  if (g === "説明文") {
+    const lines = [
+      "【説明文の素材（本文に具体化して反映）】",
+      args.exTopic ? `・題材（何について）：${args.exTopic}` : "・題材：",
+      args.exPurpose ? `・筆者の目的（何を伝えたい）：${args.exPurpose}` : "・筆者の目的：",
+      args.exStructure ? `・文章構造（例：はじめ→中→おわり／問い→答え／理由→例）：${args.exStructure}` : "・文章構造：",
+      args.exKeywords ? `・キーワード（大事な言葉）：${args.exKeywords}` : "・キーワード：",
+      "※授業の流れには、上の用語を自然に必ず含め、段落や構造に着目して読み取れるようにする。",
+    ];
+    return lines.join("\n").trim();
+  }
+
+  if (g === "詩") {
+    const lines = [
+      "【詩の素材（本文に具体化して反映）】",
+      args.poemSpeaker ? `・語り手（だれの声）：${args.poemSpeaker}` : "・語り手：",
+      args.poemFeelings ? `・気持ち（どんな感じ）：${args.poemFeelings}` : "・気持ち：",
+      args.poemImagery ? `・情景イメージ（見えるもの／聞こえるもの）：${args.poemImagery}` : "・情景イメージ：",
+      args.poemRepetition ? `・くり返し／リズム（気づかせたい言い方）：${args.poemRepetition}` : "・くり返し／リズム：",
+      "※授業の流れには、音・リズム・くり返し・情景を扱う活動を自然に必ず含め、感じたことを言葉で確かめられるようにする。",
+    ];
+    return lines.join("\n").trim();
+  }
+
+  return "";
 }
 
 /* ===================== 入力→プロンプト整形 ===================== */
 function buildPrompt(args: {
   authorId: AuthorId;
   authorLabel: string;
-
   educationModel?: StyleModel | null;
 
   subject: string;
@@ -310,6 +394,22 @@ function buildPrompt(args: {
   childVision: string;
   languageActivities: string;
   lessonPlanList: string[];
+
+  /** ★ ジャンル別素材 */
+  storyMain: string;
+  storyCounter: string;
+  storySetting: string;
+  storyClimax: string;
+
+  exTopic: string;
+  exPurpose: string;
+  exStructure: string;
+  exKeywords: string;
+
+  poemSpeaker: string;
+  poemFeelings: string;
+  poemImagery: string;
+  poemRepetition: string;
 }): string {
   const {
     authorId,
@@ -327,10 +427,7 @@ function buildPrompt(args: {
     lessonPlanList,
   } = args;
 
-  const h = Math.max(0, Math.floor(hours));
-
   const flowLines = lessonPlanList
-    .slice(0, h)
     .map((step, idx) => (step.trim() ? `${idx + 1}時間目: ${step}` : `${idx + 1}時間目: `))
     .join("\n");
 
@@ -340,21 +437,42 @@ function buildPrompt(args: {
     getAuthorGuidelines(authorId, grade),
   ].join("\n");
 
-  const flowKeysList = Array.from({ length: h }, (_, i) => `${i + 1}時間目`).join("、");
+  const genreMaterial = buildGenreMaterialBlock({
+    genre,
+    storyMain: args.storyMain,
+    storyCounter: args.storyCounter,
+    storySetting: args.storySetting,
+    storyClimax: args.storyClimax,
+    exTopic: args.exTopic,
+    exPurpose: args.exPurpose,
+    exStructure: args.exStructure,
+    exKeywords: args.exKeywords,
+    poemSpeaker: args.poemSpeaker,
+    poemFeelings: args.poemFeelings,
+    poemImagery: args.poemImagery,
+    poemRepetition: args.poemRepetition,
+  });
 
   return `
 あなたは小学校の国語授業プランナーです。
 必ず学習指導要領に沿い、入力情報と3観点評価の整合をとり、実行可能で具体的な授業案を作成してください。
 
+【最重要：単元の逆算構造（言語活動をゴールにする）】
+- 「言語活動の工夫」に書かれた活動が、単元の最終成果（ゴール）になるようにする。
+- 最終時（${hours}時間目）でゴールの活動が成立するように、1時間目から準備・練習・読み取り・交流が積み上がる流れにする。
+- 各時間の文章の中に、その時間が“ゴールに向けて何を整えるのか”が自然に分かるように書く。
+
 ${eduBlock ? `${eduBlock}\n` : ""}
 
 ${authorBlock}
+
+${genreMaterial ? `${genreMaterial}\n` : ""}
 
 【教科書名】${subject}
 【学年】${grade}
 【ジャンル】${genre}
 【教材名】${unit}
-【授業時間数】${h}
+【授業時間数】${hours}
 
 ■ 単元の目標:
 ${unitGoal}
@@ -367,32 +485,14 @@ ${unitGoal}
 ■ 育てたい子どもの姿:
 ${childVision}
 
-■ 言語活動（単元のゴール）:
-${languageActivities}
-
-■ 逆算設計の要件（最重要）:
-- 上の「言語活動（単元のゴール）」を最終的に子どもが達成できるよう、1時間目〜${h}時間目までを逆算して設計する。
-- ${h}時間目は、言語活動の実施（発表・上演・共有など）と振り返りが成立するようにする。
-- 途中の時間は、必要な準備（理解→練習→改善→表現→共有）を段階化し、毎時間の活動が最終ゴールにつながるようにする。
-
-■ 授業の流れ（先生入力／空欄はAI補完）:
+■ 授業の流れ（先生入力／空欄はAIが補完）:
 ${flowLines}
 
-※上記で「n時間目: 」だけ書かれている箇所は、AI が具体の文章で補完してください。
+※上記で「n時間目: 」だけ書かれている箇所は、AI が補完して埋めてください。
 ※先生が書いた内容は上書きせず、矛盾がある場合のみ整合する範囲で最小修正してください。
 
-【重要：授業の流れキー（必須）】
-- 「授業の流れ」には、必ず次の全キーを含める：${flowKeysList}
-
-【表現の禁止（必須）】
-- 各時間目の文章の冒頭に「〇時間目は」「第〇時は」などのラベルを付けない。文章から書き始めること。
-- 箇条書きや「教師の手立て：」のような見出し分割はしない。連続した文章（1〜2段落）で書く。
-
-【学年相応の制約（必須）】
-- 1年生では「テーマ／主題／象徴／比喩」など抽象度が高い概念を中心課題にしない。
-  代わりに「出来事の順序」「登場人物の気持ち」「くり返しの言葉」「挿絵と本文」「音読の工夫（間・強さ・役割分担）」「伝え合い」を中心にする。
-- 2年生も抽象語は控えめにし、根拠は本文の言葉・挿絵・場面で説明できる範囲にする。
-- 3年生以上で必要に応じて主題に触れてよいが、必ず本文の叙述根拠に結びつける。
+■ 言語活動の工夫（ゴールの活動の具体）:
+${languageActivities}
 
 —返却フォーマット（必ずJSONのみ。前後に文章を付けない）—
 {
@@ -408,16 +508,21 @@ ${flowLines}
     "主体的に学習に取り組む態度": string[]
   },
   "育てたい子どもの姿": string,
-  "授業の流れ": ${buildFlowJsonTemplate(h)},
+  "授業の流れ": {
+    "1時間目": string,
+    "...": string,
+    "${hours}時間目": string
+  },
   "言語活動の工夫": string,
   "結果": string
 }
 
-制約：
-- 各時間目は120〜200字程度を目安に、教師の手立て・子どもの活動・教材根拠・評価の見取りが文章内に読み取れること。
-- 具体的な発問（教師の問い）を各時間に最低1つは含めること。
-- 活動形態（個人/ペア/全体/グループ）を各時間に明記すること。
-- 入力された「言語活動（単元のゴール）」へ向かう逆算のつながりが、各時間で分かること。
+制約（重要）：
+- 掋牌のキーは必ず「1時間目」〜「${hours}時間目」まで全て出す（欠けは禁止）。
+- 各時間目の値は、見出しや箇条書きにせず、連続した文章（1〜2段落）で書く（冒頭に「〇時間目は…」の型文は不要）。
+- 各時間に、教師の問い（発問）を最低1つ、文章中に自然に含める。
+- 各時間に、活動形態（個人/ペア/全体/グループ）を文章中に明記する。
+- 各時間に、本文根拠（叙述・言葉）や、説明文なら段落・構造、詩なら言葉の響き等の根拠が入ること。
   `.trim();
 }
 
@@ -439,7 +544,7 @@ export default function ClientPlan() {
   /** クリア直後に自動保存で空状態を書き戻さないための1回スキップ */
   const skipAutoSaveOnceRef = useRef(false);
 
-  // ★ 初期は手動モード（文言に合わせる）
+  // ★ 初期は手動モード
   const [mode, setMode] = useState<"ai" | "manual">("manual");
 
   /** 教育観モデル一覧 */
@@ -468,6 +573,22 @@ export default function ClientPlan() {
   const [hours, setHours] = useState("");
   const [unitGoal, setUnitGoal] = useState("");
 
+  /** ★ ジャンル別素材（UI入力） */
+  const [storyMain, setStoryMain] = useState("");
+  const [storyCounter, setStoryCounter] = useState("");
+  const [storySetting, setStorySetting] = useState("");
+  const [storyClimax, setStoryClimax] = useState("");
+
+  const [exTopic, setExTopic] = useState("");
+  const [exPurpose, setExPurpose] = useState("");
+  const [exStructure, setExStructure] = useState("");
+  const [exKeywords, setExKeywords] = useState("");
+
+  const [poemSpeaker, setPoemSpeaker] = useState("");
+  const [poemFeelings, setPoemFeelings] = useState("");
+  const [poemImagery, setPoemImagery] = useState("");
+  const [poemRepetition, setPoemRepetition] = useState("");
+
   const [evaluationPoints, setEvaluationPoints] = useState<EvaluationPoints>({
     knowledge: [""],
     thinking: [""],
@@ -494,7 +615,7 @@ export default function ClientPlan() {
   /** 保存するプロンプト（後で参照用） */
   const [lastPrompt, setLastPrompt] = useState<string>("");
 
-  /** 本人同意（将来用：現ページでは保持のみ。fine-tune関連UI/処理は削除） */
+  /** 本人同意（保持のみ） */
   const [consentTrain, setConsentTrain] = useState<boolean>(false);
 
   /* ===== 教育観モデルの取得 ===== */
@@ -555,6 +676,22 @@ export default function ClientPlan() {
     // 新：教育観モデル（任意）
     const emId = (plan as any).educationModelId as string | null | undefined;
     if (emId !== undefined) setSelectedEducationModelId(emId ?? "");
+
+    // ★ 新：ジャンル素材
+    setStoryMain(String((plan as any).storyMain ?? ""));
+    setStoryCounter(String((plan as any).storyCounter ?? ""));
+    setStorySetting(String((plan as any).storySetting ?? ""));
+    setStoryClimax(String((plan as any).storyClimax ?? ""));
+
+    setExTopic(String((plan as any).exTopic ?? ""));
+    setExPurpose(String((plan as any).exPurpose ?? ""));
+    setExStructure(String((plan as any).exStructure ?? ""));
+    setExKeywords(String((plan as any).exKeywords ?? ""));
+
+    setPoemSpeaker(String((plan as any).poemSpeaker ?? ""));
+    setPoemFeelings(String((plan as any).poemFeelings ?? ""));
+    setPoemImagery(String((plan as any).poemImagery ?? ""));
+    setPoemRepetition(String((plan as any).poemRepetition ?? ""));
 
     if ((plan as any).result) setParsedResult((plan as any).result as ParsedResult);
 
@@ -660,8 +797,24 @@ export default function ClientPlan() {
     authorId: selectedAuthorId,
     educationModelId: selectedEducationModelId || null,
 
-    // 互換：教育観モデルIDを selectedStyleId として維持（必要なら）
+    // 互換：教育観モデルIDを selectedStyleId として維持
     selectedStyleId: selectedEducationModelId || "",
+
+    // ★ ジャンル別素材
+    storyMain: storyMain || null,
+    storyCounter: storyCounter || null,
+    storySetting: storySetting || null,
+    storyClimax: storyClimax || null,
+
+    exTopic: exTopic || null,
+    exPurpose: exPurpose || null,
+    exStructure: exStructure || null,
+    exKeywords: exKeywords || null,
+
+    poemSpeaker: poemSpeaker || null,
+    poemFeelings: poemFeelings || null,
+    poemImagery: poemImagery || null,
+    poemRepetition: poemRepetition || null,
 
     result: parsedResult ?? null,
     timestamp: new Date().toISOString(),
@@ -722,6 +875,21 @@ export default function ClientPlan() {
     lessonPlanList,
     selectedAuthorId,
     selectedEducationModelId,
+
+    // ★ ジャンル素材
+    storyMain,
+    storyCounter,
+    storySetting,
+    storyClimax,
+    exTopic,
+    exPurpose,
+    exStructure,
+    exKeywords,
+    poemSpeaker,
+    poemFeelings,
+    poemImagery,
+    poemRepetition,
+
     parsedResult,
     consentTrain,
   ]);
@@ -745,7 +913,6 @@ export default function ClientPlan() {
   /* ===== 画面の全入力＆生成結果を初期化（クリア用） ===== */
   const resetAll = () => {
     setEditId(null);
-    // ★ クリア後も手動に戻す（文言に合わせる）
     setMode("manual");
 
     setSelectedAuthorId(null);
@@ -757,6 +924,22 @@ export default function ClientPlan() {
     setUnit("");
     setHours("");
     setUnitGoal("");
+
+    // ★ ジャンル素材もクリア
+    setStoryMain("");
+    setStoryCounter("");
+    setStorySetting("");
+    setStoryClimax("");
+
+    setExTopic("");
+    setExPurpose("");
+    setExStructure("");
+    setExKeywords("");
+
+    setPoemSpeaker("");
+    setPoemFeelings("");
+    setPoemImagery("");
+    setPoemRepetition("");
 
     setEvaluationPoints(templateEvaluationPoints);
 
@@ -893,15 +1076,10 @@ export default function ClientPlan() {
       return;
     }
 
-    const count = Math.max(0, Math.floor(Number(hours) || 0));
-    if (count <= 0) {
-      alert("授業時間数を1以上で入力してください");
-      return;
-    }
-
     setLoading(true);
     setParsedResult(null);
 
+    const count = Number(hours) || 0;
     const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
     setLessonPlanList(newList);
 
@@ -930,7 +1108,6 @@ export default function ClientPlan() {
         結果: "",
       };
 
-      // 保存用には「プロンプト相当のテキスト」も残す（任意）
       const pseudoPrompt = buildPrompt({
         authorId: selectedAuthor.id,
         authorLabel: selectedAuthor.label,
@@ -945,6 +1122,19 @@ export default function ClientPlan() {
         childVision,
         languageActivities,
         lessonPlanList: newList,
+
+        storyMain,
+        storyCounter,
+        storySetting,
+        storyClimax,
+        exTopic,
+        exPurpose,
+        exStructure,
+        exKeywords,
+        poemSpeaker,
+        poemFeelings,
+        poemImagery,
+        poemRepetition,
       });
       setLastPrompt(pseudoPrompt);
 
@@ -982,15 +1172,27 @@ export default function ClientPlan() {
         childVision,
         languageActivities,
         lessonPlanList: newList,
+
+        storyMain,
+        storyCounter,
+        storySetting,
+        storyClimax,
+        exTopic,
+        exPurpose,
+        exStructure,
+        exKeywords,
+        poemSpeaker,
+        poemFeelings,
+        poemImagery,
+        poemRepetition,
       });
 
       setLastPrompt(prompt);
 
-      // ★ hours も一緒に送る（サーバ側で全時間キー補完に使える）
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, hours: count }),
+        body: JSON.stringify({ prompt }),
       });
 
       const text = await res.text();
@@ -1065,7 +1267,6 @@ export default function ClientPlan() {
       lessonPlanList,
       languageActivities,
 
-      // 互換：教育観モデルIDをselectedStyleIdへ（空なら空）
       selectedStyleId: educationModelId ?? "",
 
       authorId: selectedAuthor.id,
@@ -1074,10 +1275,26 @@ export default function ClientPlan() {
       educationModelId,
       educationModelName,
 
+      // ★ ジャンル素材も保存（任意）
+      storyMain: storyMain || null,
+      storyCounter: storyCounter || null,
+      storySetting: storySetting || null,
+      storyClimax: storyClimax || null,
+
+      exTopic: exTopic || null,
+      exPurpose: exPurpose || null,
+      exStructure: exStructure || null,
+      exKeywords: exKeywords || null,
+
+      poemSpeaker: poemSpeaker || null,
+      poemFeelings: poemFeelings || null,
+      poemImagery: poemImagery || null,
+      poemRepetition: poemRepetition || null,
+
       result: parsedResult,
       timestamp: new Date().toISOString(),
 
-      usedStyleName: selectedAuthor.label, // 表示用（旧UI救済）
+      usedStyleName: selectedAuthor.label,
       allowTrain: consentTrain,
       allowTrainVersion: "v1",
     };
@@ -1108,16 +1325,29 @@ export default function ClientPlan() {
           lessonPlanList,
           languageActivities,
 
-          // 互換（中身は教育観モデルID）
           selectedStyleId: educationModelId ?? "",
 
-          // 新：4分類
           authorId: selectedAuthor.id,
           authorLabel: selectedAuthor.label,
 
-          // 新：教育観モデル（任意）
           educationModelId,
           educationModelName,
+
+          // ★ ジャンル素材
+          storyMain: storyMain || null,
+          storyCounter: storyCounter || null,
+          storySetting: storySetting || null,
+          storyClimax: storyClimax || null,
+
+          exTopic: exTopic || null,
+          exPurpose: exPurpose || null,
+          exStructure: exStructure || null,
+          exKeywords: exKeywords || null,
+
+          poemSpeaker: poemSpeaker || null,
+          poemFeelings: poemFeelings || null,
+          poemImagery: poemImagery || null,
+          poemRepetition: poemRepetition || null,
 
           result: parsedResult,
           assistantPlanMarkdown,
@@ -1128,7 +1358,7 @@ export default function ClientPlan() {
 
           author: session?.user?.email || "",
 
-          // 既存互換のスナップ（残したい場合）
+          // 既存互換のスナップ
           modelId: educationModelId,
           modelName: educationModelName,
           modelNameCanonical: (educationModelName || "").toLowerCase().replace(/\s+/g, "-") || null,
@@ -1336,6 +1566,73 @@ export default function ClientPlan() {
             </select>
           </label>
 
+          {/* ★ ジャンル別素材入力 */}
+          {genre === "物語文" && (
+            <div style={{ ...cardStyle, backgroundColor: "#f7fbff" }}>
+              <div style={{ fontWeight: "bold", marginBottom: 8 }}>物語文の素材（具体化に使います）</div>
+              <label>
+                中心人物：<br />
+                <input value={storyMain} onChange={(e) => setStoryMain(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                対人物（中心人物と対になる人物）：<br />
+                <input value={storyCounter} onChange={(e) => setStoryCounter(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                舞台（いつ／どこ）：<br />
+                <input value={storySetting} onChange={(e) => setStorySetting(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                山場（大事な場面）：<br />
+                <input value={storyClimax} onChange={(e) => setStoryClimax(e.target.value)} style={inputStyle} />
+              </label>
+            </div>
+          )}
+
+          {genre === "説明文" && (
+            <div style={{ ...cardStyle, backgroundColor: "#f7fff8" }}>
+              <div style={{ fontWeight: "bold", marginBottom: 8 }}>説明文の素材（具体化に使います）</div>
+              <label>
+                題材（何について）：<br />
+                <input value={exTopic} onChange={(e) => setExTopic(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                筆者の目的（何を伝えたい）：<br />
+                <input value={exPurpose} onChange={(e) => setExPurpose(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                文章構造（例：はじめ→中→おわり／問い→答え 等）：<br />
+                <input value={exStructure} onChange={(e) => setExStructure(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                キーワード（大事な言葉）：<br />
+                <input value={exKeywords} onChange={(e) => setExKeywords(e.target.value)} style={inputStyle} />
+              </label>
+            </div>
+          )}
+
+          {genre === "詩" && (
+            <div style={{ ...cardStyle, backgroundColor: "#fff7fb" }}>
+              <div style={{ fontWeight: "bold", marginBottom: 8 }}>詩の素材（具体化に使います）</div>
+              <label>
+                語り手（だれの声）：<br />
+                <input value={poemSpeaker} onChange={(e) => setPoemSpeaker(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                気持ち（どんな感じ）：<br />
+                <input value={poemFeelings} onChange={(e) => setPoemFeelings(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                情景イメージ（見える／聞こえる）：<br />
+                <input value={poemImagery} onChange={(e) => setPoemImagery(e.target.value)} style={inputStyle} />
+              </label>
+              <label>
+                くり返し／リズム（気づかせたい言い方）：<br />
+                <input value={poemRepetition} onChange={(e) => setPoemRepetition(e.target.value)} style={inputStyle} />
+              </label>
+            </div>
+          )}
+
           <label>
             教材名：<br />
             <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle} />
@@ -1388,7 +1685,7 @@ export default function ClientPlan() {
           </label>
 
           <label>
-            ■ 言語活動の工夫（単元のゴールにしたい活動を入力）：<br />
+            ■ 言語活動の工夫（ゴールの活動）：<br />
             <textarea
               value={languageActivities}
               onChange={(e) => setLanguageActivities(e.target.value)}
@@ -1397,7 +1694,7 @@ export default function ClientPlan() {
             />
           </label>
 
-          {hours && Number(hours) > 0 && (
+          {hours && (
             <div style={{ marginBottom: "1rem" }}>
               <div style={{ marginBottom: "0.5rem" }}>■ 授業の展開（手動で入力／空欄はAIが生成）</div>
               {Array.from({ length: Number(hours) }, (_, i) => (
@@ -1483,7 +1780,6 @@ export default function ClientPlan() {
 
         {parsedResult && (
           <>
-            {/* 本人同意（保持のみ。fine-tune関連はこのページから削除済み） */}
             <div style={{ ...cardStyle, backgroundColor: "#fafafa" }}>
               <div style={{ fontWeight: "bold", marginBottom: 8 }}>学習への提供（本人同意）</div>
 
@@ -1493,7 +1789,7 @@ export default function ClientPlan() {
               </label>
 
               <p style={{ margin: "8px 0 0", fontSize: "0.9rem", opacity: 0.85 }}>
-                ※このページでは同意情報を保存時に記録します。
+                ※このページでは同意情報を保存時に記録します（管理者操作は別ページで行ってください）。
               </p>
             </div>
 
