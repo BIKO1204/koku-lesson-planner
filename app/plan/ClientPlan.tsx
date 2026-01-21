@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { db, auth } from "../firebaseConfig";
-import { doc, setDoc, collection, getDocs, serverTimestamp, getDoc } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  collection,
+  getDocs,
+  serverTimestamp,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSession } from "next-auth/react";
 
@@ -149,89 +157,44 @@ function toAssistantPlanMarkdown(r: ParsedResult): string {
 const toStrArray = (v: any): string[] =>
   Array.isArray(v) ? v.map((x) => String(x)) : v != null && String(v).trim() ? [String(v)] : [];
 
-/** 全角数字→半角数字 */
-const toHalfWidthDigits = (s: string): string =>
-  s.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
-
-/** キーから「時間番号」を抽出（1時間目 / 第1時 / １時 / 1時限 などを吸収） */
-const extractHourNumber = (rawKey: string): number | null => {
-  const key = toHalfWidthDigits(String(rawKey)).trim();
-
-  // 代表パターンを広めに吸収
-  const candidates = [
-    /第\s*(\d+)\s*(?:時間目|時|時限|コマ)/,
-    /(\d+)\s*(?:時間目|時|時限|コマ)/,
-    /^(\d+)\s*$/,
-  ];
-
-  for (const re of candidates) {
-    const m = key.match(re);
-    if (m?.[1]) {
-      const n = parseInt(m[1], 10);
-      if (!isNaN(n) && n > 0) return n;
-    }
+const sortedFlowEntries = (flow: any): string[] => {
+  if (!flow) return [];
+  if (Array.isArray(flow)) return flow.map((x) => String(x));
+  if (typeof flow === "string") {
+    return flow.split(/\r?\n/).map((s) => s.replace(/^\s*\d+\s*時間目[:：]?\s*/, "").trim());
   }
-
-  // 「1時間目:」みたいに末尾に記号が付くケース
-  const m2 = key.match(/(\d+)/);
-  if (m2?.[1]) {
-    const n = parseInt(m2[1], 10);
-    if (!isNaN(n) && n > 0) return n;
+  if (typeof flow === "object") {
+    return Object.entries(flow)
+      .sort((a, b) => {
+        const na = parseInt(String(a[0]).match(/\d+/)?.[0] ?? "0", 10);
+        const nb = parseInt(String(b[0]).match(/\d+/)?.[0] ?? "0", 10);
+        return na - nb;
+      })
+      .map(([, v]) => String(v));
   }
-
-  return null;
+  return [];
 };
 
-/** flow を「1時間目〜hours時間目」必ず揃える（欠番ゼロ化） */
-const normalizeFlowToHours = (flow: any, hours: number): Record<string, string> => {
-  const h = Math.max(0, Number(hours) || 0);
-
-  // hoursが0なら「推定」して返す（表示崩れを防ぐ）
-  const inferHours = (arrLen: number, maxKeyNum: number) => Math.max(arrLen, maxKeyNum, 0);
-
-  // まず配列（index=時間-1）に寄せる
-  let arr: string[] = [];
-  let maxKeyNum = 0;
-
-  if (!flow) {
-    arr = [];
-  } else if (Array.isArray(flow)) {
-    arr = flow.map((x) => String(x ?? ""));
-  } else if (typeof flow === "string") {
-    const lines = flow
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    arr = lines;
-  } else if (typeof flow === "object") {
-    // objectのキーから時間番号を拾って詰める
-    const temp: Record<number, string> = {};
-    for (const [k, v] of Object.entries(flow)) {
-      const n = extractHourNumber(String(k));
-      if (n != null) {
-        maxKeyNum = Math.max(maxKeyNum, n);
-        temp[n] = String(v ?? "");
+/** 生成結果の「授業の流れ」を、必ず 1〜hours の Record に正規化する */
+function normalizeFlowToHours(flow: any, hours: number): Record<string, string> {
+  const n = Math.max(0, Number(hours) || 0);
+  const list = sortedFlowEntries(flow);
+  const record: Record<string, string> = {};
+  for (let i = 1; i <= n; i++) record[`${i}時間目`] = String(list[i - 1] ?? "").trim();
+  // もしすでに object 形式で入っていて、上で消えた分があり得るので、既存キーも上書き補完
+  if (flow && typeof flow === "object" && !Array.isArray(flow)) {
+    Object.entries(flow).forEach(([k, v]) => {
+      const m = String(k).match(/(\d+)\s*時間目/);
+      if (!m) return;
+      const idx = Number(m[1]);
+      if (idx >= 1 && idx <= n) {
+        const s = String(v ?? "").trim();
+        if (s) record[`${idx}時間目`] = s;
       }
-    }
-    const length = inferHours(0, maxKeyNum);
-    arr = Array.from({ length }, (_, i) => temp[i + 1] ?? "");
-  } else {
-    arr = [String(flow)];
+    });
   }
-
-  const finalHours = h > 0 ? h : inferHours(arr.length, maxKeyNum);
-  const padded = Array.from({ length: finalHours }, (_, i) => arr[i] ?? "");
-
-  const obj: Record<string, string> = {};
-  for (let i = 1; i <= finalHours; i++) obj[`${i}時間目`] = padded[i - 1] ?? "";
-  return obj;
-};
-
-/** flow を入力欄（lessonPlanList）へ反映するために string[] にする */
-const normalizeFlowToList = (flow: any, hours: number): string[] => {
-  const obj = normalizeFlowToHours(flow, hours);
-  return Array.from({ length: Math.max(0, Number(hours) || 0) }, (_, i) => obj[`${i + 1}時間目`] ?? "");
-};
+  return record;
+}
 
 function applyParsedResultToInputs(
   data: ParsedResult,
@@ -252,10 +215,7 @@ function applyParsedResultToInputs(
   const grade = String(data["学年"] ?? "").trim();
   const genre = String(data["ジャンル"] ?? "").trim();
   const unit = String(data["教材名"] ?? data["単元名"] ?? "").trim();
-
-  // hoursは data を信頼（ここで揺れを作らない）
-  const hoursNum = Math.max(0, Number(data["授業時間数"] ?? 0) || 0);
-
+  const hours = Number(data["授業時間数"] ?? 0);
   const unitGoal = String(data["単元の目標"] ?? "").trim();
   const childVision = String(data["育てたい子どもの姿"] ?? "").trim();
   const languageActivities = String(data["言語活動の工夫"] ?? "").trim();
@@ -265,18 +225,20 @@ function applyParsedResultToInputs(
   const thinking = toStrArray(evalObj?.["思考・判断・表現"]);
   const attitude = toStrArray(evalObj?.["主体的に学習に取り組む態度"] ?? evalObj?.["態度"]);
 
-  const flowList = normalizeFlowToList(data["授業の流れ"], hoursNum);
+  const flowList = sortedFlowEntries(data["授業の流れ"]);
+  const finalHours = hours || flowList.length || 0;
+  const paddedFlow = Array.from({ length: finalHours }, (_, i) => flowList[i] ?? "");
 
   if (subject) setters.setSubject(subject);
   if (grade) setters.setGrade(grade);
   if (genre) setters.setGenre(genre);
   if (unit) setters.setUnit(unit);
-  setters.setHours(String(hoursNum));
+  if (finalHours >= 0) setters.setHours(String(finalHours));
   setters.setUnitGoal(unitGoal);
   setters.setChildVision(childVision);
   setters.setLanguageActivities(languageActivities);
   setters.setEvaluationPoints({ knowledge, thinking, attitude });
-  setters.setLessonPlanList(flowList);
+  setters.setLessonPlanList(paddedFlow);
 }
 
 /* ===================== 4分類の方針（指導要領に沿うための最低要件） ===================== */
@@ -342,6 +304,12 @@ function buildEducationModelBlock(model?: StyleModel | null): string {
   return block.length > 2000 ? block.slice(0, 2000) + "\n（…以下省略）" : block;
 }
 
+/* ===================== 返却フォーマット：授業の流れキーを 1〜hours 全列挙（欠番対策・最重要） ===================== */
+function buildFlowSchemaKeys(hours: number): string {
+  const n = Math.max(0, Number(hours) || 0);
+  return Array.from({ length: n }, (_, i) => `"${i + 1}時間目": string`).join(",\n    ");
+}
+
 /* ===================== 入力→プロンプト整形 ===================== */
 function buildPrompt(args: {
   authorId: AuthorId;
@@ -385,6 +353,8 @@ function buildPrompt(args: {
     `【作成モデル（4分類 / 最低要件）：${authorLabel}】`,
     getAuthorGuidelines(authorId, grade),
   ].join("\n");
+
+  const flowSchemaKeys = buildFlowSchemaKeys(hours);
 
   return `
 あなたは小学校の国語授業プランナーです。
@@ -435,20 +405,71 @@ ${languageActivities}
   },
   "育てたい子どもの姿": string,
   "授業の流れ": {
-    "1時間目": string,
-    "2時間目": string,
-    "${hours}時間目": string
+    ${flowSchemaKeys}
   },
   "言語活動の工夫": string,
   "結果": string
 }
 
 制約：
+- 授業の流れは必ず「1時間目」〜「${hours}時間目」のキーを**全て**含める（欠番不可）。
 - 各時間目の文字数は120〜200字程度を目安に、教師の手立て・子どもの活動・教材根拠・評価の見取りが必ず含まれること。
 - 具体的な発問（教師の問い）を各時間に最低1つは含めること。
 - 活動形態（個人/ペア/全体/グループ）を各時間に明記すること。
 - 学年に合わない過度に抽象的・専門的な表現は避けること。
   `.trim();
+}
+
+/* ===================== 欠番検知＆修復生成（保険：それでも欠番が出た時に埋める） ===================== */
+function getMissingHours(flow: Record<string, string>, hours: number): number[] {
+  const missing: number[] = [];
+  const n = Math.max(0, Number(hours) || 0);
+  for (let i = 1; i <= n; i++) {
+    const v = (flow[`${i}時間目`] ?? "").toString().trim();
+    if (!v) missing.push(i);
+  }
+  return missing;
+}
+
+function buildRepairPrompt(args: {
+  basePrompt: string;
+  hours: number;
+  flow: Record<string, string>;
+  missing: number[];
+}): string {
+  const { basePrompt, hours, flow, missing } = args;
+  const n = Math.max(0, Number(hours) || 0);
+
+  const currentFlow = Array.from({ length: n }, (_, i) => {
+    const key = `${i + 1}時間目`;
+    return `${key}: ${flow[key] ?? ""}`;
+  }).join("\n");
+
+  const schema = missing.map((h) => `"${h}時間目": string`).join(",\n    ");
+
+  return `
+あなたは小学校国語の授業案作成者です。
+以下はすでに生成された授業案の「授業の流れ」ですが、一部の時間が空欄です。
+空欄の時間（${missing.join("、")}時間目）だけを、制約に沿って埋めてください。
+
+元の指示（参考）：
+${basePrompt}
+
+現在の授業の流れ：
+${currentFlow}
+
+返却はJSONのみ。次の形式で、欠番の時間だけ返す：
+{
+  "授業の流れ": {
+    ${schema}
+  }
+}
+
+制約：
+- 各時間目120〜200字、手立て・活動・根拠・評価・発問を必ず含める。
+- 既に埋まっている時間の内容と矛盾しない。
+- 返却は「授業の流れ」以外のキーを含めない。
+`.trim();
 }
 
 /* ===================== メイン ===================== */
@@ -711,7 +732,11 @@ export default function ClientPlan() {
   const saveDraftCloud = async (draft: LessonPlanDraft) => {
     if (!uid) return;
     try {
-      await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: draft, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(
+        doc(db, "lesson_plan_drafts", uid),
+        { ownerUid: uid, payload: draft, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
     } catch (e) {
       console.warn("クラウド下書き保存失敗:", e);
     }
@@ -753,8 +778,10 @@ export default function ClientPlan() {
   ]);
 
   /* ===== 入力ハンドラ ===== */
-  const handleAddPoint = (f: keyof EvaluationPoints) => setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
-  const handleRemovePoint = (f: keyof EvaluationPoints, i: number) => setEvaluationPoints((p) => ({ ...p, [f]: p[f].filter((_, idx) => idx !== i) }));
+  const handleAddPoint = (f: keyof EvaluationPoints) =>
+    setEvaluationPoints((p) => ({ ...p, [f]: [...p[f], ""] }));
+  const handleRemovePoint = (f: keyof EvaluationPoints, i: number) =>
+    setEvaluationPoints((p) => ({ ...p, [f]: p[f].filter((_, idx) => idx !== i) }));
   const handleChangePoint = (f: keyof EvaluationPoints, i: number, v: string) => {
     const arr = [...evaluationPoints[f]];
     arr[i] = v;
@@ -769,6 +796,7 @@ export default function ClientPlan() {
   /* ===== 画面の全入力＆生成結果を初期化（クリア用） ===== */
   const resetAll = () => {
     setEditId(null);
+    // ★ クリア後も手動に戻す（文言に合わせる）
     setMode("manual");
 
     setSelectedAuthorId(null);
@@ -916,19 +944,24 @@ export default function ClientPlan() {
       return;
     }
 
+    const count = Number(hours) || 0;
+    if (mode === "ai" && count <= 0) {
+      alert("授業時間数を1以上で入力してください");
+      return;
+    }
+
     setLoading(true);
     setParsedResult(null);
 
-    const count = Math.max(0, Number(hours) || 0);
     const newList = Array.from({ length: count }, (_, i) => lessonPlanList[i] || "");
     setLessonPlanList(newList);
 
-    // 手動モード：入力どおりに flow を揃えて返す（欠番ゼロ）
+    // 手動モードは「表示」用に整形して即時反映
     if (mode === "manual") {
-      const manualFlow = normalizeFlowToHours(
-        newList.map((x) => x),
-        count
-      );
+      const manualFlow: Record<string, string> = {};
+      newList.forEach((step, idx) => {
+        manualFlow[`${idx + 1}時間目`] = step;
+      });
 
       const manualResult: ParsedResult = {
         教科書名: subject,
@@ -948,6 +981,7 @@ export default function ClientPlan() {
         結果: "",
       };
 
+      // 保存用には「プロンプト相当のテキスト」も残す（任意）
       const pseudoPrompt = buildPrompt({
         authorId: selectedAuthor.id,
         authorLabel: selectedAuthor.label,
@@ -1019,10 +1053,47 @@ export default function ClientPlan() {
         throw new Error("サーバーから無効なJSONが返ってきました");
       }
 
-      // ★ここが今回の核心：AIのflowを「必ず1〜countまで」揃える（欠番ゼロ）
-      data["授業時間数"] = Number(data["授業時間数"] ?? 0) || count;
-      const hoursFixed = Math.max(0, Number(data["授業時間数"]) || count);
-      data["授業の流れ"] = normalizeFlowToHours(data["授業の流れ"], hoursFixed);
+      // ===== ① 正規化：授業の流れを 1〜hours の Record に揃える =====
+      const hoursFixed = Number(data["授業時間数"] ?? count) || count;
+      const normalizedFlow = normalizeFlowToHours(data["授業の流れ"] as any, hoursFixed);
+      data["授業の流れ"] = normalizedFlow;
+      data["授業時間数"] = hoursFixed;
+
+      // ===== ② 欠番があれば、欠番だけ修復生成（2回目） =====
+      const missing = getMissingHours(normalizedFlow, hoursFixed);
+      if (missing.length > 0) {
+        const repairPrompt = buildRepairPrompt({
+          basePrompt: prompt,
+          hours: hoursFixed,
+          flow: normalizedFlow,
+          missing,
+        });
+
+        const r2 = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: repairPrompt }),
+        });
+
+        const t2 = await r2.text();
+        if (!r2.ok) throw new Error(t2 || r2.statusText);
+
+        let d2: any;
+        try {
+          d2 = JSON.parse(t2);
+        } catch {
+          throw new Error("修復生成で無効なJSONが返ってきました");
+        }
+
+        const patch = (d2?.["授業の流れ"] ?? {}) as Record<string, any>;
+        missing.forEach((h) => {
+          const key = `${h}時間目`;
+          const val = String(patch[key] ?? "").trim();
+          if (val) normalizedFlow[key] = val;
+        });
+
+        data["授業の流れ"] = normalizedFlow;
+      }
 
       setParsedResult(data);
 
@@ -1063,18 +1134,15 @@ export default function ClientPlan() {
     const isEdit = Boolean(editId);
     const idToUse = isEdit ? (editId as string) : Date.now().toString();
 
-    // 保存時にも念押しで欠番ゼロ化（表示だけ直って保存が欠ける事故を防ぐ）
-    const count = Math.max(0, Number(parsedResult["授業時間数"] ?? 0) || Number(hours) || 0);
-    const normalizedFlow = normalizeFlowToHours(parsedResult["授業の流れ"], count);
-    const normalizedResult: ParsedResult = { ...parsedResult, 授業時間数: count, 授業の流れ: normalizedFlow };
-
-    const assistantPlanMarkdown = toAssistantPlanMarkdown(normalizedResult);
+    const assistantPlanMarkdown = toAssistantPlanMarkdown(parsedResult);
 
     const educationModelId = selectedEducationModelId || null;
     const educationModelName = selectedEducationModel?.name || null;
 
     // ローカル保存（履歴）
-    const existingArr: LessonPlanStored[] = JSON.parse(typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]");
+    const existingArr: LessonPlanStored[] = JSON.parse(
+      typeof window !== "undefined" ? localStorage.getItem("lessonPlans") || "[]" : "[]"
+    );
 
     const newPlan: LessonPlanStored = {
       id: idToUse,
@@ -1089,6 +1157,7 @@ export default function ClientPlan() {
       lessonPlanList,
       languageActivities,
 
+      // 互換：教育観モデルIDをselectedStyleIdへ（空なら空）
       selectedStyleId: educationModelId ?? "",
 
       authorId: selectedAuthor.id,
@@ -1097,10 +1166,10 @@ export default function ClientPlan() {
       educationModelId,
       educationModelName,
 
-      result: normalizedResult,
+      result: parsedResult,
       timestamp: new Date().toISOString(),
 
-      usedStyleName: selectedAuthor.label,
+      usedStyleName: selectedAuthor.label, // 表示用（旧UI救済）
       allowTrain: consentTrain,
       allowTrainVersion: "v1",
     };
@@ -1131,15 +1200,18 @@ export default function ClientPlan() {
           lessonPlanList,
           languageActivities,
 
+          // 互換（中身は教育観モデルID）
           selectedStyleId: educationModelId ?? "",
 
+          // 新：4分類
           authorId: selectedAuthor.id,
           authorLabel: selectedAuthor.label,
 
+          // 新：教育観モデル（任意）
           educationModelId,
           educationModelName,
 
-          result: normalizedResult,
+          result: parsedResult,
           assistantPlanMarkdown,
           userPromptText: lastPrompt,
 
@@ -1148,6 +1220,7 @@ export default function ClientPlan() {
 
           author: session?.user?.email || "",
 
+          // 既存互換のスナップ（残したい場合）
           modelId: educationModelId,
           modelName: educationModelName,
           modelNameCanonical: (educationModelName || "").toLowerCase().replace(/\s+/g, "-") || null,
@@ -1178,24 +1251,17 @@ export default function ClientPlan() {
     try {
       localStorage.removeItem(EDIT_KEY);
       if (uid) {
-        await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: null, updatedAt: serverTimestamp() }, { merge: true });
+        await setDoc(
+          doc(db, "lesson_plan_drafts", uid),
+          { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
       }
     } catch {}
 
     alert("一括保存しました（ローカル・Firestore）");
     router.push("/plan/history");
   };
-
-  /* ★表示用：必ず1〜hours分出す（欠番ゼロ描画） */
-  const displayHours = useMemo(() => {
-    if (!parsedResult) return 0;
-    return Math.max(0, Number(parsedResult["授業時間数"] ?? 0) || Number(hours) || 0);
-  }, [parsedResult, hours]);
-
-  const displayFlow = useMemo(() => {
-    if (!parsedResult) return {};
-    return normalizeFlowToHours(parsedResult["授業の流れ"], displayHours);
-  }, [parsedResult, displayHours]);
 
   /* ===================== JSX ===================== */
   return (
@@ -1257,6 +1323,7 @@ export default function ClientPlan() {
       </div>
 
       <main style={{ ...containerStyle, paddingTop: 56 }}>
+        {/* ★ ここが「最初の文言」：元に戻した版 */}
         <section style={infoNoteStyle} role="note">
           <p style={{ margin: 0 }}>
             授業案を作成するには、<strong>AIモード</strong>と<strong>手動モード</strong>があります。現在はAIモードで作成しても{" "}
@@ -1291,7 +1358,11 @@ export default function ClientPlan() {
           {/* 教育観モデル（任意） */}
           <label>
             教育観モデル（任意）：<br />
-            <select value={selectedEducationModelId} onChange={(e) => setSelectedEducationModelId(e.target.value)} style={inputStyle}>
+            <select
+              value={selectedEducationModelId}
+              onChange={(e) => setSelectedEducationModelId(e.target.value)}
+              style={inputStyle}
+            >
               <option value="">（未選択）</option>
               {styleModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -1376,17 +1447,29 @@ export default function ClientPlan() {
           {(["knowledge", "thinking", "attitude"] as const).map((f) => (
             <div key={f} style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem" }}>
-                {f === "knowledge" ? "① 知識・技能：" : f === "thinking" ? "② 思考・判断・表現：" : "③ 主体的に学習に取り組む態度："}
+                {f === "knowledge"
+                  ? "① 知識・技能："
+                  : f === "thinking"
+                  ? "② 思考・判断・表現："
+                  : "③ 主体的に学習に取り組む態度："}
               </label>
               {evaluationPoints[f].map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <textarea value={v} onChange={(e) => handleChangePoint(f, i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  <textarea
+                    value={v}
+                    onChange={(e) => handleChangePoint(f, i, e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
                   <button type="button" onClick={() => handleRemovePoint(f, i)}>
                     🗑
                   </button>
                 </div>
               ))}
-              <button type="button" onClick={() => handleAddPoint(f)} style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}>
+              <button
+                type="button"
+                onClick={() => handleAddPoint(f)}
+                style={{ ...inputStyle, backgroundColor: "#9C27B0", color: "white" }}
+              >
                 ＋ 追加
               </button>
             </div>
@@ -1399,16 +1482,25 @@ export default function ClientPlan() {
 
           <label>
             ■ 言語活動の工夫：<br />
-            <textarea value={languageActivities} onChange={(e) => setLanguageActivities(e.target.value)} rows={2} style={inputStyle} />
+            <textarea
+              value={languageActivities}
+              onChange={(e) => setLanguageActivities(e.target.value)}
+              rows={2}
+              style={inputStyle}
+            />
           </label>
 
           {hours && (
             <div style={{ marginBottom: "1rem" }}>
               <div style={{ marginBottom: "0.5rem" }}>■ 授業の展開（手動で入力／空欄はAIが生成）</div>
-              {Array.from({ length: Math.max(0, Number(hours) || 0) }, (_, i) => (
+              {Array.from({ length: Number(hours) }, (_, i) => (
                 <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
                   <span style={{ width: "4rem", lineHeight: "2rem" }}>{i + 1}時間目:</span>
-                  <textarea value={lessonPlanList[i] || ""} onChange={(e) => handleLessonChange(i, e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  <textarea
+                    value={lessonPlanList[i] || ""}
+                    onChange={(e) => handleLessonChange(i, e.target.value)}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
                 </div>
               ))}
             </div>
@@ -1455,7 +1547,11 @@ export default function ClientPlan() {
                 } catch {}
                 if (uid) {
                   try {
-                    await setDoc(doc(db, "lesson_plan_drafts", uid), { ownerUid: uid, payload: null, updatedAt: serverTimestamp() }, { merge: true });
+                    await setDoc(
+                      doc(db, "lesson_plan_drafts", uid),
+                      { ownerUid: uid, payload: null, updatedAt: serverTimestamp() },
+                      { merge: true }
+                    );
                   } catch {}
                 }
 
@@ -1480,6 +1576,7 @@ export default function ClientPlan() {
 
         {parsedResult && (
           <>
+            {/* 本人同意（保持のみ。fine-tune関連はこのページから削除済み） */}
             <div style={{ ...cardStyle, backgroundColor: "#fafafa" }}>
               <div style={{ fontWeight: "bold", marginBottom: 8 }}>学習への提供（本人同意）</div>
 
@@ -1488,7 +1585,9 @@ export default function ClientPlan() {
                 この授業案を、AIの改善（将来的な学習）に提供することに同意します。
               </label>
 
-              <p style={{ margin: "8px 0 0", fontSize: "0.9rem", opacity: 0.85 }}>※このページでは同意情報を保存時に記録します（管理者操作は別ページで行ってください）。</p>
+              <p style={{ margin: "8px 0 0", fontSize: "0.9rem", opacity: 0.85 }}>
+                ※このページでは同意情報を保存時に記録します。
+              </p>
             </div>
 
             <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1514,7 +1613,7 @@ export default function ClientPlan() {
               <p>学年：{parsedResult["学年"]}</p>
               <p>ジャンル：{parsedResult["ジャンル"]}</p>
               <p>教材名：{parsedResult["教材名"] ?? parsedResult["単元名"]}</p>
-              <p>授業時間数：{displayHours}時間</p>
+              <p>授業時間数：{parsedResult["授業時間数"]}時間</p>
               <p>育てたい子どもの姿：{parsedResult["育てたい子どもの姿"] || ""}</p>
 
               <div style={{ marginTop: 12 }}>
@@ -1527,11 +1626,13 @@ export default function ClientPlan() {
 
                 <strong>知識・技能</strong>
                 <ul style={listStyle}>
-                  {(Array.isArray(parsedResult["評価の観点"]?.["知識・技能"])
-                    ? parsedResult["評価の観点"]["知識・技能"]
-                    : parsedResult["評価の観点"]?.["知識・技能"]
-                    ? [parsedResult["評価の観点"]?.["知識・技能"]]
-                    : []
+                  {(
+                    Array.isArray(parsedResult["評価の観点"]?.["知識・技能"]) ||
+                    typeof parsedResult["評価の観点"]?.["知識・技能"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["知識・技能"])
+                        ? parsedResult["評価の観点"]["知識・技能"]
+                        : [parsedResult["評価の観点"]?.["知識・技能"]]
+                      : []
                   ).map((v: string, i: number) => (
                     <li key={`knowledge-${i}`}>{v}</li>
                   ))}
@@ -1539,11 +1640,13 @@ export default function ClientPlan() {
 
                 <strong>思考・判断・表現</strong>
                 <ul style={listStyle}>
-                  {(Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"])
-                    ? parsedResult["評価の観点"]["思考・判断・表現"]
-                    : parsedResult["評価の観点"]?.["思考・判断・表現"]
-                    ? [parsedResult["評価の観点"]?.["思考・判断・表現"]]
-                    : []
+                  {(
+                    Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"]) ||
+                    typeof parsedResult["評価の観点"]?.["思考・判断・表現"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["思考・判断・表現"])
+                        ? parsedResult["評価の観点"]["思考・判断・表現"]
+                        : [parsedResult["評価の観点"]?.["思考・判断・表現"]]
+                      : []
                   ).map((v: string, i: number) => (
                     <li key={`thinking-${i}`}>{v}</li>
                   ))}
@@ -1551,11 +1654,13 @@ export default function ClientPlan() {
 
                 <strong>主体的に学習に取り組む態度</strong>
                 <ul style={listStyle}>
-                  {(Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"])
-                    ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"]
-                    : parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]
-                    ? [parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]]
-                    : []
+                  {(
+                    Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]) ||
+                    typeof parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"] === "string"
+                      ? Array.isArray(parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"])
+                        ? parsedResult["評価の観点"]["主体的に学習に取り組む態度"]
+                        : [parsedResult["評価の観点"]?.["主体的に学習に取り組む態度"]]
+                      : []
                   ).map((v: string, i: number) => (
                     <li key={`attitude-${i}`}>{v}</li>
                   ))}
@@ -1570,15 +1675,13 @@ export default function ClientPlan() {
               <div style={{ marginTop: 12 }}>
                 <div style={titleStyle}>授業の流れ</div>
                 <ul style={listStyle}>
-                  {Array.from({ length: displayHours }, (_, i) => {
-                    const key = `${i + 1}時間目`;
-                    const val = (displayFlow as any)[key] ?? "";
-                    return (
+                  {parsedResult["授業の流れ"] &&
+                    typeof parsedResult["授業の流れ"] === "object" &&
+                    Object.entries(parsedResult["授業の流れ"]).map(([key, val], i) => (
                       <li key={`flow-${i}`}>
                         <strong>{key}：</strong> {String(val)}
                       </li>
-                    );
-                  })}
+                    ))}
                 </ul>
               </div>
             </div>
